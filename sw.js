@@ -49,6 +49,8 @@ self.addEventListener('notificationclick', e => {
         return client.focus().then(c => {
           if (action === 'adjust') {
             c.postMessage({ type: 'adjust-time', startTime: data.startTime });
+          } else if (action === 'adjust-stop') {
+            c.postMessage({ type: 'adjust-stop-time', stopTime: data.stopTime });
           }
           return c;
         });

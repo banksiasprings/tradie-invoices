@@ -504,6 +504,9 @@ function toggleSonSection(sectionId, toggleId){
 // --- GPS & Geofence ---
 let watchId=null,lastLat=null,lastLng=null;
 let geoAutoStartTriggered=false;
+let geoAutoStopTriggered=false;
+let outsideSiteTimer=null;
+const GEO_STOP_DEBOUNCE=2.5*60*1000; // 2.5 minutes
 
 function startGPS(){
   if(!navigator.geolocation) return;
@@ -555,6 +558,32 @@ function checkNearbySites(lat,lng){
       autoStartTimer(nearestGeo);
     }
   }
+
+  // Geofence auto-stop: check if active day's site has been exited
+  const ad=activeDay();
+  if(ad&&ad.site&&!geoAutoStopTriggered){
+    const activeSite=sites().find(s=>s.name===ad.site);
+    if(activeSite&&activeSite.lat){
+      const dActive=dist(lat,lng,activeSite.lat,activeSite.lng);
+      const activeRadius=activeSite.radius||100;
+      if(dActive>activeRadius){
+        // Outside geofence — start debounce if not already counting
+        if(!outsideSiteTimer){
+          outsideSiteTimer=setTimeout(()=>{
+            outsideSiteTimer=null;
+            const hour=new Date().getHours();
+            if(hour>=5&&hour<21&&activeDay()&&!geoAutoStopTriggered){
+              geoAutoStopTriggered=true;
+              autoStopTimer();
+            }
+          },GEO_STOP_DEBOUNCE);
+        }
+      } else {
+        // Back inside — cancel debounce
+        if(outsideSiteTimer){clearTimeout(outsideSiteTimer);outsideSiteTimer=null;}
+      }
+    }
+  }
 }
 
 function autoStartTimer(site){
@@ -586,6 +615,40 @@ function showGeofenceNotification(siteName,startTime){
         {action:'adjust',title:'Adjust time'}
       ],
       data:{startTime:startTime},
+      requireInteraction:true
+    });
+  }).catch(()=>{});
+}
+
+function autoStopTimer(){
+  clearInterval(timerInterval);
+  const ad=activeDay();if(!ad)return;
+  if(ad.lunchStart){
+    const[sh,sm]=ad.lunchStart.split(':').map(Number),now=new Date(),mins=now.getHours()*60+now.getMinutes()-sh*60-sm;
+    ad.lunchMins=(ad.lunchMins||0)+Math.max(0,mins);ad.lunchStart=null;
+  }
+  const stopTime=nowTime();
+  ad.finish=stopTime;
+  DB.set('activeDay',ad);
+  showReview(ad);
+  showGeofenceDepartureNotification(ad.site,stopTime);
+  toast('Auto-stopped: left '+ad.site);
+}
+
+function showGeofenceDepartureNotification(siteName,stopTime){
+  if(!('Notification' in window)||Notification.permission!=='granted') return;
+  if(!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.ready.then(reg=>{
+    reg.showNotification('Left '+siteName,{
+      body:'Timer stopped at '+stopTime+'. Tap to confirm or adjust.',
+      icon:'./mcnichol-app/icons/icon-192.png',
+      badge:'./mcnichol-app/icons/icon-192.png',
+      tag:'geofence-departure',
+      actions:[
+        {action:'confirm',title:'✓ Correct'},
+        {action:'adjust-stop',title:'Adjust time'}
+      ],
+      data:{stopTime:stopTime},
       requireInteraction:true
     });
   }).catch(()=>{});
@@ -693,7 +756,9 @@ function updateSon(){
 }
 
 function finishDay(){
-  clearInterval(timerInterval);const ad=activeDay();if(!ad)return;
+  clearInterval(timerInterval);
+  if(outsideSiteTimer){clearTimeout(outsideSiteTimer);outsideSiteTimer=null;}
+  const ad=activeDay();if(!ad)return;
   if(ad.lunchStart){
     const[sh,sm]=ad.lunchStart.split(':').map(Number),now=new Date(),mins=now.getHours()*60+now.getMinutes()-sh*60-sm;
     ad.lunchMins=(ad.lunchMins||0)+Math.max(0,mins);ad.lunchStart=null;
@@ -760,7 +825,8 @@ function saveDay(){
   const dl=days(),filtered=dl.filter(d=>d.date!==ad.date);
   filtered.push({...ad,invoiced:false});
   DB.set('days',filtered);DB.set('activeDay',null);clearInterval(timerInterval);
-  geoAutoStartTriggered=false; // reset so future visits can auto-start
+  geoAutoStartTriggered=false;geoAutoStopTriggered=false;
+  if(outsideSiteTimer){clearTimeout(outsideSiteTimer);outsideSiteTimer=null;}
   toast('Day saved! ✓');
   document.getElementById('checkin-idle').style.display='block';
   document.getElementById('checkin-active').style.display='none';
@@ -1137,20 +1203,23 @@ if('serviceWorker' in navigator){
   });
   // Handle SW message (notification action: adjust time)
   navigator.serviceWorker.addEventListener('message',e=>{
-    if(e.data&&e.data.type==='adjust-time'){
-      const ad=activeDay();
-      if(ad){
-        // Pre-fill and open edit modal
-        document.getElementById('edit-start').value=e.data.startTime||ad.start;
-        document.getElementById('edit-finish').value=ad.finish||nowTime();
-        document.getElementById('edit-lunch').value=ad.lunchMins||0;
-        document.getElementById('edit-son-toggle').checked=!!ad.sonWorking;
-        document.getElementById('edit-son-section').style.display=ad.sonWorking?'block':'none';
-        document.getElementById('edit-son-hours').value=ad.sonHours!==null&&ad.sonHours!==undefined?ad.sonHours:'';
-        document.getElementById('edit-modal').classList.add('open');
-        // Make sure we're on checkin screen
-        showScreen('checkin',document.querySelector('.nav-btn'));
-      }
+    if(!e.data) return;
+    const ad=activeDay();
+    function openEditModal(startOverride,finishOverride){
+      const day=activeDay();if(!day)return;
+      document.getElementById('edit-start').value=startOverride||day.start;
+      document.getElementById('edit-finish').value=finishOverride||day.finish||nowTime();
+      document.getElementById('edit-lunch').value=day.lunchMins||0;
+      document.getElementById('edit-son-toggle').checked=!!day.sonWorking;
+      document.getElementById('edit-son-section').style.display=day.sonWorking?'block':'none';
+      document.getElementById('edit-son-hours').value=day.sonHours!==null&&day.sonHours!==undefined?day.sonHours:'';
+      document.getElementById('edit-modal').classList.add('open');
+      showScreen('checkin',document.querySelector('.nav-btn'));
+    }
+    if(e.data.type==='adjust-time'){
+      openEditModal(e.data.startTime,null);
+    } else if(e.data.type==='adjust-stop-time'){
+      openEditModal(null,e.data.stopTime);
     }
   });
 }
