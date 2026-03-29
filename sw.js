@@ -1,4 +1,4 @@
-const CACHE = 'mcnichol-v1';
+const CACHE = 'mcnichol-v2';
 const ASSETS = [
   './index.html',
   './manifest.json',
@@ -33,6 +33,27 @@ self.addEventListener('fetch', e => {
         caches.open(CACHE).then(cache => cache.put(e.request, clone));
         return response;
       }).catch(() => cached);
+    })
+  );
+});
+
+self.addEventListener('notificationclick', e => {
+  const action = e.action;
+  const data = e.notification.data || {};
+  e.notification.close();
+
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cls => {
+      if (cls.length > 0) {
+        const client = cls[0];
+        return client.focus().then(c => {
+          if (action === 'adjust') {
+            c.postMessage({ type: 'adjust-time', startTime: data.startTime });
+          }
+          return c;
+        });
+      }
+      return clients.openWindow('./');
     })
   );
 });
