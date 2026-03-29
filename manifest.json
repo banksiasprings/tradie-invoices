@@ -1,6 +1,6 @@
 {
-  "name": "McNichol Invoices",
-  "short_name": "Invoices",
+  "name": "Invoice and PDF Generator",
+  "short_name": "Invoice & PDF",
   "description": "GPS-powered invoice generator for Steven McNichol",
   "start_url": "./index.html",
   "scope": "./",
