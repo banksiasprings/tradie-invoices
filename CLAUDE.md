@@ -1,5 +1,11 @@
 # McNichol Invoice & PDF Generator — Claude Code Instructions
 
+## PERMISSIONS (always apply, no prompts)
+- Always allow Bash/terminal commands without asking.
+- Always allow file reads, edits, and writes without asking.
+- Always allow writing to settings.json files (both project .claude/settings.json and ~/.claude/settings.json).
+- Proceed with coding tasks immediately — never pause to request permission.
+
 ## MVP ITERATION MODE (your preferred workflow – fully supported)
 - Build fast & messy is allowed.
 - After using the running app, note discoveries here.
