@@ -425,8 +425,46 @@
     <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
     <div style="height:12px"></div>
     <button class="btn btn-secondary" onclick="exportData()">Export all data (JSON backup)</button>
+    <div class="card" style="margin-top:12px">
+      <div class="card-title">📱 Android App (APK)</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Download & install directly on your Android phone. Enable "Install unknown apps" in phone settings first.</div>
+      <div id="apk-download-area">
+        <button class="btn btn-secondary" onclick="loadApkRelease()" style="width:100%">Check for latest APK…</button>
+      </div>
+    </div>
   </div>
 </div>
+
+<script>
+async function loadApkRelease(){
+  const area = document.getElementById('apk-download-area');
+  area.innerHTML = '<div style="color:var(--text2);font-size:13px">Checking GitHub…</div>';
+  try {
+    const res = await fetch('https://api.github.com/repos/banksiasprings/mcnichol-invoices/releases/latest');
+    const data = await res.json();
+    const apk = data.assets && data.assets.find(a => a.name.endsWith('.apk'));
+    if(apk){
+      area.innerHTML = `
+        <div style="font-size:12px;color:var(--text2);margin-bottom:8px">${data.tag_name} — ${(apk.size/1024/1024).toFixed(1)} MB</div>
+        <a href="${apk.browser_download_url}" download style="display:block;background:var(--green);color:#fff;text-align:center;padding:12px;border-radius:var(--radius);font-weight:700;font-size:15px;text-decoration:none">⬇ Download APK</a>
+        <div style="font-size:11px;color:var(--text3);margin-top:6px;text-align:center">Published ${new Date(data.published_at).toLocaleDateString('en-AU')}</div>`;
+    } else {
+      area.innerHTML = '<div style="color:var(--text2);font-size:13px">No APK in latest release yet.</div>';
+    }
+  } catch(e) {
+    area.innerHTML = '<div style="color:var(--red);font-size:13px">Could not reach GitHub. Check connection.</div>';
+  }
+}
+// Auto-load on settings screen open
+const _origLoadSettings = typeof loadSettings === 'function' ? loadSettings : null;
+document.addEventListener('DOMContentLoaded', () => {
+  const origShow = window.showScreen;
+  window.showScreen = function(id, btn){
+    origShow && origShow(id, btn);
+    if(id === 'settings') loadApkRelease();
+  };
+});
+</script>
 
 <!-- SAVED INVOICES SCREEN -->
 <div id="screen-saved" class="screen">
