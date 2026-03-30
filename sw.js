@@ -1,4 +1,5 @@
-const CACHE = 'mcnichol-v4';
+
+const CACHE = 'invoice-pdf-v4';
 const ASSETS = [
   './index.html',
   './manifest.json',

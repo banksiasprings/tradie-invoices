@@ -194,7 +194,7 @@
       <!-- Labour rates -->
       <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px">
         <div style="font-size:13px;color:var(--text2);margin-bottom:8px">
-          My rate: <strong style="color:var(--green)" id="steven-rate-label">$55/hr</strong>
+          My rate: <strong style="color:var(--green)" id="owner-rate-label">$55/hr</strong>
         </div>
         <div class="toggle-row" style="padding:0">
           <span style="font-size:14px">Extra labourer on site today?</span>
@@ -234,7 +234,7 @@
       </div>
     </div>
     <div class="card">
-      <div style="font-size:13px;color:var(--text2);margin-bottom:2px">My rate: <strong style="color:var(--green)" id="active-steven-rate">$55/hr</strong></div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:2px">My rate: <strong style="color:var(--green)" id="active-owner-rate">$55/hr</strong></div>
       <div class="toggle-row" style="padding:8px 0 0">
         <span style="font-size:14px">Extra labourer on site today?</span>
         <label class="toggle"><input type="checkbox" id="toggle-son2" onchange="updateSon()"><span class="toggle-slider"></span></label>
@@ -623,8 +623,8 @@ const InvoiceDB={
 };
 
 const DEFAULTS={
-  name:'Your Business Name',abn:'[REDACTED]',address:'[REDACTED]',
-  phone:'[REDACTED]',email:'[REDACTED]',bsb:'[REDACTED]',account:'[REDACTED]',
+  name:'Your Business Name',abn:'',address:'',
+  phone:'',email:'',bsb:'',account:'',
   client:'Muirlawn Pty Ltd',service:'Construction and Maintenance services',
   rate:55, sonrate:30, incpct:7.8, invnum:45,
   machineRates:{Excavator:150,Grader:180,Bobcat:120,Dozer:200,Tractor:110}
@@ -874,11 +874,11 @@ let timerInterval=null;
 function initCheckinScreen(){
   document.getElementById('checkin-date').textContent=fmtDate(todayStr());
   const s=S();
-  const stevenRate='$'+s.rate+'/hr';
+  const ownerRate='$'+s.rate+'/hr';
   const sonRate='$'+(s.sonrate||30)+'/hr';
-  document.getElementById('steven-rate-label').textContent=stevenRate;
+  document.getElementById('owner-rate-label').textContent=ownerRate;
   document.getElementById('son-rate-label').textContent=sonRate;
-  document.getElementById('active-steven-rate').textContent=stevenRate;
+  document.getElementById('active-owner-rate').textContent=ownerRate;
   document.getElementById('active-son-rate').textContent=sonRate;
   const sel=document.getElementById('checkin-site');
   sel.innerHTML='<option value="">Select site…</option>';
@@ -1353,9 +1353,9 @@ function saveSettings(){
   s.machineRates=mr;
   DB.set('settings',s);
   // Refresh rate labels on checkin screen
-  document.getElementById('steven-rate-label').textContent='$'+s.rate+'/hr';
+  document.getElementById('owner-rate-label').textContent='$'+s.rate+'/hr';
   document.getElementById('son-rate-label').textContent='$'+(s.sonrate||30)+'/hr';
-  document.getElementById('active-steven-rate').textContent='$'+s.rate+'/hr';
+  document.getElementById('active-owner-rate').textContent='$'+s.rate+'/hr';
   document.getElementById('active-son-rate').textContent='$'+(s.sonrate||30)+'/hr';
   toast('Settings saved ✓');
 }
@@ -1608,7 +1608,7 @@ function exportData(){
   const d={settings:S(),days:days(),invoices:invoices(),sites:sites()},
         b=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}),
         u=URL.createObjectURL(b),a=document.createElement('a');
-  a.href=u;a.download='mcnichol_invoices_backup.json';a.click();URL.revokeObjectURL(u);toast('Data exported ✓');
+  a.href=u;a.download='invoices_backup.json';a.click();URL.revokeObjectURL(u);toast('Data exported ✓');
 }
 
 // --- Saved Invoices ---

@@ -1,7 +1,7 @@
 {
-  "name": "Invoice and PDF Generator",
-  "short_name": "Invoice & PDF",
-  "description": "GPS-powered invoice generator for Your Business Name",
+  "name": "Invoice & PDF Generator",
+  "short_name": "Invoice PDF",
+  "description": "GPS-powered timesheet, invoice and PDF generator for tradespeople. Track work hours on-site with automatic geofencing, manage clients, and generate professional invoices.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
