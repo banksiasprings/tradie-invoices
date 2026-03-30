@@ -197,14 +197,22 @@
           My rate: <strong style="color:var(--green)" id="steven-rate-label">$55/hr</strong>
         </div>
         <div class="toggle-row" style="padding:0">
-          <span style="font-size:14px">Son working today?</span>
+          <span style="font-size:14px">Extra labourer on site today?</span>
           <label class="toggle"><input type="checkbox" id="toggle-son" onchange="toggleSonSection('son-section','toggle-son')"><span class="toggle-slider"></span></label>
         </div>
         <div id="son-section" class="son-box" style="display:none">
-          <label>Son's hours (leave blank = same as mine)</label>
+          <label>Extra labourer hours (blank = same as mine)</label>
           <input type="number" id="son-hours-input" placeholder="Same as mine" step="0.25" min="0">
-          <div style="font-size:12px;color:var(--text2);margin-top:6px">Son's rate: <strong id="son-rate-label">$30/hr</strong></div>
+          <div style="font-size:12px;color:var(--text2);margin-top:6px">Extra labourer rate: <strong id="son-rate-label">$30/hr</strong></div>
         </div>
+      </div>
+      <!-- Machine hire -->
+      <div class="toggle-row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <span style="font-size:14px;font-weight:600">Machine hire?</span>
+        <label class="toggle"><input type="checkbox" id="toggle-machine" onchange="document.getElementById('machine-section').style.display=this.checked?'block':'none'"><span class="toggle-slider"></span></label>
+      </div>
+      <div id="machine-section" style="display:none;margin-top:8px">
+        <div id="machine-idle-list"></div>
       </div>
       <button class="btn btn-primary" onclick="startDay()">Start Day</button>
     </div>
@@ -228,13 +236,21 @@
     <div class="card">
       <div style="font-size:13px;color:var(--text2);margin-bottom:2px">My rate: <strong style="color:var(--green)" id="active-steven-rate">$55/hr</strong></div>
       <div class="toggle-row" style="padding:8px 0 0">
-        <span style="font-size:14px">Son working today?</span>
+        <span style="font-size:14px">Extra labourer on site today?</span>
         <label class="toggle"><input type="checkbox" id="toggle-son2" onchange="updateSon()"><span class="toggle-slider"></span></label>
       </div>
       <div id="son-section2" class="son-box" style="display:none">
-        <label>Son's hours override (blank = same as mine)</label>
+        <label>Extra labourer hours override (blank = same as mine)</label>
         <input type="number" id="son-hours-input2" placeholder="Same as mine" step="0.25" min="0" onchange="updateSon()">
-        <div style="font-size:12px;color:var(--text2);margin-top:6px">Son's rate: <strong id="active-son-rate">$30/hr</strong></div>
+        <div style="font-size:12px;color:var(--text2);margin-top:6px">Extra labourer rate: <strong id="active-son-rate">$30/hr</strong></div>
+      </div>
+      <!-- Machine hire active -->
+      <div class="toggle-row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <span style="font-size:14px;font-weight:600">Machine hire?</span>
+        <label class="toggle"><input type="checkbox" id="toggle-machine2" onchange="document.getElementById('machine-section2').style.display=this.checked?'block':'none';if(this.checked)renderMachineCheckboxes('machine-active-list',activeDay()&&activeDay().machines||[],'active')"><span class="toggle-slider"></span></label>
+      </div>
+      <div id="machine-section2" style="display:none;margin-top:8px">
+        <div id="machine-active-list"></div>
       </div>
     </div>
   </div>
@@ -250,10 +266,11 @@
         <tr><td style="color:var(--text2)">Lunch</td><td style="text-align:right;font-weight:600" id="rev-lunch"></td></tr>
         <tr><td style="color:var(--text2)">My hours</td><td style="text-align:right;font-weight:600" id="rev-hours"></td></tr>
         <tr><td style="color:var(--text2)">My labour</td><td style="text-align:right;font-weight:600" id="rev-my-earn"></td></tr>
-        <tr id="rev-son-row" style="display:none"><td style="color:var(--text2)">Son's hours</td><td style="text-align:right;font-weight:600" id="rev-son-hours"></td></tr>
-        <tr id="rev-son-earn-row" style="display:none"><td style="color:var(--text2)">Son's labour</td><td style="text-align:right;font-weight:600" id="rev-son-earn"></td></tr>
+        <tr id="rev-son-row" style="display:none"><td style="color:var(--text2)">Extra labourer hrs</td><td style="text-align:right;font-weight:600" id="rev-son-hours"></td></tr>
+        <tr id="rev-son-earn-row" style="display:none"><td style="color:var(--text2)">Extra labourer</td><td style="text-align:right;font-weight:600" id="rev-son-earn"></td></tr>
         <tr><td style="color:var(--text2);font-weight:700;border-top:1px solid var(--border);padding-top:4px">Total</td><td style="text-align:right;font-weight:700;font-size:18px;color:var(--green);border-top:1px solid var(--border);padding-top:4px" id="rev-earnings"></td></tr>
       </table>
+      <div id="rev-machine-info" style="display:none;font-size:12px;color:var(--text2);padding:4px 0;border-top:1px solid var(--border);margin-top:4px"></div>
       <div class="btn-row">
         <button class="btn btn-secondary" onclick="editDay()">Edit</button>
         <button class="btn btn-primary" onclick="saveDay()">Save Day ✓</button>
@@ -282,6 +299,18 @@
       <div class="card-title">Rate for this invoice</div>
       <div style="font-size:24px;font-weight:700;font-family:Arial,sans-serif" id="inv-rate-display">$55.00/hr</div>
       <div style="font-size:11px;color:var(--text2);margin-top:4px" id="inv-rate-increase"></div>
+    </div>
+    <div class="card">
+      <div class="toggle-row">
+        <span style="font-size:14px">Add GST (10%)</span>
+        <label class="toggle"><input type="checkbox" id="toggle-gst" onchange="saveGstPref();renderInvoice()"><span class="toggle-slider"></span></label>
+      </div>
+    </div>
+    <div class="card">
+      <div class="field" style="margin:0">
+        <label>Bill to</label>
+        <select id="inv-client-select" onchange="renderInvoice()" style="margin-top:5px;width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:Arial,sans-serif;font-size:14px;background:var(--surface);color:var(--text)"></select>
+      </div>
     </div>
     <div id="invoice-day-list"></div>
     <!-- Labour subtotals -->
@@ -348,7 +377,6 @@
     </div>
     <div class="card">
       <div class="card-title">Invoice details</div>
-      <div class="field"><label>Client name</label><input type="text" id="s-client"></div>
       <div class="field"><label>Service description</label><input type="text" id="s-service"></div>
       <div class="field-row">
         <div class="field"><label>Next invoice #</label><input type="number" id="s-invnum"></div>
@@ -356,12 +384,29 @@
       </div>
     </div>
     <div class="card">
-      <div class="card-title">Labour rates</div>
+      <div class="card-title">Clients</div>
+      <div id="clients-list"></div>
+      <button class="btn btn-secondary" style="margin-top:8px" onclick="addClient()">+ Add client</button>
+    </div>
+    <div class="card">
+      <div class="card-title">Standard Rate</div>
       <div class="field-row">
         <div class="field"><label>My rate ($/hr)</label><input type="number" id="s-rate" step="0.05"></div>
-        <div class="field"><label>Son's rate ($/hr)</label><input type="number" id="s-sonrate" step="0.05"></div>
+        <div class="field"><label>Extra labourer rate ($/hr)</label><input type="number" id="s-sonrate" step="0.05"></div>
       </div>
       <div style="font-size:11px;color:var(--text2)">These rates appear as labels on invoices and can be updated here.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Machine hire rates ($/hr)</div>
+      <div class="field-row">
+        <div class="field"><label>Excavator</label><input type="number" id="s-mr-Excavator" step="1" min="0"></div>
+        <div class="field"><label>Grader</label><input type="number" id="s-mr-Grader" step="1" min="0"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Bobcat</label><input type="number" id="s-mr-Bobcat" step="1" min="0"></div>
+        <div class="field"><label>Dozer</label><input type="number" id="s-mr-Dozer" step="1" min="0"></div>
+      </div>
+      <div class="field"><label>Tractor</label><input type="number" id="s-mr-Tractor" step="1" min="0"></div>
     </div>
     <div class="card">
       <div class="card-title">Rate increase benchmarks (AU)</div>
@@ -439,15 +484,46 @@
     <div class="field"><label>Lunch break (minutes)</label><input type="number" id="edit-lunch" placeholder="30" min="0"></div>
     <div style="margin-bottom:14px">
       <div class="toggle-row" style="padding:6px 0">
-        <span style="font-size:14px">Son worked this day?</span>
+        <span style="font-size:14px">Extra labourer on site this day?</span>
         <label class="toggle"><input type="checkbox" id="edit-son-toggle" onchange="toggleSonSection('edit-son-section','edit-son-toggle')"><span class="toggle-slider"></span></label>
       </div>
       <div id="edit-son-section" class="son-box" style="display:none">
-        <label>Son's hours (blank = same as mine)</label>
+        <label>Extra labourer hours (blank = same as mine)</label>
         <input type="number" id="edit-son-hours" placeholder="Same as mine" step="0.25" min="0">
       </div>
     </div>
+    <!-- Machine hire in edit -->
+    <div class="field">
+      <div class="toggle-row" style="padding:6px 0">
+        <span style="font-size:14px">Machine hire this day?</span>
+        <label class="toggle"><input type="checkbox" id="edit-machine-toggle" onchange="document.getElementById('edit-machine-section').style.display=this.checked?'block':'none';if(this.checked)renderMachineCheckboxes('machine-edit-list',activeDay()&&activeDay().machines||[],'edit')"><span class="toggle-slider"></span></label>
+      </div>
+      <div id="edit-machine-section" style="display:none;margin-top:8px">
+        <div id="machine-edit-list"></div>
+      </div>
+    </div>
     <button class="btn btn-primary" style="margin-top:8px" onclick="saveEdit()">Update Day</button>
+  </div>
+</div>
+
+<!-- CLIENT MODAL -->
+<div class="modal-bg" id="client-modal">
+  <div class="modal">
+    <div class="modal-title" id="client-modal-title">Add Client <button class="modal-close" onclick="closeClientModal()">✕</button></div>
+    <div class="field"><label>Company name</label><input type="text" id="cm-company" placeholder="e.g. Muirlawn Pty Ltd"></div>
+    <div class="field"><label>Contact name</label><input type="text" id="cm-contact" placeholder="e.g. John Smith"></div>
+    <div class="field"><label>ABN</label><input type="text" id="cm-abn" placeholder="e.g. 12 345 678 901"></div>
+    <div class="field"><label>Address</label><input type="text" id="cm-address"></div>
+    <div class="field-row">
+      <div class="field"><label>Email</label><input type="email" id="cm-email"></div>
+      <div class="field"><label>Phone</label><input type="tel" id="cm-phone"></div>
+    </div>
+    <div class="toggle-row">
+      <span style="font-size:14px">Set as default client</span>
+      <label class="toggle"><input type="checkbox" id="cm-default"><span class="toggle-slider"></span></label>
+    </div>
+    <input type="hidden" id="cm-edit-id">
+    <button class="btn btn-primary" style="margin-top:12px" onclick="saveClient()">Save Client</button>
   </div>
 </div>
 
@@ -463,7 +539,8 @@ const DEFAULTS={
   name:'Your Business Name',abn:'[REDACTED]',address:'[REDACTED]',
   phone:'[REDACTED]',email:'[REDACTED]',bsb:'[REDACTED]',account:'[REDACTED]',
   client:'Muirlawn Pty Ltd',service:'Construction and Maintenance services',
-  rate:55, sonrate:30, incpct:7.8, invnum:45
+  rate:55, sonrate:30, incpct:7.8, invnum:45,
+  machineRates:{Excavator:150,Grader:180,Bobcat:120,Dozer:200,Tractor:110}
 };
 
 function S(){return DB.def('settings',DEFAULTS)}
@@ -471,6 +548,9 @@ function days(){return DB.def('days',[])}
 function invoices(){return DB.def('invoices',[])}
 function sites(){return DB.def('sites',[])}
 function activeDay(){return DB.get('activeDay')}
+
+const MACHINES=['Excavator','Grader','Bobcat','Dozer','Tractor'];
+function defaultMachineRates(){return{Excavator:150,Grader:180,Bobcat:120,Dozer:200,Tractor:110};}
 
 // Offline detection
 window.addEventListener('online',()=>document.getElementById('offline-banner').classList.remove('show'));
@@ -483,7 +563,7 @@ function showScreen(id,btn){
   document.getElementById('screen-'+id).classList.add('active');
   if(btn) btn.classList.add('active');
   if(id==='log') renderLog();
-  if(id==='invoice') renderInvoice();
+  if(id==='invoice'){populateClientDropdown();renderInvoice();}
   if(id==='analytics') renderAnalytics();
   if(id==='settings') loadSettings();
 }
@@ -499,6 +579,43 @@ function fmtMoney(n){return'$'+n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',')
 function toggleSonSection(sectionId, toggleId){
   const checked=document.getElementById(toggleId).checked;
   document.getElementById(sectionId).style.display=checked?'block':'none';
+}
+
+// --- Machine hire helpers ---
+function renderMachineCheckboxes(containerId,selectedMachines,prefix){
+  const s=S(),mr=s.machineRates||defaultMachineRates();
+  const el=document.getElementById(containerId);if(!el)return;
+  el.innerHTML=MACHINES.map(name=>{
+    const sel=(selectedMachines||[]).find(m=>m.name===name);
+    const checked=!!sel;
+    const hv=sel&&sel.hours!==null&&sel.hours!==undefined?sel.hours:'';
+    return`<div style="padding:8px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <label class="toggle"><input type="checkbox" id="mc-${prefix}-${name}" ${checked?'checked':''} onchange="onMachineToggle('${prefix}','${name}')"><span class="toggle-slider"></span></label>
+        <div style="flex:1"><div style="font-size:14px">${name}</div><div style="font-size:11px;color:var(--text2)">$${mr[name]||0}/hr</div></div>
+        <div id="mc-${prefix}-${name}-wrap" style="${checked?'':'display:none'}">
+          <input type="number" id="mc-${prefix}-${name}-hrs" value="${hv}" placeholder="hrs" step="0.25" min="0" style="width:65px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-family:Arial,sans-serif;font-size:13px;text-align:center">
+          <div style="font-size:10px;color:var(--text3);text-align:center;margin-top:2px">blank=mine</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+function onMachineToggle(prefix,name){
+  const checked=document.getElementById('mc-'+prefix+'-'+name).checked;
+  const wrap=document.getElementById('mc-'+prefix+'-'+name+'-wrap');
+  if(wrap) wrap.style.display=checked?'':'none';
+  if(prefix==='active'){
+    const ad=activeDay();if(!ad)return;
+    if(!ad.machines)ad.machines=[];
+    if(checked){if(!ad.machines.find(m=>m.name===name))ad.machines.push({name,hours:null});}
+    else{ad.machines=ad.machines.filter(m=>m.name!==name);}
+    DB.set('activeDay',ad);
+  }
+}
+function readMachinesFromUI(prefix){
+  return MACHINES.filter(name=>{const cb=document.getElementById('mc-'+prefix+'-'+name);return cb&&cb.checked;})
+    .map(name=>{const hEl=document.getElementById('mc-'+prefix+'-'+name+'-hrs');return{name,hours:hEl&&hEl.value?parseFloat(hEl.value):null};});
 }
 
 // --- GPS & Geofence ---
@@ -593,6 +710,7 @@ function autoStartTimer(site){
     rate:s.rate,sonrate:s.sonrate||30,
     sonWorking:false,sonHours:null,
     lunchMins:0,lunchStart:null,
+    machines:[],
     autoStarted:true
   };
   DB.set('activeDay',ad);
@@ -677,6 +795,7 @@ function initCheckinScreen(){
   const sel=document.getElementById('checkin-site');
   sel.innerHTML='<option value="">Select site…</option>';
   sites().forEach(st=>{sel.innerHTML+=`<option value="${st.name}">${st.name}</option>`});
+  renderMachineCheckboxes('machine-idle-list',[],'idle');
   document.getElementById('checkin-start').value=nowTime();
   const ad=activeDay();
   if(ad) showActiveTimer(ad);
@@ -695,6 +814,7 @@ function startDay(){
     site,start,date:todayStr(),
     rate:s.rate,sonrate:s.sonrate||30,
     sonWorking,sonHours:sonHoursVal?parseFloat(sonHoursVal):null,
+    machines:readMachinesFromUI('idle'),
     lunchMins:0,lunchStart:null
   };
   DB.set('activeDay',ad);showActiveTimer(ad);toast('Day started — good luck out there!');
@@ -711,6 +831,9 @@ function showActiveTimer(ad){
   sonToggle.checked=!!ad.sonWorking;
   document.getElementById('son-section2').style.display=ad.sonWorking?'block':'none';
   document.getElementById('son-hours-input2').value=ad.sonHours!==null&&ad.sonHours!==undefined?ad.sonHours:'';
+  renderMachineCheckboxes('machine-active-list',ad.machines||[],'active');
+  document.getElementById('toggle-machine2').checked=!!(ad.machines&&ad.machines.length);
+  document.getElementById('machine-section2').style.display=(ad.machines&&ad.machines.length)?'block':'none';
   updateLunchDisplay(ad);
   clearInterval(timerInterval);timerInterval=setInterval(tickTimer,1000);tickTimer();
 }
@@ -728,7 +851,7 @@ function tickTimer(){
     totalEarn+=sonH*(ad.sonrate||30);
   }
   document.getElementById('timer-earnings').textContent=fmtMoney(totalEarn)+(ad.sonWorking?' (combined)':'');
-  document.getElementById('timer-status').textContent=ad.lunchStart?'On lunch break…':ad.sonWorking?'Working (son also on site)':'Working';
+  document.getElementById('timer-status').textContent=ad.lunchStart?'On lunch break…':ad.sonWorking?'Working (extra labourer on site)':'Working';
 }
 
 function toggleLunch(){
@@ -766,6 +889,12 @@ function finishDay(){
   ad.sonWorking=document.getElementById('toggle-son2').checked;
   const sv=document.getElementById('son-hours-input2').value;
   ad.sonHours=sv?parseFloat(sv):null;
+  // Capture machine state from active UI
+  const activeMachineCheck=document.getElementById('toggle-machine2');
+  if(activeMachineCheck&&activeMachineCheck.checked){
+    const liveMachines=readMachinesFromUI('active');
+    if(liveMachines.length) ad.machines=liveMachines;
+  }
   ad.finish=nowTime();DB.set('activeDay',ad);showReview(ad);
 }
 
@@ -773,25 +902,26 @@ function showReview(ad){
   document.getElementById('checkin-idle').style.display='none';
   document.getElementById('checkin-active').style.display='none';
   document.getElementById('checkin-review').style.display='block';
-  const hours=Math.max(0,timeDiffHours(ad.start,ad.finish)-(ad.lunchMins||0)/60);
-  const myEarn=hours*ad.rate;
-  const sonrate=ad.sonrate||S().sonrate||30;
-  const sonH=ad.sonWorking?(ad.sonHours!==null&&ad.sonHours!==undefined?ad.sonHours:hours):0;
-  const sonEarn=ad.sonWorking?sonH*sonrate:0;
-  const total=myEarn+sonEarn;
+  const{h,myE,sonH,sonE,total,sonrate,machineTotal,machineLines}=dayTotals(ad);
   document.getElementById('rev-site').textContent=ad.site;
   document.getElementById('rev-start').textContent=ad.start;
   document.getElementById('rev-finish').textContent=ad.finish;
   document.getElementById('rev-lunch').textContent=ad.lunchMins?ad.lunchMins+' min':'None';
-  document.getElementById('rev-hours').textContent=formatHours(hours);
-  document.getElementById('rev-my-earn').textContent=fmtMoney(myEarn)+' ('+formatHours(hours)+' × $'+ad.rate+'/hr)';
+  document.getElementById('rev-hours').textContent=formatHours(h);
+  document.getElementById('rev-my-earn').textContent=fmtMoney(myE)+' ('+formatHours(h)+' × $'+ad.rate+'/hr)';
   const sonRow=document.getElementById('rev-son-row'),sonEarnRow=document.getElementById('rev-son-earn-row');
   if(ad.sonWorking){
     sonRow.style.display='';sonEarnRow.style.display='';
     document.getElementById('rev-son-hours').textContent=formatHours(sonH)+(ad.sonHours===null||ad.sonHours===undefined?' (same as mine)':'');
-    document.getElementById('rev-son-earn').textContent=fmtMoney(sonEarn)+' × $'+sonrate+'/hr';
-  } else {
-    sonRow.style.display='none';sonEarnRow.style.display='none';
+    document.getElementById('rev-son-earn').textContent=fmtMoney(sonE)+' × $'+sonrate+'/hr';
+  } else {sonRow.style.display='none';sonEarnRow.style.display='none';}
+  // Machine info
+  const machineRevEl=document.getElementById('rev-machine-info');
+  if(machineRevEl){
+    if(machineLines&&machineLines.length){
+      machineRevEl.innerHTML=machineLines.map(ml=>`${ml.name}: ${ml.hours.toFixed(2)}h × $${ml.rate}/hr = ${fmtMoney(ml.total)}`).join(' | ');
+      machineRevEl.style.display='block';
+    } else {machineRevEl.innerHTML='';machineRevEl.style.display='none';}
   }
   document.getElementById('rev-earnings').textContent=fmtMoney(total);
 }
@@ -804,6 +934,9 @@ function editDay(){
   document.getElementById('edit-son-toggle').checked=!!ad.sonWorking;
   document.getElementById('edit-son-section').style.display=ad.sonWorking?'block':'none';
   document.getElementById('edit-son-hours').value=ad.sonHours!==null&&ad.sonHours!==undefined?ad.sonHours:'';
+  renderMachineCheckboxes('machine-edit-list',ad.machines||[],'edit');
+  document.getElementById('edit-machine-toggle').checked=!!(ad.machines&&ad.machines.length);
+  document.getElementById('edit-machine-section').style.display=(ad.machines&&ad.machines.length)?'block':'none';
   document.getElementById('edit-modal').classList.add('open');
 }
 
@@ -815,6 +948,8 @@ function saveEdit(){
   ad.sonWorking=document.getElementById('edit-son-toggle').checked;
   const sv=document.getElementById('edit-son-hours').value;
   ad.sonHours=sv?parseFloat(sv):null;
+  const editMachineToggle=document.getElementById('edit-machine-toggle');
+  ad.machines=editMachineToggle&&editMachineToggle.checked?readMachinesFromUI('edit'):[];
   if(!ad.rate) ad.rate=S().rate;
   if(!ad.sonrate) ad.sonrate=S().sonrate||30;
   DB.set('activeDay',ad);closeEditModal();showReview(ad);
@@ -836,6 +971,10 @@ function saveDay(){
   document.getElementById('toggle-son').checked=false;
   document.getElementById('son-section').style.display='none';
   document.getElementById('son-hours-input').value='';
+  document.getElementById('toggle-machine').checked=false;
+  document.getElementById('machine-section').style.display='none';
+  document.getElementById('toggle-machine2').checked=false;
+  document.getElementById('machine-section2').style.display='none';
 }
 
 function closeEditModal(){document.getElementById('edit-modal').classList.remove('open')}
@@ -847,7 +986,17 @@ function dayTotals(d){
   const sonrate=d.sonrate||S().sonrate||30;
   const sonH=d.sonWorking?(d.sonHours!==null&&d.sonHours!==undefined?d.sonHours:h):0;
   const sonE=d.sonWorking?sonH*sonrate:0;
-  return{h,myE,sonH,sonE,total:myE+sonE,sonrate};
+  const s=S();
+  const mr=s.machineRates||defaultMachineRates();
+  let machineTotal=0;const machineLines=[];
+  (d.machines||[]).forEach(m=>{
+    const mh=m.hours!==null&&m.hours!==undefined?m.hours:h;
+    const mrate=mr[m.name]||0;
+    const me=mh*mrate;
+    machineTotal+=me;
+    machineLines.push({name:m.name,hours:mh,rate:mrate,total:me});
+  });
+  return{h,myE,sonH,sonE,total:myE+sonE+machineTotal,sonrate,machineTotal,machineLines};
 }
 
 // --- Log ---
@@ -866,7 +1015,8 @@ function renderLog(){
         <div class="detail">${d.site} · ${d.start}–${d.finish||'?'} · ${d.lunchMins?d.lunchMins+'min lunch':'no lunch'}</div>
         <div style="margin-top:4px">
           <span class="badge badge-green">Earthmoving</span>
-          ${d.sonWorking?`<span class="badge badge-blue" style="margin-left:4px">Son ${formatHours(sonH)} @$${sonrate}</span>`:''}
+          ${d.sonWorking?`<span class="badge badge-blue" style="margin-left:4px">Extra ${formatHours(sonH)} @$${sonrate}</span>`:''}
+          ${(d.machines||[]).map(m=>`<span class="badge badge-amber" style="margin-left:4px">${m.name}</span>`).join('')}
           ${d.invoiced?'<span class="badge badge-amber" style="margin-left:4px">Invoiced</span>':''}
         </div>
       </div>
@@ -883,23 +1033,26 @@ function renderInvoice(){
   document.getElementById('inv-num-display').textContent=String(s.invnum).padStart(4,'0');
   document.getElementById('inv-rate-display').textContent='$'+parseFloat(s.rate).toFixed(2)+'/hr';
   document.getElementById('inv-rate-increase').textContent='After generating: rate becomes $'+nr.toFixed(2)+'/hr (+$'+pi.toFixed(2)+')';
-  let te=0,th=0,sonTotal=0,sonTotalHrs=0;
+  let te=0,th=0,sonTotal=0,sonTotalHrs=0,machineAgg={},grandMachineTotal=0;
   const le=document.getElementById('invoice-day-list');le.innerHTML='';
   ui.forEach(d=>{
-    const{h,myE,sonH,sonE,total,sonrate}=dayTotals(d);
-    te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;
+    const{h,myE,sonH,sonE,total,sonrate,machineTotal:mt,machineLines:ml}=dayTotals(d);
+    te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;grandMachineTotal+=mt;
+    ml.forEach(m=>{if(!machineAgg[m.name])machineAgg[m.name]={hours:0,rate:m.rate,total:0};machineAgg[m.name].hours+=m.hours;machineAgg[m.name].total+=m.total;});
     const i=document.createElement('div');i.className='card';
     i.innerHTML=`<div class="day-item" style="border:none;padding:0">
       <div class="day-item-left">
         <div class="date">${fmtDate(d.date)}</div>
-        <div class="detail">${d.site} · ${formatHours(h)} · $${d.rate}/hr${d.sonWorking?` + Son ${formatHours(sonH)} @$${sonrate}`:''}</div>
+        <div class="detail">${d.site} · ${formatHours(h)} · $${d.rate}/hr${d.sonWorking?` + Extra ${formatHours(sonH)} @$${sonrate}`:''}${ml.length?' + '+ml.map(m=>m.name).join(', '):''}</div>
       </div>
       <div class="day-item-right"><div class="amount">${fmtMoney(total)}</div><div class="hours">Earthmoving</div></div>
     </div>`;
     le.appendChild(i);
   });
-  const grandTotal=te+sonTotal;
-  document.getElementById('inv-total-display').textContent=fmtMoney(grandTotal);
+  const grandTotal=te+sonTotal+grandMachineTotal;
+  const gstOn=document.getElementById('toggle-gst')&&document.getElementById('toggle-gst').checked;
+  const gst=gstOn?grandTotal*0.1:0;
+  document.getElementById('inv-total-display').textContent=fmtMoney(grandTotal+gst);
   document.getElementById('inv-days-display').textContent=ui.length;
   document.getElementById('inv-hours-display').textContent=th.toFixed(1);
   document.getElementById('invoice-subtitle').textContent=ui.length+' day'+(ui.length!==1?'s':'')+' to invoice';
@@ -908,19 +1061,24 @@ function renderInvoice(){
   if(ui.length){
     sc.style.display='block';
     const sonrateDisplay=ui.find(d=>d.sonWorking)?ui.find(d=>d.sonWorking).sonrate||(S().sonrate||30):S().sonrate||30;
+    const machineNames=Object.keys(machineAgg);
     scContent.innerHTML=`
       <div class="inv-subtotal-row subdued">
         <span>My labour (${th.toFixed(2)}h × $${parseFloat(s.rate).toFixed(2)}/hr)</span>
         <span>${fmtMoney(te)}</span>
       </div>
       ${sonTotal>0?`<div class="inv-subtotal-row subdued">
-        <span>Son's labour (${sonTotalHrs.toFixed(2)}h × $${sonrateDisplay.toFixed(2)}/hr)</span>
+        <span>Extra labourer (${sonTotalHrs.toFixed(2)}h × $${sonrateDisplay.toFixed(2)}/hr)</span>
         <span>${fmtMoney(sonTotal)}</span>
       </div>`:''}
+      ${grandMachineTotal>0?machineNames.map(n=>`<div class="inv-subtotal-row subdued"><span>${n} hire (${machineAgg[n].hours.toFixed(2)}h × $${machineAgg[n].rate}/hr)</span><span>${fmtMoney(machineAgg[n].total)}</span></div>`).join(''):''}
+      ${grandMachineTotal>0?`<div class="inv-subtotal-row subdued"><span>Machine hire subtotal</span><span>${fmtMoney(grandMachineTotal)}</span></div>`:''}
       <div class="inv-subtotal-row total">
         <span>Total Payable</span>
         <span>${fmtMoney(grandTotal)}</span>
-      </div>`;
+      </div>
+      ${gstOn?`<div class="inv-subtotal-row subdued"><span>GST (10%)</span><span>${fmtMoney(gst)}</span></div>`:''}
+      ${gstOn?`<div class="inv-subtotal-row total"><span>Total inc. GST</span><span>${fmtMoney(grandTotal+gst)}</span></div>`:''}`;
   } else {
     sc.style.display='none';
   }
@@ -928,27 +1086,41 @@ function renderInvoice(){
 
 function buildInvoiceHTML(){
   const s=S(),ui=days().filter(d=>!d.invoiced).sort((a,b)=>a.date.localeCompare(b.date));
+  const c=getSelectedClient();
+  const clientLines=[c.company,c.contact,c.abn?'ABN '+c.abn:'',c.address,c.email,c.phone].filter(Boolean).join('<br>');
   let rows='',te=0,th=0,sonTotal=0,sonTotalHrs=0;
   let sonrateUsed=s.sonrate||30;
+  const machineAgg={};
   ui.forEach(d=>{
-    const{h,myE,sonH,sonE,total,sonrate}=dayTotals(d);
+    const{h,myE,sonH,sonE,total,sonrate,machineLines:ml}=dayTotals(d);
     te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;
     if(d.sonWorking) sonrateUsed=sonrate;
+    ml.forEach(m=>{if(!machineAgg[m.name])machineAgg[m.name]={hours:0,rate:m.rate,total:0};machineAgg[m.name].hours+=m.hours;machineAgg[m.name].total+=m.total;});
     rows+=`<tr>
       <td>${fmtDate(d.date)}</td><td>${d.start}</td><td>${d.finish||'—'}</td>
       <td>${d.lunchMins?d.lunchMins+'min':'—'}</td>
       <td>${h.toFixed(2)}</td><td>$${d.rate.toFixed(2)}</td>
-      <td>${d.sonWorking?'Labour + Son':'Earthmoving'}</td>
+      <td>${d.sonWorking?'Labour+Extra':'Earthmoving'}</td>
       <td style="text-align:right">$${total.toFixed(2)}</td>
     </tr>`;
   });
-  const grandTotal=te+sonTotal;
+  const machineNames=Object.keys(machineAgg);
+  const grandMachineTotal=machineNames.reduce((s,n)=>s+machineAgg[n].total,0);
+  const grandTotal=te+sonTotal+grandMachineTotal;
+  const gstOn=document.getElementById('toggle-gst')&&document.getElementById('toggle-gst').checked;
+  const gst=gstOn?grandTotal*0.1:0;
   const n=String(s.invnum).padStart(4,'0');
   const sonLines=sonTotal>0
     ?`<div>My labour: ${th.toFixed(2)} hrs &times; $${parseFloat(s.rate).toFixed(2)} = $${te.toFixed(2)}</div>
-      <div>Son&apos;s labour: ${sonTotalHrs.toFixed(2)} hrs &times; $${sonrateUsed.toFixed(2)} = $${sonTotal.toFixed(2)}</div>
+      <div>Extra labourer: ${sonTotalHrs.toFixed(2)} hrs &times; $${sonrateUsed.toFixed(2)} = $${sonTotal.toFixed(2)}</div>
       <div>Labour subtotal: $${(te+sonTotal).toFixed(2)}</div>`
     :'';
+  let machineLinesHTML='';
+  if(machineNames.length){
+    machineLinesHTML+=machineNames.map(nm=>`<div>${nm} hire: ${machineAgg[nm].hours.toFixed(2)} hrs &times; $${machineAgg[nm].rate.toFixed(2)} = $${machineAgg[nm].total.toFixed(2)}</div>`).join('');
+    machineLinesHTML+=`<div>Machine hire subtotal: $${grandMachineTotal.toFixed(2)}</div>`;
+  }
+  const gstLines=gstOn?`<div>GST (10%): $${gst.toFixed(2)}</div><div class="tot">Total inc. GST: $${(grandTotal+gst).toFixed(2)}</div>`:`<div class="tot">Total Payable: $${grandTotal.toFixed(2)}</div>`;
   return`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice ${n} — ${s.name}</title>
 <style>
 body{font-family:Arial,sans-serif;font-size:11px;color:#111;max-width:800px;margin:20px auto;padding:20px}
@@ -964,44 +1136,59 @@ td{padding:4px;border-bottom:1px solid #eee}.tots{text-align:right;margin-top:12
   <div class="rt"><h2>INVOICE</h2>${s.address}<br>${s.phone}<br>${s.email}<br><strong>INVOICE NO. ${n}</strong><br><strong>DATE: ${fmtDate(todayStr())}</strong></div>
 </div>
 <hr>
-<div style="line-height:1.9;margin:8px 0"><strong>TO:</strong> ${s.client}<br><strong>FOR:</strong> ${s.service}</div>
+<div style="line-height:1.9;margin:8px 0"><strong>TO:</strong><br>${clientLines}<br><br><strong>FOR:</strong> ${s.service}</div>
 <hr>
 <table><thead><tr><th>Date</th><th>Start</th><th>Finish</th><th>Lunch</th><th>Hours</th><th>Rate</th><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
 <tbody>${rows}</tbody></table>
 <div class="tots">
 ${sonLines}
-<div class="tot">Total Payable: $${grandTotal.toFixed(2)}</div>
+${machineLinesHTML}
+${gstLines}
 </div></body></html>`;
 }
 
 function previewInvoice(){
   const s=S(),ui=days().filter(d=>!d.invoiced).sort((a,b)=>a.date.localeCompare(b.date));
+  const c=getSelectedClient();
+  const clientLines=[c.company,c.contact,c.abn?'ABN '+c.abn:'',c.address,c.email,c.phone].filter(Boolean).join('<br>');
   let rows='',te=0,th=0,sonTotal=0,sonTotalHrs=0;
   let sonrateUsed=s.sonrate||30;
+  const machineAgg={};
   ui.forEach(d=>{
-    const{h,myE,sonH,sonE,total,sonrate}=dayTotals(d);
+    const{h,myE,sonH,sonE,total,sonrate,machineLines:ml}=dayTotals(d);
     te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;
     if(d.sonWorking) sonrateUsed=sonrate;
-    rows+=`<tr><td>${fmtDate(d.date)}</td><td>${d.start}</td><td>${d.finish||'—'}</td><td>${d.lunchMins?d.lunchMins+'m':'—'}</td><td>${h.toFixed(2)}</td><td>$${d.rate}</td><td>${d.sonWorking?'Labour+Son':'Earth'}</td><td>$${total.toFixed(2)}</td></tr>`;
+    ml.forEach(m=>{if(!machineAgg[m.name])machineAgg[m.name]={hours:0,rate:m.rate,total:0};machineAgg[m.name].hours+=m.hours;machineAgg[m.name].total+=m.total;});
+    rows+=`<tr><td>${fmtDate(d.date)}</td><td>${d.start}</td><td>${d.finish||'—'}</td><td>${d.lunchMins?d.lunchMins+'m':'—'}</td><td>${h.toFixed(2)}</td><td>$${d.rate}</td><td>${d.sonWorking?'Labour+Extra':'Earth'}</td><td>$${total.toFixed(2)}</td></tr>`;
   });
-  const grandTotal=te+sonTotal;
+  const machineNames=Object.keys(machineAgg);
+  const grandMachineTotal=machineNames.reduce((sum,nm)=>sum+machineAgg[nm].total,0);
+  const grandTotal=te+sonTotal+grandMachineTotal;
+  const gstOn=document.getElementById('toggle-gst')&&document.getElementById('toggle-gst').checked;
+  const gst=gstOn?grandTotal*0.1:0;
   const n=String(s.invnum).padStart(4,'0'),sec=document.getElementById('invoice-preview-section');
   const sonLinesPreview=sonTotal>0
     ?`<div>My labour: ${th.toFixed(2)}h × $${parseFloat(s.rate).toFixed(2)} = $${te.toFixed(2)}</div>
-      <div>Son's labour: ${sonTotalHrs.toFixed(2)}h × $${sonrateUsed.toFixed(2)} = $${sonTotal.toFixed(2)}</div>
+      <div>Extra labourer: ${sonTotalHrs.toFixed(2)}h × $${sonrateUsed.toFixed(2)} = $${sonTotal.toFixed(2)}</div>
       <div>Labour subtotal: $${(te+sonTotal).toFixed(2)}</div>`
     :'';
+  let machineLinesPreview='';
+  if(machineNames.length){
+    machineLinesPreview+=machineNames.map(nm=>`<div>${nm} hire: ${machineAgg[nm].hours.toFixed(2)}h × $${machineAgg[nm].rate.toFixed(2)} = $${machineAgg[nm].total.toFixed(2)}</div>`).join('');
+    machineLinesPreview+=`<div>Machine hire subtotal: $${grandMachineTotal.toFixed(2)}</div>`;
+  }
+  const gstPreview=gstOn?`<div>GST (10%): $${gst.toFixed(2)}</div><div class="inv-total-line">Total inc. GST: $${(grandTotal+gst).toFixed(2)}</div>`:`<div class="inv-total-line">Total Payable: $${grandTotal.toFixed(2)}</div>`;
   document.getElementById('invoice-preview-content').innerHTML=`
 <div class="inv-meta">
   <div class="inv-left"><strong>Payable to ${s.name}</strong><br>${s.name}<br>BSB ${s.bsb} Acc ${s.account}<br>ABN ${s.abn}</div>
   <div class="inv-right"><div class="inv-title">INVOICE</div>${s.address}<br>${s.phone}<br>${s.email}<br><strong>NO. ${n}</strong><br>${fmtDate(todayStr())}</div>
 </div>
 <hr class="inv-divider">
-<div style="font-size:10px;margin:6px 0"><strong>TO:</strong> ${s.client}<br><strong>FOR:</strong> ${s.service}</div>
+<div style="font-size:10px;margin:6px 0"><strong>TO:</strong><br>${clientLines}<br><br><strong>FOR:</strong> ${s.service}</div>
 <hr class="inv-divider">
 <table class="inv-table"><thead><tr><th>Date</th><th>Start</th><th>Finish</th><th>Lunch</th><th>Hrs</th><th>Rate</th><th>Desc</th><th>Amt</th></tr></thead>
 <tbody>${rows||'<tr><td colspan="8" style="text-align:center;color:#999;padding:8px">No days to invoice</td></tr>'}</tbody></table>
-<div class="inv-totals">${sonLinesPreview}<div class="inv-total-line">Total Payable: $${grandTotal.toFixed(2)}</div></div>`;
+<div class="inv-totals">${sonLinesPreview}${machineLinesPreview}${gstPreview}</div>`;
   sec.style.display='block';sec.scrollIntoView({behavior:'smooth'});
 }
 
@@ -1009,7 +1196,8 @@ function generateInvoice(){
   const s=S(),ui=days().filter(d=>!d.invoiced);
   if(!ui.length){toast('No uninvoiced days to include');return;}
   const html=buildInvoiceHTML(),blob=new Blob([html],{type:'text/html'}),url=URL.createObjectURL(blob),a=document.createElement('a');
-  a.href=url;a.download='Invoice_'+String(s.invnum).padStart(4,'0')+'_'+s.client.replace(/\s/g,'_')+'.html';a.click();URL.revokeObjectURL(url);
+  const ic=getSelectedClient();
+  a.href=url;a.download='Invoice_'+String(s.invnum).padStart(4,'0')+'_'+(ic.company||s.client||'Client').replace(/\s/g,'_')+'.html';a.click();URL.revokeObjectURL(url);
   const ad=days();
   const it=ui.reduce((sum,d)=>{const{total}=dayTotals(d);return sum+total;},0);
   ad.forEach(d=>{if(!d.invoiced)d.invoiced=true;});DB.set('days',ad);
@@ -1044,10 +1232,12 @@ function renderAnalytics(){
 // --- Settings ---
 function loadSettings(){
   const s=S();
-  ['name','abn','address','phone','email','bsb','account','client','service','rate','sonrate','incpct','invnum'].forEach(k=>{
+  ['name','abn','address','phone','email','bsb','account','service','rate','sonrate','incpct','invnum'].forEach(k=>{
     const el=document.getElementById('s-'+k);if(el) el.value=s[k]!==undefined?s[k]:'';
   });
-  renderSitesList();
+  const mr=s.machineRates||defaultMachineRates();
+  MACHINES.forEach(name=>{const el=document.getElementById('s-mr-'+name);if(el) el.value=mr[name]||0;});
+  renderSitesList();renderClientsList();
 }
 
 function saveSettings(){
@@ -1059,12 +1249,14 @@ function saveSettings(){
   s.email=document.getElementById('s-email').value||s.email;
   s.bsb=document.getElementById('s-bsb').value||s.bsb;
   s.account=document.getElementById('s-account').value||s.account;
-  s.client=document.getElementById('s-client').value||s.client;
   s.service=document.getElementById('s-service').value||s.service;
   s.rate=parseFloat(document.getElementById('s-rate').value)||s.rate;
   s.sonrate=parseFloat(document.getElementById('s-sonrate').value)||s.sonrate||30;
   s.incpct=parseFloat(document.getElementById('s-incpct').value)||s.incpct;
   s.invnum=parseInt(document.getElementById('s-invnum').value)||s.invnum;
+  const mr=s.machineRates||defaultMachineRates();
+  MACHINES.forEach(name=>{const el=document.getElementById('s-mr-'+name);if(el&&el.value!=='') mr[name]=parseFloat(el.value)||0;});
+  s.machineRates=mr;
   DB.set('settings',s);
   // Refresh rate labels on checkin screen
   document.getElementById('steven-rate-label').textContent='$'+s.rate+'/hr';
@@ -1149,8 +1341,8 @@ function initMapPicker(){
   const centerLng=lastLng||153.4;
   const zoom=lastLat?16:5;
   leafletMap=L.map('site-map').setView([centerLat,centerLng],zoom);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{
+    attribution:'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
     maxZoom:19
   }).addTo(leafletMap);
   leafletMap.on('click',e=>{
@@ -1186,6 +1378,111 @@ function confirmMapLocation(){
 function closeMapModal(){
   document.getElementById('map-modal').classList.remove('open');
   if(leafletMap){leafletMap.remove();leafletMap=null;leafletMarker=null;leafletCircle=null;}
+}
+
+// --- GST pref ---
+function saveGstPref(){DB.set('gst_on',document.getElementById('toggle-gst').checked);}
+
+// --- Clients ---
+function clientsData(){return DB.def('clients',[])}
+
+function renderClientsList(){
+  const cl=clientsData(),el=document.getElementById('clients-list');
+  if(!el) return;
+  if(!cl.length){el.innerHTML='<div style="font-size:13px;color:var(--text2)">No clients saved yet</div>';return;}
+  el.innerHTML=cl.map((c,i)=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:700">${c.company}${c.isDefault?' <span class="badge badge-green" style="margin-left:6px">Default</span>':''}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">${[c.contact,c.abn?'ABN '+c.abn:'',c.phone].filter(Boolean).join(' · ')}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;margin-left:8px">
+        ${!c.isDefault?`<button class="btn btn-secondary btn-sm" onclick="setDefaultClient(${i})">Default</button>`:''}
+        <button class="btn btn-secondary btn-sm" onclick="editClient(${i})">Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteClient(${i})">Remove</button>
+      </div>
+    </div>`).join('');
+}
+
+function addClient(){
+  document.getElementById('client-modal-title').innerHTML='Add Client <button class="modal-close" onclick="closeClientModal()">✕</button>';
+  ['cm-company','cm-contact','cm-abn','cm-address','cm-email','cm-phone'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('cm-default').checked=!clientsData().length;
+  document.getElementById('cm-edit-id').value='';
+  document.getElementById('client-modal').classList.add('open');
+}
+
+function editClient(i){
+  const c=clientsData()[i];if(!c)return;
+  document.getElementById('client-modal-title').innerHTML='Edit Client <button class="modal-close" onclick="closeClientModal()">✕</button>';
+  document.getElementById('cm-company').value=c.company||'';
+  document.getElementById('cm-contact').value=c.contact||'';
+  document.getElementById('cm-abn').value=c.abn||'';
+  document.getElementById('cm-address').value=c.address||'';
+  document.getElementById('cm-email').value=c.email||'';
+  document.getElementById('cm-phone').value=c.phone||'';
+  document.getElementById('cm-default').checked=!!c.isDefault;
+  document.getElementById('cm-edit-id').value=String(i);
+  document.getElementById('client-modal').classList.add('open');
+}
+
+function saveClient(){
+  const company=document.getElementById('cm-company').value.trim();
+  if(!company){toast('Please enter a company name');return;}
+  const cl=clientsData();
+  const isDefault=document.getElementById('cm-default').checked||!cl.length;
+  const entry={
+    company,
+    contact:document.getElementById('cm-contact').value.trim(),
+    abn:document.getElementById('cm-abn').value.trim(),
+    address:document.getElementById('cm-address').value.trim(),
+    email:document.getElementById('cm-email').value.trim(),
+    phone:document.getElementById('cm-phone').value.trim(),
+    isDefault
+  };
+  if(isDefault) cl.forEach(c=>c.isDefault=false);
+  const editId=document.getElementById('cm-edit-id').value;
+  if(editId!==''){cl[parseInt(editId)]=entry;}else{cl.push(entry);}
+  DB.set('clients',cl);
+  closeClientModal();renderClientsList();populateClientDropdown();
+  toast('Client saved ✓');
+}
+
+function setDefaultClient(i){
+  const cl=clientsData();
+  cl.forEach((c,idx)=>c.isDefault=(idx===i));
+  DB.set('clients',cl);renderClientsList();populateClientDropdown();
+  toast('Default client updated ✓');
+}
+
+function deleteClient(i){
+  const cl=clientsData();
+  const wasDefault=cl[i].isDefault;
+  cl.splice(i,1);
+  if(wasDefault&&cl.length) cl[0].isDefault=true;
+  DB.set('clients',cl);renderClientsList();populateClientDropdown();
+  toast('Client removed');
+}
+
+function closeClientModal(){document.getElementById('client-modal').classList.remove('open')}
+
+function populateClientDropdown(){
+  const cl=clientsData(),sel=document.getElementById('inv-client-select');
+  if(!sel) return;
+  if(!cl.length){sel.innerHTML='<option value="-1">No clients — add in Settings</option>';return;}
+  const prev=sel.value;
+  sel.innerHTML=cl.map((c,i)=>`<option value="${i}">${c.company}</option>`).join('');
+  const defIdx=cl.findIndex(c=>c.isDefault);
+  if(prev!==''&&prev!==null&&cl[parseInt(prev)]){sel.value=prev;}
+  else if(defIdx>=0){sel.value=String(defIdx);}
+  else{sel.value='0';}
+}
+
+function getSelectedClient(){
+  const cl=clientsData(),sel=document.getElementById('inv-client-select');
+  if(!cl.length) return{company:S().client||'',contact:'',abn:'',address:'',email:'',phone:''};
+  const idx=sel?parseInt(sel.value):NaN;
+  return(!isNaN(idx)&&cl[idx])||cl.find(c=>c.isDefault)||cl[0]||{company:'',contact:'',abn:'',address:'',email:'',phone:''};
 }
 
 // --- Export ---
@@ -1227,11 +1524,22 @@ if('serviceWorker' in navigator){
 // --- Init ---
 if(!DB.get('settings')){
   DB.set('settings',DEFAULTS);
+  DB.set('clients',[{company:DEFAULTS.client,contact:'',abn:'',address:'',email:'',phone:'',isDefault:true}]);
 } else {
-  // Migrate: ensure sonrate exists
   const s=DB.get('settings');
   if(s.sonrate===undefined){s.sonrate=30;DB.set('settings',s);}
+  if(!s.machineRates){s.machineRates=defaultMachineRates();DB.set('settings',s);}
+  // Migrate: seed clients from legacy single client string
+  if(!DB.get('clients')){
+    const ec=s.client||DEFAULTS.client;
+    DB.set('clients',[{company:ec,contact:'',abn:'',address:'',email:'',phone:'',isDefault:true}]);
+  }
 }
+// Restore GST toggle state
+const gstEl=document.getElementById('toggle-gst');
+if(gstEl) gstEl.checked=!!DB.get('gst_on');
+// Populate client dropdown
+populateClientDropdown();
 initCheckinScreen();
 </script>
 </body>
