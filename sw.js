@@ -1,4 +1,4 @@
-const CACHE = 'mcnichol-v2';
+const CACHE = 'mcnichol-v3';
 const ASSETS = [
   './index.html',
   './manifest.json',
