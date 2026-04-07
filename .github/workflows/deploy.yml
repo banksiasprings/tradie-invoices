@@ -26,7 +26,7 @@ jobs:
           SHORT_SHA=$(git rev-parse --short HEAD)
           sed -i "s/const CACHE = 'invoice-pdf-v[^']*'/const CACHE = 'invoice-pdf-${SHORT_SHA}'/" sw.js
           echo "Cache set to invoice-pdf-${SHORT_SHA}"
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: '.'
       - id: deployment
