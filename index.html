@@ -26,7 +26,7 @@
     --shadow:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.04);
     font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,Arial,sans-serif;
   }
-  body{background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,Arial,sans-serif}
+  body{background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;overscroll-behavior:none;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,Arial,sans-serif}
 
   .nav{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom)}
   .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px 8px;border:none;background:none;cursor:pointer;color:var(--text3);font-family:inherit;font-size:11px;font-weight:600;transition:color .15s}
@@ -254,25 +254,27 @@ async function registerUserInAdmin(user) {
 
 // Auth state handler
 onAuthStateChanged(auth, async (user) => {
-  const loginScreen = document.getElementById('screen-login');
-  const appWrapper  = document.getElementById('main-app-wrapper');
-  const accountEl   = document.getElementById('cloud-account-display');
-  const adminTab    = document.getElementById('nav-admin');
+  const loadingScreen = document.getElementById('screen-loading');
+  const loginScreen   = document.getElementById('screen-login');
+  const appWrapper    = document.getElementById('main-app-wrapper');
+  const accountEl     = document.getElementById('cloud-account-display');
+  const adminTab      = document.getElementById('nav-admin');
 
   if (user) {
     CloudSync.uid = user.uid;
     if (accountEl) accountEl.textContent = user.email;
-    // Show admin tab only for admin
     if (adminTab) adminTab.style.display = user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase() ? 'flex' : 'none';
     await registerUserInAdmin(user);
     await CloudSync.restore();
-    if (loginScreen) loginScreen.style.display = 'none';
-    if (appWrapper)  appWrapper.style.display  = 'block';
+    if (loadingScreen) loadingScreen.style.display = 'none';
+    if (loginScreen)   loginScreen.style.display   = 'none';
+    if (appWrapper)    appWrapper.style.display     = 'block';
     if (window.initApp) window.initApp();
   } else {
     CloudSync.uid = null;
-    if (loginScreen) loginScreen.style.display = 'flex';
-    if (appWrapper)  appWrapper.style.display  = 'none';
+    if (loadingScreen) loadingScreen.style.display = 'none';
+    if (loginScreen)   { loginScreen.style.display = 'flex'; }
+    if (appWrapper)    appWrapper.style.display     = 'none';
   }
 });
 
@@ -374,7 +376,12 @@ window.firebaseSignOut = async function() {
 <div id="toast" class="toast"></div>
 
 <!-- LOGIN SCREEN -->
-<div id="screen-login" style="position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px">
+<div id="screen-loading" style="position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center">
+  <div style="font-size:56px;margin-bottom:16px">📄</div>
+  <div style="font-size:14px;color:var(--text2)">Loading…</div>
+</div>
+
+<div id="screen-login" style="position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:9999;display:none;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px">
   <div style="font-size:60px;margin-bottom:12px">📄</div>
   <h1 style="font-size:26px;font-weight:700;margin-bottom:6px;color:var(--text)">Invoice &amp; PDF</h1>
   <p style="font-size:14px;color:var(--text2);margin-bottom:32px;text-align:center;max-width:320px">Sign in to keep your data safe and synced across devices</p>
