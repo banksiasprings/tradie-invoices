@@ -242,13 +242,26 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+// Only this email may access the app
+const ALLOWED_EMAIL = 'smcnichol@outlook.com';
+
 // Auth state handler
 onAuthStateChanged(auth, async (user) => {
   const loginScreen = document.getElementById('screen-login');
   const appWrapper  = document.getElementById('main-app-wrapper');
   const accountEl   = document.getElementById('cloud-account-display');
+  const errEl       = document.getElementById('login-error');
 
   if (user) {
+    // Reject any account that isn't the authorised one
+    if (user.email.toLowerCase() !== ALLOWED_EMAIL.toLowerCase()) {
+      await signOut(auth);
+      if (errEl) {
+        errEl.textContent   = 'Access restricted to authorised user only.';
+        errEl.style.display = 'block';
+      }
+      return;
+    }
     CloudSync.uid = user.uid;
     if (accountEl) accountEl.textContent = user.email;
     await CloudSync.restore();
@@ -313,8 +326,7 @@ window.firebaseSignOut = async function() {
     <div class="field"><label>Email</label><input type="email" id="login-email" placeholder="you@example.com" autocomplete="email"></div>
     <div class="field"><label>Password</label><input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')firebaseLogin()"></div>
     <div id="login-error" style="display:none;color:var(--red);font-size:13px;margin-bottom:12px;padding:10px;background:var(--red-light);border-radius:var(--radius-sm)"></div>
-    <button class="btn btn-primary" style="width:100%;margin-bottom:10px" onclick="firebaseLogin()">Sign In</button>
-    <button class="btn btn-secondary" style="width:100%" onclick="firebaseRegister()">Create Account</button>
+    <button class="btn btn-primary" style="width:100%" onclick="firebaseLogin()">Sign In</button>
   </div>
 </div>
 
