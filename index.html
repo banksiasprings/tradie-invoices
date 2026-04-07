@@ -593,8 +593,16 @@ window.firebaseSignOut = async function() {
       <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Signed in as <span id="cloud-account-display" style="font-weight:600;color:var(--text)">…</span></div>
       <button class="btn btn-secondary" onclick="firebaseSignOut()" style="width:100%">Sign Out</button>
     </div>
+    <div class="card" style="margin-top:12px">
+      <div class="card-title">ℹ️ About</div>
+      <div style="font-size:13px;color:var(--text2)">Version <span id="app-version">—</span></div>
+    </div>
   </div>
 </div>
+<script>
+const APP_VERSION = 'dev';
+document.getElementById('app-version').textContent = APP_VERSION;
+</script>
 
 <script>
 async function loadApkRelease(){
