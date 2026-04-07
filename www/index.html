@@ -711,13 +711,37 @@ window.firebaseSignOut = async function() {
     </div>
     <div class="card" style="margin-top:12px">
       <div class="card-title">ℹ️ About</div>
-      <div style="font-size:13px;color:var(--text2)">Version <span id="app-version">—</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div style="font-size:13px;color:var(--text2)">Version <span id="app-version">—</span></div>
+        <button id="update-btn" onclick="forceAppUpdate()" style="font-size:12px;font-weight:600;padding:6px 14px;border-radius:8px;border:none;background:var(--navy);color:#fff;cursor:pointer;letter-spacing:.3px">Check for Update</button>
+      </div>
     </div>
   </div>
 </div>
 <script>
-const APP_VERSION = 'v2';
+const APP_VERSION = 'v3';
 document.getElementById('app-version').textContent = APP_VERSION;
+
+async function forceAppUpdate() {
+  const btn = document.getElementById('update-btn');
+  btn.textContent = 'Updating…';
+  btn.disabled = true;
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+    window.location.reload(true);
+  } catch(e) {
+    btn.textContent = 'Check for Update';
+    btn.disabled = false;
+    alert('Update failed — try manually clearing your browser cache.');
+  }
+}
 </script>
 
 
