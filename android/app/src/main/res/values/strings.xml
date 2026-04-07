@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Invoice &amp; PDF</string>
+    <string name="title_activity_main">Invoice &amp; PDF</string>
+    <string name="package_name">com.banksiasprings.invoices</string>
+    <string name="custom_url_scheme">com.banksiasprings.invoices</string>
+</resources>

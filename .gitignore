@@ -1,3 +1,58 @@
+# Dependencies
 node_modules/
-android/build/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Android/Gradle
 android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+android/.idea/
+*.keystore
+
+# APK artifacts (distribute via Firebase App Distribution or direct share)
+*.apk
+*.aab
+
+# Claude workspace
+.claude/
+
+# iOS
+ios/Pods/
+ios/Podfile.lock
+
+# Capacitor
+.capacitor/
+capacitor.config.json.bak
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Misc
+.env.production.local
+.pem
