@@ -36,8 +36,9 @@
   .nav{position:fixed;bottom:0;left:0;right:0;background:var(--navy);border-top:none;display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -4px 20px rgba(0,0,0,.25)}
   .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px 8px;border:none;background:none;cursor:pointer;color:rgba(255,255,255,.4);font-family:'Inter',inherit;font-size:10px;font-weight:600;transition:color .15s;letter-spacing:.3px}
   .nav-btn.active{color:#fff}
-  .nav-btn.active .nav-icon{background:var(--amber);border-radius:10px;padding:4px 8px;color:#fff}
-  .nav-icon{font-size:20px;line-height:1;transition:all .15s}
+  .nav-btn.active .nav-icon svg{stroke:var(--amber)}
+  .nav-icon{width:26px;height:26px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+  .nav-icon svg{width:22px;height:22px;stroke:rgba(255,255,255,.4);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:stroke .15s}
 
   .screen{display:none;padding:0 0 80px;min-height:100vh}
   .screen.active{display:block}
@@ -128,9 +129,7 @@
   .bar-label{font-size:9px;color:var(--text3);white-space:nowrap}
   .bar-val{font-size:9px;font-weight:700;color:var(--text2)}
 
-  .empty{text-align:center;padding:48px 24px;color:var(--text2)}
-  .empty-icon{font-size:40px;margin-bottom:12px;opacity:.4}
-  .empty p{font-size:14px;line-height:1.6;color:var(--text2)}
+  /* empty states — see extended CSS block below */
 
   .benchmark{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px}
   .bench-item{background:var(--surface2);border-radius:10px;padding:10px;text-align:center}
@@ -168,6 +167,47 @@
   .inv-subtotal-row{display:flex;justify-content:space-between;font-size:13px;padding:3px 0}
   .inv-subtotal-row.total{font-weight:700;font-size:15px;padding-top:6px;border-top:2px solid var(--text);margin-top:4px}
   .inv-subtotal-row.subdued{color:var(--text2)}
+
+  /* Enhanced day log items */
+  .day-item{display:flex;justify-content:space-between;align-items:flex-start;padding:14px 0;border-bottom:1px solid var(--border);position:relative}
+  .day-item:last-child{border-bottom:none}
+  .day-item-left .date{font-size:14px;font-weight:700;color:var(--text);font-family:'Montserrat',system-ui,sans-serif}
+  .day-item-left .detail{font-size:13px;color:var(--text2);margin-top:3px;line-height:1.4}
+  .day-item-right .amount{font-size:16px;font-weight:700;color:var(--amber);font-family:'Montserrat',system-ui,sans-serif}
+  .day-item-right .hours{font-size:12px;color:var(--text2);margin-top:3px;text-align:right}
+
+  /* Card with amber left border accent */
+  .card-accent{border-left:3px solid var(--amber) !important}
+
+  /* Rate box in check-in */
+  .rate-box{background:linear-gradient(135deg,var(--navy) 0%,#243558 100%);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px;color:#fff}
+  .rate-box .rate-amount{font-size:22px;font-weight:800;font-family:'Montserrat',system-ui,sans-serif;color:var(--amber)}
+  .rate-box .rate-label{font-size:11px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px}
+
+  /* Smooth screen transitions */
+  .screen.active{animation:fadeIn .15s ease-out}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+  /* Section heading labels */
+  .section-heading{font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;padding:0 0 8px;margin-bottom:4px}
+
+  /* Improved empty states */
+  .empty{text-align:center;padding:56px 24px;color:var(--text2)}
+  .empty-icon{width:56px;height:56px;margin:0 auto 16px;background:var(--surface2);border-radius:16px;display:flex;align-items:center;justify-content:center}
+  .empty-icon svg{width:28px;height:28px;stroke:var(--text3);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+  .empty p{font-size:14px;line-height:1.6;color:var(--text2)}
+  .empty h3{font-size:16px;font-weight:700;color:var(--text);margin-bottom:6px;font-family:'Montserrat',system-ui,sans-serif}
+
+  /* Glow on primary btn for Start Day */
+  .btn-hero{font-size:17px;padding:18px;border-radius:16px;letter-spacing:.3px}
+
+  /* Invoice day rows in invoice screen */
+  .inv-day-row{background:var(--surface);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;box-shadow:var(--shadow);border-left:3px solid var(--amber)}
+  .inv-day-row .inv-day-date{font-size:13px;font-weight:700;color:var(--text)}
+  .inv-day-row .inv-day-detail{font-size:11px;color:var(--text2);margin-top:2px}
+  .inv-day-row .inv-day-amount{font-size:15px;font-weight:700;color:var(--amber);font-family:'Montserrat',system-ui,sans-serif}
+  .inv-day-row.selected{border-left-color:var(--green);background:var(--success-light)}
+  .inv-day-row.selected .inv-day-amount{color:var(--green)}
 </style>
 
 <script type="module">
@@ -383,9 +423,10 @@ window.firebaseSignOut = async function() {
 <div id="toast" class="toast"></div>
 
 <!-- LOGIN SCREEN -->
-<div id="screen-loading" style="position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center">
-  <div style="font-size:56px;margin-bottom:16px">📄</div>
-  <div style="font-size:14px;color:var(--text2)">Loading…</div>
+<div id="screen-loading" style="position:fixed;top:0;left:0;right:0;bottom:0;background:var(--navy);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center">
+  <div style="font-size:64px;margin-bottom:20px;filter:drop-shadow(0 4px 12px rgba(193,88,58,.5))">🚜</div>
+  <div style="font-size:22px;font-weight:800;color:#fff;font-family:'Montserrat',system-ui,sans-serif;letter-spacing:-.5px;margin-bottom:8px">Invoice & PDF</div>
+  <div style="font-size:13px;color:rgba(255,255,255,.45);letter-spacing:.5px">Loading…</div>
 </div>
 
 <div id="screen-login" style="position:fixed;top:0;left:0;right:0;bottom:0;background:var(--navy);z-index:9999;display:none;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px">
@@ -431,12 +472,11 @@ window.firebaseSignOut = async function() {
         <input type="time" id="checkin-start">
       </div>
       <!-- Labour rates -->
-      <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px">
-        <div style="font-size:13px;color:var(--text2);margin-bottom:8px">
-          My rate: <strong style="color:var(--green)" id="owner-rate-label">$55/hr</strong>
-        </div>
-        <div class="toggle-row" style="padding:0">
-          <span style="font-size:14px">Extra labourer on site today?</span>
+      <div class="rate-box" style="margin-bottom:14px">
+        <div class="rate-label">My Rate</div>
+        <div class="rate-amount" id="owner-rate-label">$55/hr</div>
+        <div class="toggle-row" style="padding:10px 0 0;border-top:1px solid rgba(255,255,255,.1);margin-top:10px">
+          <span style="font-size:14px;color:rgba(255,255,255,.8)">Extra labourer on site today?</span>
           <label class="toggle"><input type="checkbox" id="toggle-son" onchange="toggleSonSection('son-section','toggle-son')"><span class="toggle-slider"></span></label>
         </div>
         <div id="son-section" class="son-box" style="display:none">
@@ -453,7 +493,7 @@ window.firebaseSignOut = async function() {
       <div id="machine-section" style="display:none;margin-top:8px">
         <div id="machine-idle-list"></div>
       </div>
-      <button class="btn btn-primary" onclick="startDay()">Start Day</button>
+      <button class="btn btn-primary btn-hero" onclick="startDay()">🚜  Start Day</button>
     </div>
   </div>
 
@@ -473,7 +513,7 @@ window.firebaseSignOut = async function() {
       </div>
     </div>
     <div class="card">
-      <div style="font-size:13px;color:var(--text2);margin-bottom:2px">My rate: <strong style="color:var(--green)" id="active-owner-rate">$55/hr</strong></div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:2px">My rate: <strong style="color:var(--amber)" id="active-owner-rate">$55/hr</strong></div>
       <div class="toggle-row" style="padding:8px 0 0">
         <span style="font-size:14px">Extra labourer on site today?</span>
         <label class="toggle"><input type="checkbox" id="toggle-son2" onchange="updateSon()"><span class="toggle-slider"></span></label>
@@ -507,7 +547,7 @@ window.firebaseSignOut = async function() {
         <tr><td style="color:var(--text2)">My labour</td><td style="text-align:right;font-weight:600" id="rev-my-earn"></td></tr>
         <tr id="rev-son-row" style="display:none"><td style="color:var(--text2)">Extra labourer hrs</td><td style="text-align:right;font-weight:600" id="rev-son-hours"></td></tr>
         <tr id="rev-son-earn-row" style="display:none"><td style="color:var(--text2)">Extra labourer</td><td style="text-align:right;font-weight:600" id="rev-son-earn"></td></tr>
-        <tr><td style="color:var(--text2);font-weight:700;border-top:1px solid var(--border);padding-top:4px">Total</td><td style="text-align:right;font-weight:700;font-size:18px;color:var(--green);border-top:1px solid var(--border);padding-top:4px" id="rev-earnings"></td></tr>
+        <tr><td style="color:var(--text2);font-weight:700;border-top:1px solid var(--border);padding-top:4px">Total</td><td style="text-align:right;font-weight:700;font-size:18px;color:var(--amber);border-top:1px solid var(--border);padding-top:4px" id="rev-earnings"></td></tr>
       </table>
       <div id="rev-machine-info" style="display:none;font-size:12px;color:var(--text2);padding:4px 0;border-top:1px solid var(--border);margin-top:4px"></div>
       <div class="btn-row">
@@ -530,13 +570,13 @@ window.firebaseSignOut = async function() {
   <div class="section">
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-label">Invoice #</div><div class="stat-value" id="inv-num-display">0045</div></div>
-      <div class="stat-card"><div class="stat-label">Total Payable</div><div class="stat-value" id="inv-total-display">$0</div></div>
+      <div class="stat-card" style="background:var(--navy);border:none"><div class="stat-label" style="color:rgba(255,255,255,.55)">Total Payable</div><div class="stat-value" style="color:var(--amber)" id="inv-total-display">$0</div></div>
       <div class="stat-card"><div class="stat-label">Days</div><div class="stat-value" id="inv-days-display">0</div></div>
       <div class="stat-card"><div class="stat-label">Hours</div><div class="stat-value" id="inv-hours-display">0</div></div>
     </div>
     <div class="card">
       <div class="card-title">Rate for this invoice</div>
-      <div style="font-size:24px;font-weight:700;font-family:Arial,sans-serif" id="inv-rate-display">$55.00/hr</div>
+      <div style="font-size:28px;font-weight:800;font-family:'Montserrat',system-ui,sans-serif;color:var(--amber)" id="inv-rate-display">$55.00/hr</div>
       <div style="font-size:11px;color:var(--text2);margin-top:4px" id="inv-rate-increase"></div>
     </div>
     <div class="card">
@@ -584,7 +624,7 @@ window.firebaseSignOut = async function() {
       <div class="card-title">Rate history</div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div><div style="font-size:11px;color:var(--text2)">Current</div><div style="font-size:18px;font-weight:700" id="ana-rate-now">$55.00</div></div>
-        <div style="color:var(--green);font-size:20px">→</div>
+        <div style="color:var(--amber);font-size:20px;font-weight:700">→</div>
         <div style="text-align:right"><div style="font-size:11px;color:var(--text2)">1 year ago</div><div style="font-size:18px;font-weight:700" id="ana-rate-year">$55.00</div></div>
       </div>
       <div style="font-size:11px;color:var(--text2)" id="ana-rate-change"></div>
@@ -685,7 +725,7 @@ document.getElementById('app-version').textContent = APP_VERSION;
 <div id="screen-saved" class="screen">
   <div class="header"><h1>Saved Invoices</h1><p>All generated invoices</p></div>
   <div class="section" id="saved-invoices-list">
-    <div class="empty"><div class="empty-icon">🗂</div><p>No saved invoices yet</p></div>
+    <div class="empty"><div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div><h3>No saved invoices</h3><p>Generate an invoice from the Invoice tab and it will appear here</p></div>
   </div>
 </div>
 
@@ -707,13 +747,13 @@ document.getElementById('app-version').textContent = APP_VERSION;
 
 <!-- BOTTOM NAV -->
 <nav class="nav">
-  <button class="nav-btn active" onclick="showScreen('checkin',this)"><span class="nav-icon">⏱</span>Today</button>
-  <button class="nav-btn" onclick="showScreen('log',this)"><span class="nav-icon">📋</span>Log</button>
-  <button class="nav-btn" onclick="showScreen('invoice',this)"><span class="nav-icon">🧾</span>Invoice</button>
-  <button class="nav-btn" onclick="showScreen('analytics',this)"><span class="nav-icon">📊</span>Stats</button>
-  <button class="nav-btn" onclick="showScreen('settings',this)"><span class="nav-icon">⚙️</span>Settings</button>
-  <button class="nav-btn" onclick="showScreen('saved',this)"><span class="nav-icon">🗂</span>Saved</button>
-  <button class="nav-btn" id="nav-admin" style="display:none" onclick="showScreen('admin',this);loadAdminUsers()"><span class="nav-icon">🔑</span>Admin</button>
+  <button class="nav-btn active" onclick="showScreen('checkin',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg></span>Today</button>
+  <button class="nav-btn" onclick="showScreen('log',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></span>Log</button>
+  <button class="nav-btn" onclick="showScreen('invoice',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/></svg></span>Invoice</button>
+  <button class="nav-btn" onclick="showScreen('analytics',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>Stats</button>
+  <button class="nav-btn" onclick="showScreen('settings',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings</button>
+  <button class="nav-btn" onclick="showScreen('saved',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>Saved</button>
+  <button class="nav-btn" id="nav-admin" style="display:none" onclick="showScreen('admin',this);loadAdminUsers()"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>Admin</button>
 </nav>
 
 <!-- ADD SITE MODAL -->
@@ -1331,7 +1371,7 @@ function renderLog(){
   const list=days().sort((a,b)=>b.date.localeCompare(a.date)),el=document.getElementById('log-list');
   const ui=list.filter(d=>!d.invoiced).length;
   document.getElementById('log-uninvoiced').textContent=ui+' uninvoiced day'+(ui!==1?'s':'');
-  if(!list.length){el.innerHTML='<div class="empty"><div class="empty-icon">📋</div><p>No days logged yet.<br>Use the Today tab to log your first day.</p></div>';return;}
+  if(!list.length){el.innerHTML='<div class="empty"><div class="empty-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></div><h3>No days logged yet</h3><p>Use the Today tab to check in and start tracking your time</p></div>';return;}
   el.innerHTML='';
   list.forEach(d=>{
     const{h,myE,sonH,sonE,total,sonrate}=dayTotals(d);
@@ -1860,7 +1900,7 @@ function renderSavedInvoices(){
   el.innerHTML='<div style="color:var(--text2);text-align:center;padding:20px;font-size:13px">Loading…</div>';
   InvoiceDB.list().then(records=>{
     if(!records.length){
-      el.innerHTML='<div class="empty"><div class="empty-icon">🗂</div><p>No saved invoices yet.<br>Generate an invoice to save it here.</p></div>';
+      el.innerHTML='<div class="empty"><div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div><h3>No saved invoices</h3><p>Generate an invoice from the Invoice tab and it will appear here</p></div>';
       return;
     }
     el.innerHTML=records.map(r=>`
