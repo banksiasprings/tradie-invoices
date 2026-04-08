@@ -807,7 +807,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v12';
+const APP_VERSION = 'v13';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 async function forceAppUpdate() {
@@ -1741,7 +1741,7 @@ function saveSettings(){
   s.rate=parseFloat(document.getElementById('s-rate').value)||s.rate;
   s.sonrate=parseFloat(document.getElementById('s-sonrate').value)||s.sonrate||30;
   const _incpctStr=document.getElementById('s-incpct').value;
-  s.incpct=_incpctStr!==''?parseFloat(_incpctStr)||s.incpct:s.incpct;
+  if(_incpctStr!==''){const _p=parseFloat(_incpctStr);if(!isNaN(_p))s.incpct=_p;}
   s.invnum=parseInt(document.getElementById('s-invnum').value)||s.invnum;
   const mr=s.machineRates||defaultMachineRates();
   MACHINES.forEach(name=>{const el=document.getElementById('s-mr-'+name);if(el&&el.value!=='') mr[name]=parseFloat(el.value)||0;});
