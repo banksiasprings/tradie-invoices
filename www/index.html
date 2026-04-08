@@ -250,6 +250,14 @@ const CloudSync = {
 
   async restore() {
     if (!this.uid) return;
+    // Local wins: if this device already has data, push it to Firestore and return.
+    // Only pull from Firestore on a genuinely fresh install (empty localStorage).
+    const hasLocalData = localStorage.getItem('mcn_settings') !== null;
+    if (hasLocalData) {
+      await this.pushAll();
+      return;
+    }
+    // No local data — fresh install or cleared cache — restore from Firestore.
     try {
       for (const key of SYNC_KEYS) {
         const ref = doc(firestoreDb, 'users', this.uid, 'data', key);
@@ -799,7 +807,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v11';
+const APP_VERSION = 'v12';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 async function forceAppUpdate() {
