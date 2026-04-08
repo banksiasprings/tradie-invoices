@@ -564,6 +564,74 @@ window.firebaseSignOut = async function() {
   <div class="section"><div id="log-list"></div></div>
 </div>
 
+<!-- MANUAL ENTRY SCREEN -->
+<div id="screen-manual" class="screen">
+  <div class="header"><h1>Manual Entry</h1><p>Log a day you forgot to track</p></div>
+  <div class="section">
+
+    <div class="card">
+      <div class="section-heading">Day Details</div>
+      <div class="field" style="margin-bottom:12px">
+        <label>Date</label>
+        <input type="date" id="me-date" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
+      </div>
+      <div class="field" style="margin-bottom:12px">
+        <label>Site</label>
+        <select id="me-site" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)"><option value="">Select site…</option></select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div class="field" style="margin:0">
+          <label>Start Time</label>
+          <input type="time" id="me-start" onchange="mePreview()" style="margin-top:5px;width:100%;padding:11px 10px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
+        </div>
+        <div class="field" style="margin:0">
+          <label>Finish Time</label>
+          <input type="time" id="me-finish" onchange="mePreview()" style="margin-top:5px;width:100%;padding:11px 10px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
+        </div>
+      </div>
+      <div class="field" style="margin:0">
+        <label>Lunch Break (minutes)</label>
+        <input type="number" id="me-lunch" placeholder="0 — no lunch" min="0" step="5" onchange="mePreview()" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="toggle-row">
+        <span style="font-size:14px">Extra labourer on site?</span>
+        <label class="toggle"><input type="checkbox" id="me-son-toggle" onchange="document.getElementById('me-son-section').style.display=this.checked?'block':'none';mePreview()"><span class="toggle-slider"></span></label>
+      </div>
+      <div id="me-son-section" style="display:none;margin-top:10px">
+        <div class="field" style="margin:0">
+          <label>Extra Labourer Hours <span style="color:var(--text2);font-weight:400">(leave blank = same as mine)</span></label>
+          <input type="number" id="me-son-hours" placeholder="Same as mine" step="0.25" min="0" onchange="mePreview()" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-top:6px">Rate: <strong id="me-son-rate-label">$30/hr</strong></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="field" style="margin:0">
+        <label>Notes <span style="color:var(--text2);font-weight:400">(optional — reason for manual entry)</span></label>
+        <input type="text" id="me-notes" placeholder="e.g. Left phone at home, GPS failed…" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
+      </div>
+    </div>
+
+    <!-- Live earnings preview -->
+    <div id="me-preview" class="card" style="display:none;background:var(--navy);border:none">
+      <div class="section-heading" style="color:rgba(255,255,255,.55)">Preview</div>
+      <table style="width:100%;font-size:13px;line-height:2.1;color:#fff">
+        <tr><td style="color:rgba(255,255,255,.6)">Hours worked</td><td style="text-align:right;font-weight:600" id="me-prev-hours">—</td></tr>
+        <tr><td style="color:rgba(255,255,255,.6)">My labour</td><td style="text-align:right;font-weight:600" id="me-prev-my">—</td></tr>
+        <tr id="me-prev-son-row" style="display:none"><td style="color:rgba(255,255,255,.6)">Extra labourer</td><td style="text-align:right;font-weight:600" id="me-prev-son">—</td></tr>
+        <tr><td style="color:rgba(255,255,255,.6);font-weight:700;border-top:1px solid rgba(255,255,255,.15);padding-top:4px">Total</td><td style="text-align:right;font-size:20px;font-weight:800;color:var(--amber);border-top:1px solid rgba(255,255,255,.15);padding-top:4px" id="me-prev-total">—</td></tr>
+      </table>
+    </div>
+
+    <button class="btn btn-primary btn-full" onclick="saveManualEntry()" style="margin-bottom:8px">Save Entry ✓</button>
+    <button class="btn btn-secondary btn-full" onclick="resetManualEntry()">Clear Form</button>
+  </div>
+</div>
+
 <!-- INVOICE SCREEN -->
 <div id="screen-invoice" class="screen">
   <div class="header"><h1>Invoice Generator</h1><p id="invoice-subtitle">Ready to generate</p></div>
@@ -773,6 +841,7 @@ async function forceAppUpdate() {
 <nav class="nav">
   <button class="nav-btn active" onclick="showScreen('checkin',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg></span>Today</button>
   <button class="nav-btn" onclick="showScreen('log',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></span>Log</button>
+  <button class="nav-btn" onclick="showScreen('manual',this);initManualEntry()"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span>Entry</button>
   <button class="nav-btn" onclick="showScreen('invoice',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/></svg></span>Invoice</button>
   <button class="nav-btn" onclick="showScreen('analytics',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>Stats</button>
   <button class="nav-btn" onclick="showScreen('settings',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings</button>
@@ -2112,6 +2181,106 @@ window.initApp = function() {
   });
 
 })();
+
+// ─── MANUAL ENTRY ────────────────────────────────────────────────────────────
+function initManualEntry(){
+  // Default date = today
+  document.getElementById('me-date').value = todayStr();
+  // Set default start/finish to business hours if empty
+  if(!document.getElementById('me-start').value) document.getElementById('me-start').value = '07:00';
+  if(!document.getElementById('me-finish').value) document.getElementById('me-finish').value = '15:30';
+  // Populate site dropdown
+  const sel = document.getElementById('me-site');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">Select site…</option>';
+  sites().forEach(st => { sel.innerHTML += `<option value="${st.name}">${st.name}</option>`; });
+  if(prev) sel.value = prev;
+  // Update son rate label
+  const s = S();
+  document.getElementById('me-son-rate-label').textContent = '$'+(s.sonrate||30)+'/hr';
+  mePreview();
+}
+
+function mePreview(){
+  const start = document.getElementById('me-start').value;
+  const finish = document.getElementById('me-finish').value;
+  const lunchMins = parseInt(document.getElementById('me-lunch').value)||0;
+  const sonOn = document.getElementById('me-son-toggle').checked;
+  const sonHoursVal = document.getElementById('me-son-hours').value;
+  const preview = document.getElementById('me-preview');
+  if(!start || !finish || start >= finish){ preview.style.display='none'; return; }
+  const s = S();
+  const h = Math.max(0, timeDiffHours(start, finish) - lunchMins/60);
+  const myE = h * s.rate;
+  const sonrate = s.sonrate||30;
+  const sonH = sonOn ? (sonHoursVal ? parseFloat(sonHoursVal) : h) : 0;
+  const sonE = sonOn ? sonH * sonrate : 0;
+  const total = myE + sonE;
+  preview.style.display = 'block';
+  document.getElementById('me-prev-hours').textContent = formatHours(h) + (lunchMins ? ' (after '+lunchMins+'min lunch)' : '');
+  document.getElementById('me-prev-my').textContent = fmtMoney(myE) + ' × $'+s.rate+'/hr';
+  const sonRow = document.getElementById('me-prev-son-row');
+  if(sonOn){
+    sonRow.style.display = '';
+    document.getElementById('me-prev-son').textContent = fmtMoney(sonE) + ' ('+formatHours(sonH)+' × $'+sonrate+'/hr)';
+  } else { sonRow.style.display='none'; }
+  document.getElementById('me-prev-total').textContent = fmtMoney(total);
+}
+
+function saveManualEntry(){
+  const date   = document.getElementById('me-date').value;
+  const site   = document.getElementById('me-site').value;
+  const start  = document.getElementById('me-start').value;
+  const finish = document.getElementById('me-finish').value;
+  const lunchMins  = parseInt(document.getElementById('me-lunch').value)||0;
+  const sonWorking = document.getElementById('me-son-toggle').checked;
+  const sonHoursVal = document.getElementById('me-son-hours').value;
+  const sonHours   = sonHoursVal ? parseFloat(sonHoursVal) : null;
+  const notes  = document.getElementById('me-notes').value.trim();
+  if(!date)  { toast('Please select a date'); return; }
+  if(!site)  { toast('Please select a site'); return; }
+  if(!start) { toast('Please enter a start time'); return; }
+  if(!finish){ toast('Please enter a finish time'); return; }
+  if(start >= finish){ toast('Finish time must be after start time'); return; }
+  const s = S();
+  const existing = days();
+  const clash = existing.find(d => d.date === date);
+  if(clash && !confirm(`You already have an entry for ${fmtDate(date)}.\nReplace it with this manual entry?`)) return;
+  const entry = {
+    date, site, start, finish, lunchMins,
+    rate: s.rate, sonWorking, sonHours,
+    sonrate: s.sonrate||30, machines: [],
+    invoiced: false, manual: true,
+    notes: notes||undefined
+  };
+  const filtered = existing.filter(d => d.date !== date);
+  filtered.push(entry);
+  DB.set('days', filtered);
+  toast('Manual entry saved! ✓');
+  // Reset for next entry — keep site/date in case they're logging multiple days
+  document.getElementById('me-start').value = '07:00';
+  document.getElementById('me-finish').value = '15:30';
+  document.getElementById('me-lunch').value = '';
+  document.getElementById('me-son-toggle').checked = false;
+  document.getElementById('me-son-section').style.display = 'none';
+  document.getElementById('me-son-hours').value = '';
+  document.getElementById('me-notes').value = '';
+  document.getElementById('me-preview').style.display = 'none';
+}
+
+function resetManualEntry(){
+  document.getElementById('me-date').value = todayStr();
+  document.getElementById('me-site').value = '';
+  document.getElementById('me-start').value = '07:00';
+  document.getElementById('me-finish').value = '15:30';
+  document.getElementById('me-lunch').value = '';
+  document.getElementById('me-son-toggle').checked = false;
+  document.getElementById('me-son-section').style.display = 'none';
+  document.getElementById('me-son-hours').value = '';
+  document.getElementById('me-notes').value = '';
+  document.getElementById('me-preview').style.display = 'none';
+}
+// ─────────────────────────────────────────────────────────────────────────────
 </script>
 </body>
 </html>
