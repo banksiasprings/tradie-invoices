@@ -1194,7 +1194,7 @@ function startGPS(){
   dot.className='gps-dot searching';lbl.textContent='Getting your location…';
   watchId=navigator.geolocation.watchPosition(pos=>{
     lastLat=pos.coords.latitude;lastLng=pos.coords.longitude;
-    dot.className='gps-dot active';lbl.textContent='GPS Tracking';
+    dot.className='gps-dot active';lbl.textContent='GPS actively tracking';
     checkNearbySites(lastLat,lastLng);
   },()=>{dot.className='gps-dot';lbl.textContent='GPS unavailable — select site manually';},{enableHighAccuracy:true,maximumAge:30000});
 }
