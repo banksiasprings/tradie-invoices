@@ -493,7 +493,10 @@ window.firebaseSignOut = async function() {
       </div>
       <div id="no-site-nearby" style="display:none;color:var(--text2);font-size:13px;padding:8px 0">No saved site detected nearby</div>
       <div class="field" style="margin-top:14px">
-        <label>Site</label>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <label>Site</label>
+          <button onclick="addSite()" style="background:none;border:none;color:var(--amber);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:none">＋ Add Site</button>
+        </div>
         <select id="checkin-site"><option value="">Select site…</option></select>
       </div>
       <div class="field">
