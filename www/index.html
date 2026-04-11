@@ -814,7 +814,11 @@ window.firebaseSignOut = async function() {
     </div>
     <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
     <div style="height:12px"></div>
-    <button class="btn btn-secondary" onclick="exportData()">Export all data (JSON backup)</button>
+    <button class="btn btn-secondary" onclick="exportData()">⬇ Export all data (JSON backup)</button>
+    <label class="btn btn-secondary" style="display:block;text-align:center;margin-top:8px;cursor:pointer">
+      ⬆ Import data from JSON
+      <input type="file" accept=".json" style="display:none" onchange="importData(this)">
+    </label>
     <div class="card" style="margin-top:12px">
       <div class="card-title">☁️ Cloud Account</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Signed in as <span id="cloud-account-display" style="font-weight:600;color:var(--text)">…</span></div>
@@ -843,7 +847,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v15';
+const APP_VERSION = 'v16';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -2276,6 +2280,34 @@ function exportData(){
         b=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}),
         u=URL.createObjectURL(b),a=document.createElement('a');
   a.href=u;a.download='invoices_backup.json';a.click();URL.revokeObjectURL(u);toast('Data exported ✓');
+}
+
+function importData(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=async function(e){
+    try{
+      const d=JSON.parse(e.target.result);
+      let imported=0;
+      if(d.settings){DB.set('settings',d.settings);imported++;}
+      if(d.days&&Array.isArray(d.days)){DB.set('days',d.days);imported++;}
+      if(d.invoices&&Array.isArray(d.invoices)){DB.set('invoices',d.invoices);imported++;}
+      if(d.sites&&Array.isArray(d.sites)){DB.set('sites',d.sites);imported++;}
+      // Push everything to Firestore immediately
+      if(window.CloudSync&&window.CloudSync.uid){
+        await window.CloudSync.pushAll();
+        toast('Imported & synced to cloud ✓ — reloading…');
+      } else {
+        toast('Imported locally ✓ — sign in to sync to cloud — reloading…');
+      }
+      setTimeout(()=>location.reload(),1800);
+    }catch(err){
+      toast('Import failed — make sure it\'s a valid backup file');
+      console.error('importData error:',err);
+    }
+  };
+  reader.readAsText(file);
+  input.value=''; // reset so same file can be re-selected
 }
 
 // --- Saved Invoices ---
