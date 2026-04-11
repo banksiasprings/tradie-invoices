@@ -537,6 +537,10 @@ window.firebaseSignOut = async function() {
       <div class="timer-earnings" id="timer-earnings">$0.00</div>
       <div class="timer-site" id="timer-site-name"></div>
       <div class="timer-status" id="timer-status">Working</div>
+      <div id="geo-status-bar" style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:10px;padding:6px 14px;border-radius:20px;background:rgba(0,0,0,0.25);font-size:12px;font-weight:600;min-height:30px;letter-spacing:0.2px">
+        <div class="gps-dot searching" id="geo-status-dot"></div>
+        <span id="geo-status-text">Locating…</span>
+      </div>
     </div>
     <div class="card">
       <div style="font-size:12px;color:var(--text2);margin-bottom:10px">Start: <strong id="active-start-display"></strong> &nbsp;|&nbsp; Lunch: <strong id="active-lunch-display">None</strong> <button onclick="setLunchManually()" style="background:none;border:none;color:var(--amber);font-size:11px;font-weight:700;cursor:pointer;padding:0 0 0 4px;vertical-align:middle">Set ✏️</button></div>
@@ -835,7 +839,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v13';
+const APP_VERSION = 'v14';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 async function forceAppUpdate() {
@@ -1186,6 +1190,33 @@ let watchId=null,lastLat=null,lastLng=null;
 let geoAutoStartTriggered=false;
 let geoAutoStopTriggered=false;
 let outsideSiteTimer=null;
+let outsideSiteTimerStart=null; // when the debounce started (for countdown display)
+let bgPollInterval=null; // backup polling when watchPosition goes quiet
+
+function updateGeoStatusBar(state,text){
+  const dot=document.getElementById('geo-status-dot');
+  const lbl=document.getElementById('geo-status-text');
+  const bar=document.getElementById('geo-status-bar');
+  if(!dot||!lbl||!bar) return;
+  // state: 'inside' | 'outside' | 'searching' | 'inactive'
+  dot.className='gps-dot'+(state==='inside'?' active':state==='outside'?' searching':state==='searching'?' searching':'');
+  lbl.textContent=text;
+  bar.style.color=state==='inside'?'#22C55E':state==='outside'?'#e8a020':'#94a3b8';
+}
+
+// Start background poll — fires getCurrentPosition every 90s as fallback
+// for when watchPosition goes quiet with screen off
+function startBgPoll(){
+  if(bgPollInterval) return;
+  bgPollInterval=setInterval(()=>{
+    if(!activeDay()) return;
+    navigator.geolocation.getCurrentPosition(pos=>{
+      lastLat=pos.coords.latitude; lastLng=pos.coords.longitude;
+      checkNearbySites(lastLat,lastLng);
+    },()=>{},{ enableHighAccuracy:true, timeout:15000, maximumAge:60000 });
+  }, 90000);
+}
+function stopBgPoll(){ clearInterval(bgPollInterval); bgPollInterval=null; }
 const GEO_STOP_DEBOUNCE=2.5*60*1000; // 2.5 minutes
 
 function startGPS(){
@@ -1244,13 +1275,15 @@ function checkNearbySites(lat,lng){
   if(ad&&ad.site&&!geoAutoStopTriggered){
     const activeSite=sites().find(s=>s.name===ad.site);
     if(activeSite&&activeSite.lat){
-      const dActive=dist(lat,lng,activeSite.lat,activeSite.lng);
+      const dActive=Math.round(dist(lat,lng,activeSite.lat,activeSite.lng));
       const activeRadius=activeSite.radius||100;
+      const distToBoundary=activeRadius-dActive; // positive = inside, negative = outside
       if(dActive>activeRadius){
         // Outside geofence — start debounce if not already counting
         if(!outsideSiteTimer){
+          outsideSiteTimerStart=Date.now();
           outsideSiteTimer=setTimeout(()=>{
-            outsideSiteTimer=null;
+            outsideSiteTimer=null; outsideSiteTimerStart=null;
             const hour=new Date().getHours();
             if(hour>=5&&hour<21&&activeDay()&&!geoAutoStopTriggered){
               geoAutoStopTriggered=true;
@@ -1258,10 +1291,18 @@ function checkNearbySites(lat,lng){
             }
           },GEO_STOP_DEBOUNCE);
         }
+        // Show countdown in status bar
+        const secsLeft=outsideSiteTimerStart?Math.max(0,Math.round((GEO_STOP_DEBOUNCE-(Date.now()-outsideSiteTimerStart))/1000)):Math.round(GEO_STOP_DEBOUNCE/1000);
+        const minsLeft=Math.floor(secsLeft/60),sLeft=secsLeft%60;
+        const countdown=minsLeft>0?minsLeft+'m '+sLeft+'s':sLeft+'s';
+        updateGeoStatusBar('outside','⚠ '+Math.abs(distToBoundary)+'m outside · stops in '+countdown);
       } else {
-        // Back inside — cancel debounce
-        if(outsideSiteTimer){clearTimeout(outsideSiteTimer);outsideSiteTimer=null;}
+        // Inside geofence — cancel any pending debounce
+        if(outsideSiteTimer){clearTimeout(outsideSiteTimer);outsideSiteTimer=null;outsideSiteTimerStart=null;}
+        updateGeoStatusBar('inside','📍 Inside · '+Math.max(0,Math.round(distToBoundary))+'m to boundary');
       }
+    } else {
+      updateGeoStatusBar('searching','📡 No site GPS set');
     }
   }
 }
@@ -1400,6 +1441,11 @@ function showActiveTimer(ad){
   document.getElementById('machine-section2').style.display=(ad.machines&&ad.machines.length)?'block':'none';
   updateLunchDisplay(ad);
   clearInterval(timerInterval);timerInterval=setInterval(tickTimer,1000);tickTimer();
+  // Start backup GPS polling and set initial status bar state
+  updateGeoStatusBar('searching','📡 Locating…');
+  startBgPoll();
+  // If we already have a position, update immediately
+  if(lastLat!==null) checkNearbySites(lastLat,lastLng);
 }
 
 function tickTimer(){
@@ -1533,7 +1579,8 @@ function saveDay(){
   DB.set('days',filtered);DB.set('activeDay',null);clearInterval(timerInterval);
   if(window.CloudSync) window.CloudSync.pushAll().then(()=>toast('☁ Synced to cloud ✓')).catch(()=>{});
   geoAutoStartTriggered=false;geoAutoStopTriggered=false;
-  if(outsideSiteTimer){clearTimeout(outsideSiteTimer);outsideSiteTimer=null;}
+  if(outsideSiteTimer){clearTimeout(outsideSiteTimer);outsideSiteTimer=null;outsideSiteTimerStart=null;}
+  stopBgPoll();
   toast('Day saved! ✓');
   document.getElementById('checkin-idle').style.display='block';
   document.getElementById('checkin-active').style.display='none';
@@ -2276,6 +2323,19 @@ function deleteSavedInvoice(id){
     }
   }).catch(()=>toast('Error deleting'));
 }
+
+// --- Foreground recovery: re-check GPS when screen/tab comes back ---
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible'&&activeDay()&&lastLat!==null){
+    // Re-check immediately when app comes back to foreground
+    checkNearbySites(lastLat,lastLng);
+    // Also grab a fresh position in case we've moved while backgrounded
+    navigator.geolocation.getCurrentPosition(pos=>{
+      lastLat=pos.coords.latitude; lastLng=pos.coords.longitude;
+      checkNearbySites(lastLat,lastLng);
+    },()=>{},{enableHighAccuracy:true,timeout:15000,maximumAge:30000});
+  }
+});
 
 // --- Service Worker & Notifications ---
 if('serviceWorker' in navigator){
