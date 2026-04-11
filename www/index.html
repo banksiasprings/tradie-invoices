@@ -250,27 +250,31 @@ const CloudSync = {
 
   async restore() {
     if (!this.uid) return;
-    // Local wins: if this device already has data, push it to Firestore and return.
-    // Only pull from Firestore on a genuinely fresh install (empty localStorage).
-    const hasLocalData = localStorage.getItem('mcn_settings') !== null;
-    if (hasLocalData) {
-      await this.pushAll();
-      return;
-    }
-    // No local data — fresh install or cleared cache — restore from Firestore.
+    // Per-key merge: local wins for keys that exist locally, pull from Firestore for missing keys.
+    // This handles: (a) fresh install — pull everything, (b) device switch — fill gaps,
+    // (c) same device sign-out/sign-in — local data preserved, nothing overwritten.
     try {
+      const toFetch = [];
       for (const key of SYNC_KEYS) {
-        const ref = doc(firestoreDb, 'users', this.uid, 'data', key);
-        const snap = await getDoc(ref);
-        if (snap.exists()) {
-          const raw = snap.data().value;
-          if (raw !== undefined && raw !== null) {
-            // DB stores as JSON string under mcn_ prefix
-            const stored = typeof raw === 'string' ? raw : JSON.stringify(raw);
-            localStorage.setItem('mcn_' + key, stored);
+        if (localStorage.getItem('mcn_' + key) === null) {
+          toFetch.push(key); // missing locally — fetch from Firestore
+        }
+      }
+      if (toFetch.length > 0) {
+        for (const key of toFetch) {
+          const ref = doc(firestoreDb, 'users', this.uid, 'data', key);
+          const snap = await getDoc(ref);
+          if (snap.exists()) {
+            const raw = snap.data().value;
+            if (raw !== undefined && raw !== null) {
+              const stored = typeof raw === 'string' ? raw : JSON.stringify(raw);
+              localStorage.setItem('mcn_' + key, stored);
+            }
           }
         }
       }
+      // Always push whatever we have locally so Firestore stays current
+      await this.pushAll();
     } catch(e) { console.warn('CloudSync.restore failed:', e); }
   },
 
@@ -839,7 +843,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v14';
+const APP_VERSION = 'v15';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
