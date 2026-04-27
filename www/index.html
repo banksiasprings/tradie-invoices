@@ -1945,6 +1945,16 @@ function previewInvoice(){
   sec.style.display='block';sec.scrollIntoView({behavior:'smooth'});
 }
 
+// Dynamically load a <script> tag (resolves immediately if already loaded)
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector('script[src="'+src+'"]')) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = src; s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
 // Share via Android share sheet if supported, otherwise fall back to <a download>
 async function shareOrDownload(blob, filename) {
   try {
@@ -1961,13 +1971,87 @@ async function shareOrDownload(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
+// Generate a real PDF from invoice HTML, then save/share it.
+// On Capacitor Android: writes to cache dir and opens share sheet with the .pdf file.
+// On web: falls back to shareOrDownload (Web Share API or <a download>).
+async function generatePDF(html, filename) {
+  toast('Generating PDF…');
+  try {
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+
+    // Parse invoice HTML and clone content into a hidden div in the live document
+    // (html2canvas works most reliably this way vs. iframes)
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;top:0;left:-860px;width:820px;background:#fff;z-index:-1;font-family:Arial,sans-serif;font-size:11px;color:#111;';
+
+    // Inject invoice styles (scoped inside wrap via cascade)
+    doc.querySelectorAll('style').forEach(s => {
+      const el = document.createElement('style');
+      el.textContent = s.textContent;
+      wrap.appendChild(el);
+    });
+
+    // Inject body content
+    const inner = document.createElement('div');
+    inner.style.cssText = 'padding:20px;box-sizing:border-box;';
+    inner.innerHTML = doc.body.innerHTML;
+    wrap.appendChild(inner);
+
+    document.body.appendChild(wrap);
+    await new Promise(r => setTimeout(r, 450)); // allow layout pass
+
+    const canvas = await html2canvas(wrap, {
+      scale: 2, useCORS: true, allowTaint: false,
+      backgroundColor: '#ffffff', logging: false
+    });
+    document.body.removeChild(wrap);
+
+    // Build PDF — split into A4 pages if content is taller than one page
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const A4W = 210, A4H = 297;
+    const imgW = A4W;
+    const imgH = canvas.height * A4W / canvas.width;
+    const pageH = A4H * canvas.width / A4W; // page height in canvas px
+    const pages = Math.ceil(canvas.height / pageH);
+
+    for (let p = 0; p < pages; p++) {
+      if (p > 0) pdf.addPage();
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, -(p * A4H), imgW, imgH);
+    }
+
+    const pdfName = filename.replace(/\.html$/, '') + '.pdf';
+
+    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+      // Write PDF to cache dir, then share via native share sheet
+      const b64 = pdf.output('datauristring').split(',')[1];
+      const { Filesystem, Share } = window.Capacitor.Plugins;
+      await Filesystem.writeFile({ path: pdfName, data: b64, directory: 'CACHE' });
+      const { uri } = await Filesystem.getUri({ path: pdfName, directory: 'CACHE' });
+      await Share.share({ title: pdfName, url: uri, dialogTitle: 'Share Invoice PDF' });
+    } else {
+      const blob = pdf.output('blob');
+      await shareOrDownload(blob, pdfName);
+    }
+  } catch(err) {
+    console.error('generatePDF:', err);
+    toast('PDF error – sharing HTML instead');
+    const blob = new Blob([html], { type: 'text/html' });
+    await shareOrDownload(blob, filename);
+  }
+}
+
 function generateInvoice(){
   const s=S(),ui=days().filter(d=>!d.invoiced);
   if(!ui.length){toast('No uninvoiced days to include');return;}
-  const html=buildInvoiceHTML(),blob=new Blob([html],{type:'text/html'});
+  const html=buildInvoiceHTML();
   const ic=getSelectedClient();
   const filename='Invoice_'+String(s.invnum).padStart(4,'0')+'_'+(ic.company||s.client||'Client').replace(/\s/g,'_')+'.html';
-  shareOrDownload(blob, filename);
+  generatePDF(html, filename);
   const ad=days();
   const it=ui.reduce((sum,d)=>{const{total}=dayTotals(d);return sum+total;},0);
   ad.forEach(d=>{if(!d.invoiced)d.invoiced=true;});DB.set('days',ad);
@@ -2369,8 +2453,7 @@ function viewSavedInvoice(id){
 function exportSavedInvoice(id,btn){
   InvoiceDB.list().then(records=>{
     const r=records.find(x=>x.id===id);if(!r)return;
-    const blob=new Blob([r.html],{type:'text/html'});
-    shareOrDownload(blob, r.filename).then(()=>toast('Exported ✓'));
+    generatePDF(r.html, r.filename).then(()=>toast('Exported ✓'));
   });
 }
 
