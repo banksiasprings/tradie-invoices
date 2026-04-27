@@ -847,7 +847,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v16';
+const APP_VERSION = 'v19';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -863,22 +863,57 @@ document.getElementById('app-version').textContent = APP_VERSION;
 
 async function forceAppUpdate() {
   const btn = document.getElementById('update-btn');
-  btn.textContent = 'Updating…';
+  btn.textContent = 'Checking…';
   btn.disabled = true;
   try {
-    if ('serviceWorker' in navigator) {
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map(r => r.unregister()));
+    const updater = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorUpdater;
+
+    if (updater) {
+      // ── Native app: hot-swap the web bundle without reinstalling the APK ──
+      const manifestUrl = 'https://banksiasprings.github.io/mcnichol-invoices/updates/latest.json?t=' + Date.now();
+      const res = await fetch(manifestUrl);
+      if (!res.ok) throw new Error('Manifest fetch failed: ' + res.status);
+      const latest = await res.json();
+
+      // Compare against whatever bundle is currently running
+      const { bundle: cur } = await updater.getCurrentBundle();
+      if (latest.version === cur.version) {
+        toast('Already on the latest version (' + latest.version + ') ✓');
+        btn.textContent = 'Up to date ✓';
+        setTimeout(() => { btn.textContent = 'Check for Update'; btn.disabled = false; }, 2500);
+        return;
+      }
+
+      toast('Update ' + latest.version + ' found — downloading…');
+      btn.textContent = 'Downloading…';
+
+      // Download bundle zip from GitHub Pages
+      const bundle = await updater.download({ url: latest.url, version: latest.version });
+
+      btn.textContent = 'Installing…';
+      toast('Installing — app will reload automatically…');
+
+      // set() immediately reloads to the new bundle; no code runs after this
+      await updater.set({ id: bundle.id });
+
+    } else {
+      // ── Web / PWA fallback: clear SW cache and hard-reload ──
+      btn.textContent = 'Updating…';
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+      window.location.reload(true);
     }
-    if ('caches' in window) {
-      const keys = await caches.keys();
-      await Promise.all(keys.map(k => caches.delete(k)));
-    }
-    window.location.reload(true);
   } catch(e) {
+    console.error('Update error:', e);
+    toast('Update failed — please try again');
     btn.textContent = 'Check for Update';
     btn.disabled = false;
-    alert('Update failed — try manually clearing your browser cache.');
   }
 }
 </script>

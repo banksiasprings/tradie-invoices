@@ -20,7 +20,8 @@
       "autoUpdate": true,
       "updateUrl": "https://banksiasprings.github.io/mcnichol-invoices/updates/latest.json",
       "statsUrl": "",
-      "resetWhenUpdate": false
+      "resetWhenUpdate": false,
+      "version": "1.0.0"
     }
   }
 }
