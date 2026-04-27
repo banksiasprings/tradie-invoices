@@ -1971,10 +1971,12 @@ async function shareOrDownload(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
-// Generate a real PDF from invoice HTML, then save/share it.
-// On Capacitor Android: writes to cache dir and opens share sheet with the .pdf file.
-// On web: falls back to shareOrDownload (Web Share API or <a download>).
-async function generatePDF(html, filename) {
+// Generate a real PDF from invoice HTML, then email or share it.
+// emailOpts (optional): { to, clientName, invoiceNum, senderName }
+// On Capacitor Android: if emailOpts.to is set, opens email composer with PDF attached.
+//   Otherwise falls back to the native share sheet.
+// On web: downloads PDF, then opens mailto: if emailOpts.to is set.
+async function generatePDF(html, filename, emailOpts) {
   toast('Generating PDF…');
   try {
     await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
@@ -2027,15 +2029,41 @@ async function generatePDF(html, filename) {
     const pdfName = filename.replace(/\.html$/, '') + '.pdf';
 
     if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-      // Write PDF to cache dir, then share via native share sheet
       const b64 = pdf.output('datauristring').split(',')[1];
-      const { Filesystem, Share } = window.Capacitor.Plugins;
+      const { Filesystem, Share, EmailComposer } = window.Capacitor.Plugins;
+      // Always write to cache so we have the file ready for either path
       await Filesystem.writeFile({ path: pdfName, data: b64, directory: 'CACHE' });
       const { uri } = await Filesystem.getUri({ path: pdfName, directory: 'CACHE' });
-      await Share.share({ title: pdfName, url: uri, dialogTitle: 'Share Invoice PDF' });
+
+      if (emailOpts && emailOpts.to && EmailComposer) {
+        // Open email composer with PDF attached and fields pre-populated
+        const clientDisplay = emailOpts.clientName || 'there';
+        const invRef = emailOpts.invoiceNum ? ' #' + emailOpts.invoiceNum : '';
+        const sender = emailOpts.senderName || '';
+        await EmailComposer.open({
+          to: [emailOpts.to],
+          subject: 'Invoice' + invRef + (sender ? ' from ' + sender : ''),
+          body: 'Hi ' + clientDisplay + ',\n\nPlease find Invoice' + invRef + ' attached for recent work completed.\n\nDon\'t hesitate to get in touch if you have any questions.\n\nThanks,\n' + (sender || 'me'),
+          isHtml: false,
+          attachments: [{ type: 'absolute', path: uri.replace(/^file:\/\//, ''), name: pdfName }]
+        });
+      } else {
+        // No client email on file — open the share sheet instead
+        await Share.share({ title: pdfName, url: uri, dialogTitle: 'Share Invoice PDF' });
+      }
     } else {
       const blob = pdf.output('blob');
       await shareOrDownload(blob, pdfName);
+      // On web, also open mailto: with pre-filled subject/body (can't attach via mailto, so
+      // the PDF downloads first and the user can manually attach it from their downloads folder)
+      if (emailOpts && emailOpts.to) {
+        const clientDisplay = emailOpts.clientName || 'there';
+        const invRef = emailOpts.invoiceNum ? ' #' + emailOpts.invoiceNum : '';
+        const sender = emailOpts.senderName || '';
+        const subject = encodeURIComponent('Invoice' + invRef + (sender ? ' from ' + sender : ''));
+        const body = encodeURIComponent('Hi ' + clientDisplay + ',\n\nPlease find Invoice' + invRef + ' attached for recent work completed.\n\nDon\'t hesitate to get in touch if you have any questions.\n\nThanks,\n' + (sender || 'me'));
+        setTimeout(() => { window.location.href = 'mailto:' + emailOpts.to + '?subject=' + subject + '&body=' + body; }, 600);
+      }
     }
   } catch(err) {
     console.error('generatePDF:', err);
@@ -2050,8 +2078,9 @@ function generateInvoice(){
   if(!ui.length){toast('No uninvoiced days to include');return;}
   const html=buildInvoiceHTML();
   const ic=getSelectedClient();
-  const filename='Invoice_'+String(s.invnum).padStart(4,'0')+'_'+(ic.company||s.client||'Client').replace(/\s/g,'_')+'.html';
-  generatePDF(html, filename);
+  const invNum=String(s.invnum).padStart(4,'0');
+  const filename='Invoice_'+invNum+'_'+(ic.company||s.client||'Client').replace(/\s/g,'_')+'.html';
+  generatePDF(html, filename, {to:ic.email||'',clientName:ic.contact||ic.company||'',invoiceNum:invNum,senderName:s.name||''});
   const ad=days();
   const it=ui.reduce((sum,d)=>{const{total}=dayTotals(d);return sum+total;},0);
   ad.forEach(d=>{if(!d.invoiced)d.invoiced=true;});DB.set('days',ad);
@@ -2453,7 +2482,15 @@ function viewSavedInvoice(id){
 function exportSavedInvoice(id,btn){
   InvoiceDB.list().then(records=>{
     const r=records.find(x=>x.id===id);if(!r)return;
-    generatePDF(r.html, r.filename).then(()=>toast('Exported ✓'));
+    const s=S(),cl=clientsData();
+    const client=cl.find(c=>(c.company||c.contact||'')===r.clientName)||{};
+    const invMatch=r.filename.match(/Invoice #(\d+)/);
+    generatePDF(r.html, r.filename, {
+      to:client.email||'',
+      clientName:r.clientName||client.contact||'',
+      invoiceNum:invMatch?invMatch[1]:'',
+      senderName:s.name||''
+    }).then(()=>toast('Exported ✓'));
   });
 }
 
