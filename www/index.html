@@ -1945,12 +1945,29 @@ function previewInvoice(){
   sec.style.display='block';sec.scrollIntoView({behavior:'smooth'});
 }
 
+// Share via Android share sheet if supported, otherwise fall back to <a download>
+async function shareOrDownload(blob, filename) {
+  try {
+    const file = new File([blob], filename, { type: blob.type });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: filename });
+      return;
+    }
+  } catch(e) { if (e.name === 'AbortError') return; }
+  // Fallback: standard download link
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
 function generateInvoice(){
   const s=S(),ui=days().filter(d=>!d.invoiced);
   if(!ui.length){toast('No uninvoiced days to include');return;}
-  const html=buildInvoiceHTML(),blob=new Blob([html],{type:'text/html'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+  const html=buildInvoiceHTML(),blob=new Blob([html],{type:'text/html'});
   const ic=getSelectedClient();
-  a.href=url;a.download='Invoice_'+String(s.invnum).padStart(4,'0')+'_'+(ic.company||s.client||'Client').replace(/\s/g,'_')+'.html';a.click();URL.revokeObjectURL(url);
+  const filename='Invoice_'+String(s.invnum).padStart(4,'0')+'_'+(ic.company||s.client||'Client').replace(/\s/g,'_')+'.html';
+  shareOrDownload(blob, filename);
   const ad=days();
   const it=ui.reduce((sum,d)=>{const{total}=dayTotals(d);return sum+total;},0);
   ad.forEach(d=>{if(!d.invoiced)d.invoiced=true;});DB.set('days',ad);
@@ -2353,11 +2370,7 @@ function exportSavedInvoice(id,btn){
   InvoiceDB.list().then(records=>{
     const r=records.find(x=>x.id===id);if(!r)return;
     const blob=new Blob([r.html],{type:'text/html'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=url;a.download=r.filename;a.click();
-    URL.revokeObjectURL(url);
-    toast('Exported ✓');
+    shareOrDownload(blob, r.filename).then(()=>toast('Exported ✓'));
   });
 }
 
