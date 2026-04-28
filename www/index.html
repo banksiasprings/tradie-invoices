@@ -577,6 +577,22 @@ window.firebaseSignOut = async function() {
           </div>
         </div>
       </div>
+      <!-- Materials (idle) -->
+      <div id="materials-idle-section" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-size:14px;font-weight:600">🧱 Materials / Parts</div>
+          <button onclick="addMaterialLineUI('idle',null,null)" style="background:var(--amber);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Add</button>
+        </div>
+        <div id="materials-idle-lines"></div>
+        <div id="materials-idle-quickadd" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+        <div id="materials-idle-custom" style="display:none;margin-top:8px">
+          <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center">
+            <input type="text" id="materials-idle-custom-name" placeholder="Item name" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
+            <input type="number" id="materials-idle-custom-price" placeholder="$ each" min="0" step="0.01" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;width:90px">
+            <button onclick="addCustomMaterial('idle')" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer">Add</button>
+          </div>
+        </div>
+      </div>
       <button class="btn btn-primary btn-hero" onclick="startDay()">🚜  Start Day</button>
       <button class="btn btn-secondary" style="width:100%;margin-top:10px" onclick="showScreen('manual',window.event.target);initManualEntry()">+ Manual Entry</button>
     </div>
@@ -638,6 +654,22 @@ window.firebaseSignOut = async function() {
           </div>
         </div>
       </div>
+      <!-- Materials (active) -->
+      <div id="materials-active-section" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-size:14px;font-weight:600">🧱 Materials / Parts</div>
+          <button onclick="addMaterialLineUI('active',null,null)" style="background:var(--amber);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Add</button>
+        </div>
+        <div id="materials-active-lines"></div>
+        <div id="materials-active-quickadd" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+        <div id="materials-active-custom" style="display:none;margin-top:8px">
+          <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center">
+            <input type="text" id="materials-active-custom-name" placeholder="Item name" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
+            <input type="number" id="materials-active-custom-price" placeholder="$ each" min="0" step="0.01" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;width:90px">
+            <button onclick="addCustomMaterial('active')" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer">Add</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -655,6 +687,7 @@ window.firebaseSignOut = async function() {
         <tr id="rev-son-row" style="display:none"><td style="color:var(--text2)">Extra labourer hrs</td><td style="text-align:right;font-weight:600" id="rev-son-hours"></td></tr>
         <tr id="rev-son-earn-row" style="display:none"><td style="color:var(--text2)">Extra labourer</td><td style="text-align:right;font-weight:600" id="rev-son-earn"></td></tr>
         <tr id="rev-travel-row" style="display:none"><td style="color:var(--text2)">🚗 Travel</td><td style="text-align:right;font-weight:600" id="rev-travel"></td></tr>
+        <tr id="rev-materials-row" style="display:none"><td style="color:var(--text2)">🧱 Materials</td><td style="text-align:right;font-weight:600" id="rev-materials"></td></tr>
         <tr><td style="color:var(--text2);font-weight:700;border-top:1px solid var(--border);padding-top:4px">Total</td><td style="text-align:right;font-weight:700;font-size:18px;color:var(--amber);border-top:1px solid var(--border);padding-top:4px" id="rev-earnings"></td></tr>
       </table>
       <div id="rev-machine-info" style="display:none;font-size:12px;color:var(--text2);padding:4px 0;border-top:1px solid var(--border);margin-top:4px"></div>
@@ -740,6 +773,22 @@ window.firebaseSignOut = async function() {
     </div>
 
     <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div class="section-heading" style="margin:0">🧱 Materials / Parts</div>
+        <button onclick="addMaterialLineUI('me',null,null);mePreview()" style="background:var(--amber);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Add</button>
+      </div>
+      <div id="materials-me-lines"></div>
+      <div id="materials-me-quickadd" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+      <div id="materials-me-custom" style="display:none;margin-top:8px">
+        <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center">
+          <input type="text" id="materials-me-custom-name" placeholder="Item name" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
+          <input type="number" id="materials-me-custom-price" placeholder="$ each" min="0" step="0.01" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;width:90px">
+          <button onclick="addCustomMaterial('me')" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer">Add</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
       <div class="field" style="margin:0">
         <label>Notes <span style="color:var(--text2);font-weight:400">(optional — reason for manual entry)</span></label>
         <input type="text" id="me-notes" placeholder="e.g. Left phone at home, GPS failed…" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
@@ -754,6 +803,7 @@ window.firebaseSignOut = async function() {
         <tr><td style="color:rgba(255,255,255,.6)">My labour</td><td style="text-align:right;font-weight:600" id="me-prev-my">—</td></tr>
         <tr id="me-prev-son-row" style="display:none"><td style="color:rgba(255,255,255,.6)">Extra labourer</td><td style="text-align:right;font-weight:600" id="me-prev-son">—</td></tr>
         <tr id="me-prev-travel-row" style="display:none"><td style="color:rgba(255,255,255,.6)">🚗 Travel</td><td style="text-align:right;font-weight:600" id="me-prev-travel">—</td></tr>
+        <tr id="me-prev-materials-row" style="display:none"><td style="color:rgba(255,255,255,.6)">🧱 Materials</td><td style="text-align:right;font-weight:600" id="me-prev-materials">—</td></tr>
         <tr><td style="color:rgba(255,255,255,.6);font-weight:700;border-top:1px solid rgba(255,255,255,.15);padding-top:4px">Total</td><td style="text-align:right;font-size:20px;font-weight:800;color:var(--amber);border-top:1px solid rgba(255,255,255,.15);padding-top:4px" id="me-prev-total">—</td></tr>
       </table>
     </div>
@@ -917,6 +967,20 @@ window.firebaseSignOut = async function() {
       </div>
     </div>
     <div id="machine-rates-card" class="card"></div>
+    <!-- Materials catalogue -->
+    <div class="card card-collapsible">
+      <div class="card-title">Materials &amp; Parts catalogue</div>
+      <div class="card-body">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Your go-to materials. Tap <strong>+ Add</strong> on any day to quick-add from this list with a quantity.</div>
+        <div id="materials-lib-list"></div>
+        <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;margin-top:10px">
+          <input type="text" id="s-mat-name" placeholder="Item name" style="padding:9px 11px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:14px">
+          <input type="number" id="s-mat-price" placeholder="$ each" min="0" step="0.01" style="padding:9px 11px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:14px;width:95px">
+          <button onclick="addToMaterialsLib()" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:9px 14px;font-size:14px;font-weight:600;cursor:pointer">+ Add</button>
+        </div>
+        <button onclick="seedMaterialsLib()" style="margin-top:10px;background:none;border:none;color:var(--amber);font-size:12px;font-weight:600;cursor:pointer;padding:0">↺ Reset to trade defaults</button>
+      </div>
+    </div>
     <div class="card card-collapsible">
       <div class="card-title">Work sites (GPS)</div>
       <div id="sites-list"></div>
@@ -955,7 +1019,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v24';
+const APP_VERSION = 'v25';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1148,6 +1212,22 @@ async function forceAppUpdate() {
         <div class="field" style="margin:0"><label>Travel hours</label><input type="number" id="travel-edit-hrs" placeholder="0 hrs" step="0.25" min="0"></div>
       </div>
     </div>
+    <!-- Materials in edit -->
+    <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:14px;font-weight:600">🧱 Materials / Parts</div>
+        <button onclick="addMaterialLineUI('edit',null,null)" style="background:var(--amber);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Add</button>
+      </div>
+      <div id="materials-edit-lines"></div>
+      <div id="materials-edit-quickadd" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+      <div id="materials-edit-custom" style="display:none;margin-top:8px">
+        <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center">
+          <input type="text" id="materials-edit-custom-name" placeholder="Item name" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
+          <input type="number" id="materials-edit-custom-price" placeholder="$ each" min="0" step="0.01" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;width:90px">
+          <button onclick="addCustomMaterial('edit')" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer">Add</button>
+        </div>
+      </div>
+    </div>
     <button class="btn btn-primary" style="margin-top:8px" onclick="saveEdit()">Update Day</button>
   </div>
 </div>
@@ -1194,6 +1274,22 @@ async function forceAppUpdate() {
       </div>
       <div id="le-travel-hrs-wrap" style="display:none">
         <div class="field" style="margin:0"><label>Travel hours</label><input type="number" id="le-travel-hrs" placeholder="0 hrs" step="0.25" min="0"></div>
+      </div>
+    </div>
+    <!-- Materials (log edit) -->
+    <div style="margin-bottom:14px;padding-top:10px;border-top:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:14px;font-weight:600">🧱 Materials / Parts</div>
+        <button onclick="addMaterialLineUI('le',null,null)" style="background:var(--amber);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Add</button>
+      </div>
+      <div id="materials-le-lines"></div>
+      <div id="materials-le-quickadd" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+      <div id="materials-le-custom" style="display:none;margin-top:8px">
+        <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center">
+          <input type="text" id="materials-le-custom-name" placeholder="Item name" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
+          <input type="number" id="materials-le-custom-price" placeholder="$ each" min="0" step="0.01" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;width:90px">
+          <button onclick="addCustomMaterial('le')" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer">Add</button>
+        </div>
       </div>
     </div>
     <input type="hidden" id="le-date">
@@ -1303,7 +1399,8 @@ const DEFAULTS={
   client:'Muirlawn Pty Ltd',service:'Construction and Maintenance services',
   rate:55, sonrate:30, incpct:7.8, invnum:45,
   travelMode:'none', travelKmRate:0.88, travelHrRate:30,
-  machineRates:{Excavator:150,Grader:180,Bobcat:120,Dozer:200,Tractor:110}
+  machineRates:{Excavator:150,Grader:180,Bobcat:120,Dozer:200,Tractor:110},
+  materialsLib:[]
 };
 
 function S(){return DB.def('settings',DEFAULTS)}
@@ -1401,31 +1498,45 @@ function siteClient(siteName){
 const TRADE_PROFILES={
   earthmoving:{label:'Earthmoving',icon:'🚜',extraLabel:'Extra labourer',equipLabel:'Machine hire',defaultRate:60,
     machines:['Excavator','Grader','Bobcat','Dozer','Tractor'],
-    defaultRates:{Excavator:150,Grader:180,Bobcat:120,Dozer:200,Tractor:110}},
+    defaultRates:{Excavator:150,Grader:180,Bobcat:120,Dozer:200,Tractor:110},
+    defaultMaterials:[{name:'Gravel (tonne)',defaultPrice:45},{name:'Sand (tonne)',defaultPrice:38},{name:'Concrete (m³)',defaultPrice:220},{name:'Pipe (m)',defaultPrice:18},{name:'Geotextile (m²)',defaultPrice:4.50}]},
   plumbing:{label:'Plumbing',icon:'🔧',extraLabel:'Extra tradesperson',equipLabel:'Plant & equipment',defaultRate:95,
     machines:['Excavator','Drain Camera','Pipe Locator','Pressure Tester','Pump'],
-    defaultRates:{Excavator:150,'Drain Camera':80,'Pipe Locator':50,'Pressure Tester':40,Pump:60}},
+    defaultRates:{Excavator:150,'Drain Camera':80,'Pipe Locator':50,'Pressure Tester':40,Pump:60},
+    defaultMaterials:[{name:'PVC Pipe 100mm (m)',defaultPrice:12},{name:'Pipe Fittings',defaultPrice:8},{name:'Copper Pipe (m)',defaultPrice:22},{name:'Sealant (tube)',defaultPrice:15},{name:'Ball Valve',defaultPrice:28}]},
   electrical:{label:'Electrical',icon:'⚡',extraLabel:'Extra electrician',equipLabel:'Equipment',defaultRate:100,
     machines:['EWP / Scissor Lift','Trencher','Cable Puller','Test Equipment','Generator'],
-    defaultRates:{'EWP / Scissor Lift':120,Trencher:130,'Cable Puller':50,'Test Equipment':40,Generator:80}},
+    defaultRates:{'EWP / Scissor Lift':120,Trencher:130,'Cable Puller':50,'Test Equipment':40,Generator:80},
+    defaultMaterials:[{name:'Cable 2.5mm (m)',defaultPrice:3.50},{name:'Conduit (m)',defaultPrice:4},{name:'GPO Outlet',defaultPrice:18},{name:'Circuit Breaker',defaultPrice:25},{name:'Cable Ties (pack)',defaultPrice:8}]},
   building:{label:'Building',icon:'🏗️',extraLabel:'Extra tradesperson',equipLabel:'Plant & equipment',defaultRate:85,
     machines:['Crane','Telehandler','Scissor Lift','Concrete Pump','Compactor'],
-    defaultRates:{Crane:350,Telehandler:180,'Scissor Lift':120,'Concrete Pump':200,Compactor:90}},
+    defaultRates:{Crane:350,Telehandler:180,'Scissor Lift':120,'Concrete Pump':200,Compactor:90},
+    defaultMaterials:[{name:'Timber 90×45 (m)',defaultPrice:6},{name:'Plywood Sheet',defaultPrice:55},{name:'Concrete (m³)',defaultPrice:220},{name:'Bolts & Fixings (box)',defaultPrice:22},{name:'Sarking Roll',defaultPrice:85}]},
   carpentry:{label:'Carpentry',icon:'🪚',extraLabel:'Extra carpenter',equipLabel:'Equipment',defaultRate:80,
     machines:['Scaffolding','Table Saw','Nail Compressor','Generator','EWP / Scissor Lift'],
-    defaultRates:{Scaffolding:60,'Table Saw':40,'Nail Compressor':30,Generator:80,'EWP / Scissor Lift':120}},
+    defaultRates:{Scaffolding:60,'Table Saw':40,'Nail Compressor':30,Generator:80,'EWP / Scissor Lift':120},
+    defaultMaterials:[{name:'Timber 90×45 (m)',defaultPrice:6},{name:'MDF Sheet',defaultPrice:45},{name:'Screws (box)',defaultPrice:12},{name:'Nails (box)',defaultPrice:10},{name:'Sandpaper Pack',defaultPrice:8}]},
   painting:{label:'Painting',icon:'🎨',extraLabel:'Extra painter',equipLabel:'Equipment',defaultRate:70,
     machines:['Scaffolding','EWP / Scissor Lift','Airless Sprayer','Pressure Washer','Generator'],
-    defaultRates:{Scaffolding:60,'EWP / Scissor Lift':120,'Airless Sprayer':80,'Pressure Washer':50,Generator:80}},
+    defaultRates:{Scaffolding:60,'EWP / Scissor Lift':120,'Airless Sprayer':80,'Pressure Washer':50,Generator:80},
+    defaultMaterials:[{name:'Paint 10L (interior)',defaultPrice:95},{name:'Paint 10L (exterior)',defaultPrice:110},{name:'Primer 4L',defaultPrice:55},{name:'Roller Covers (pack)',defaultPrice:18},{name:'Masking Tape',defaultPrice:7}]},
   landscaping:{label:'Landscaping',icon:'🌿',extraLabel:'Extra labourer',equipLabel:'Machine hire',defaultRate:65,
     machines:['Excavator','Bobcat','Tractor','Mulcher','Stump Grinder'],
-    defaultRates:{Excavator:150,Bobcat:120,Tractor:110,Mulcher:130,'Stump Grinder':120}},
+    defaultRates:{Excavator:150,Bobcat:120,Tractor:110,Mulcher:130,'Stump Grinder':120},
+    defaultMaterials:[{name:'Mulch (m³)',defaultPrice:55},{name:'Topsoil (m³)',defaultPrice:65},{name:'Turf (m²)',defaultPrice:18},{name:'Gravel (tonne)',defaultPrice:45},{name:'Plant (each)',defaultPrice:25}]},
   hvac:{label:'HVAC',icon:'❄️',extraLabel:'Extra tradesperson',equipLabel:'Equipment',defaultRate:95,
     machines:['EWP / Scissor Lift','Crane / Hiab','Vacuum Pump','Manifold Set','Generator'],
-    defaultRates:{'EWP / Scissor Lift':120,'Crane / Hiab':250,'Vacuum Pump':60,'Manifold Set':40,Generator:80}},
+    defaultRates:{'EWP / Scissor Lift':120,'Crane / Hiab':250,'Vacuum Pump':60,'Manifold Set':40,Generator:80},
+    defaultMaterials:[{name:'Refrigerant Gas (kg)',defaultPrice:45},{name:'Copper Pipe (m)',defaultPrice:22},{name:'Insulation (m)',defaultPrice:8},{name:'Duct Tape',defaultPrice:12},{name:'Flare Fittings (set)',defaultPrice:35}]},
   custom:{label:'Custom',icon:'⚙️',extraLabel:'Extra worker',equipLabel:'Equipment',defaultRate:75,
-    machines:[],defaultRates:{}}
+    machines:[],defaultRates:{},defaultMaterials:[]}
 };
+function getMaterialsLib(){
+  const lib=S().materialsLib||[];
+  // If user's lib is empty, seed with current trade's defaults
+  if(!lib.length) return currentTradeProfile().defaultMaterials||[];
+  return lib;
+}
 function currentTradeProfile(){return TRADE_PROFILES[S().tradeType||'earthmoving']||TRADE_PROFILES.earthmoving;}
 function getMachines(){return currentTradeProfile().machines;}
 function getExtraLabel(){return currentTradeProfile().extraLabel;}
@@ -1722,6 +1833,7 @@ function initCheckinScreen(){
   sites().forEach(st=>{sel.innerHTML+=`<option value="${st.name}">${st.name}</option>`});
   renderMachineCheckboxes('machine-idle-list',[],'idle');
   initTravelSection('idle',null);
+  initMaterialsSection('idle',null);
   document.getElementById('checkin-start').value=nowTime();
   const ad=activeDay();
   if(ad) showActiveTimer(ad);
@@ -1743,7 +1855,8 @@ function startDay(){
     sonWorking,sonHours:sonHoursVal?parseFloat(sonHoursVal):null,
     machines:readMachinesFromUI('idle'),
     lunchMins:0,lunchStart:null,
-    ...readTravelFromUI('idle')
+    ...readTravelFromUI('idle'),
+    ...readMaterialsFromUI('idle')
   };
   DB.set('activeDay',ad);showActiveTimer(ad);toast('Day started — good luck out there!');
 }
@@ -1763,6 +1876,7 @@ function showActiveTimer(ad){
   document.getElementById('toggle-machine2').checked=!!(ad.machines&&ad.machines.length);
   document.getElementById('machine-section2').style.display=(ad.machines&&ad.machines.length)?'block':'none';
   initTravelSection('active',ad);
+  initMaterialsSection('active',ad);
   updateLunchDisplay(ad);
   clearInterval(timerInterval);timerInterval=setInterval(tickTimer,1000);tickTimer();
   // Start backup GPS polling and set initial status bar state
@@ -1837,6 +1951,7 @@ function finishDay(){
   }
   const travelData=readTravelFromUI('active');
   Object.assign(ad,travelData);
+  Object.assign(ad,readMaterialsFromUI('active'));
   ad.finish=nowTime();DB.set('activeDay',ad);showReview(ad);
 }
 
@@ -1869,6 +1984,13 @@ function showReview(ad){
         :`${fmtMoney(travelLine.total)} (${travelLine.hrs}h × $${travelLine.rate}/hr)`;
     } else {travelRevRow.style.display='none';}
   }
+  // Materials row
+  const matRevRow=document.getElementById('rev-materials-row');
+  const matRevEl=document.getElementById('rev-materials');
+  if(matRevRow&&matRevEl){
+    if(materialsTotal>0){matRevRow.style.display='';matRevEl.textContent=fmtMoney(materialsTotal);}
+    else{matRevRow.style.display='none';}
+  }
   const machineRevEl=document.getElementById('rev-machine-info');
   if(machineRevEl){
     if(machineLines&&machineLines.length){
@@ -1891,6 +2013,7 @@ function editDay(){
   document.getElementById('edit-machine-toggle').checked=!!(ad.machines&&ad.machines.length);
   document.getElementById('edit-machine-section').style.display=(ad.machines&&ad.machines.length)?'block':'none';
   initTravelSection('edit',ad);
+  initMaterialsSection('edit',ad);
   document.getElementById('edit-modal').classList.add('open');
 }
 
@@ -1907,6 +2030,7 @@ function saveEdit(){
   if(!ad.rate) ad.rate=S().rate;
   if(!ad.sonrate) ad.sonrate=S().sonrate||30;
   Object.assign(ad,readTravelFromUI('edit'));
+  Object.assign(ad,readMaterialsFromUI('edit'));
   DB.set('activeDay',ad);closeEditModal();showReview(ad);
 }
 
@@ -1976,6 +2100,7 @@ window.editLogDay = function(entryKey){
   document.getElementById('le-son-section').style.display=d.sonWorking?'block':'none';
   document.getElementById('le-son-hours').value=d.sonHours!==null&&d.sonHours!==undefined?d.sonHours:'';
   initTravelSection('le',d);
+  initMaterialsSection('le',d);
   document.getElementById('log-edit-modal').classList.add('open');
 };
 window.closeLogEditModal = function(){
@@ -1994,6 +2119,7 @@ window.saveLogEdit = function(){
   const sv=document.getElementById('le-son-hours').value;
   d.sonHours=sv?parseFloat(sv):null;
   Object.assign(d,readTravelFromUI('le'));
+  Object.assign(d,readMaterialsFromUI('le'));
   dl[idx]=d;
   DB.set('days',dl);
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
@@ -2079,7 +2205,13 @@ function dayTotals(d){
     travelTotal=d.travelHrs*rate;
     travelLine={mode:'time',hrs:d.travelHrs,rate,total:travelTotal};
   }
-  return{h,myE,sonH,sonE,total:myE+sonE+machineTotal+travelTotal,sonrate,machineTotal,machineLines,travelTotal,travelLine};
+  let materialsTotal=0;const materialLines=[];
+  (d.materials||[]).forEach(m=>{
+    const lineTotal=(m.qty||0)*(m.unitPrice||0);
+    materialsTotal+=lineTotal;
+    materialLines.push({name:m.name,qty:m.qty||0,unitPrice:m.unitPrice||0,total:lineTotal});
+  });
+  return{h,myE,sonH,sonE,total:myE+sonE+machineTotal+travelTotal+materialsTotal,sonrate,machineTotal,machineLines,travelTotal,travelLine,materialsTotal,materialLines};
 }
 
 // --- Log ---
@@ -2110,6 +2242,7 @@ function renderLog(){
           ${d.sonWorking?`<span class="badge badge-blue" style="margin-left:4px">Extra ${formatHours(sonH)} @$${sonrate}</span>`:''}
           ${(d.machines||[]).map(m=>`<span class="badge badge-amber" style="margin-left:4px">${m.name}</span>`).join('')}
           ${travelLine?`<span class="badge" style="margin-left:4px;background:var(--surface2);color:var(--text2)">🚗 ${travelLine.mode==='km'?travelLine.km+'km':travelLine.hrs+'h'}</span>`:''}
+          ${materialsTotal>0?`<span class="badge" style="margin-left:4px;background:var(--surface2);color:var(--text2)">🧱 ${fmtMoney(materialsTotal)}</span>`:''}
           ${d.invoiced?'<span class="badge badge-amber" style="margin-left:4px">Archived</span>':''}
         </div>
       </div>
@@ -2159,22 +2292,27 @@ function renderInvoice(){
     return _invoiceDaySelection.has(d.id||d.date);
   }
 
-  let te=0,th=0,sonTotal=0,sonTotalHrs=0,machineAgg={},grandMachineTotal=0,grandTravelTotal=0;
+  let te=0,th=0,sonTotal=0,sonTotalHrs=0,machineAgg={},grandMachineTotal=0,grandTravelTotal=0,grandMaterialsTotal=0;
+  const materialAgg={}; // keyed by name
   const le=document.getElementById('invoice-day-list');le.innerHTML='';
 
   // Render uninvoiced days with checkboxes
   const renderDayRow=(d,isArchived)=>{
-    const{h,myE,sonH,sonE,total,sonrate,machineTotal:mt,machineLines:ml,travelTotal:tt}=dayTotals(d);
+    const{h,myE,sonH,sonE,total,sonrate,machineTotal:mt,machineLines:ml,travelTotal:tt,materialsTotal:matT,materialLines:matL}=dayTotals(d);
     const id=d.id||d.date;
     const sel=isDaySelected(d);
-    if(sel){te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;grandMachineTotal+=mt;grandTravelTotal+=tt;ml.forEach(m=>{if(!machineAgg[m.name])machineAgg[m.name]={hours:0,rate:m.rate,total:0};machineAgg[m.name].hours+=m.hours;machineAgg[m.name].total+=m.total;});}
+    if(sel){
+      te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;grandMachineTotal+=mt;grandTravelTotal+=tt;grandMaterialsTotal+=matT;
+      ml.forEach(m=>{if(!machineAgg[m.name])machineAgg[m.name]={hours:0,rate:m.rate,total:0};machineAgg[m.name].hours+=m.hours;machineAgg[m.name].total+=m.total;});
+      matL.forEach(m=>{if(!materialAgg[m.name])materialAgg[m.name]={qty:0,unitPrice:m.unitPrice,total:0};materialAgg[m.name].qty+=m.qty;materialAgg[m.name].total+=m.total;});
+    }
     const wrap=document.createElement('div');
     wrap.className='inv-day-row-wrap'+(sel?'':' deselected');
     wrap.innerHTML=`
       <input type="checkbox" class="inv-day-check" data-id="${id}" ${sel?'checked':''} onchange="toggleInvoiceDay('${id}')">
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:700;color:var(--text)">${fmtDate(d.date)}${isArchived?' <span class="badge badge-amber" style="font-size:9px;margin-left:4px">archived</span>':''}</div>
-        <div style="font-size:11px;color:var(--text2);margin-top:2px">${d.site} · ${formatHours(h)} · $${d.rate}/hr${d.sonWorking?` + Extra ${formatHours(sonH)} @$${sonrate}`:''}${ml.length?' + '+ml.map(m=>m.name).join(', '):''}${tt>0?' + 🚗 '+fmtMoney(tt):''}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">${d.site} · ${formatHours(h)} · $${d.rate}/hr${d.sonWorking?` + Extra ${formatHours(sonH)} @$${sonrate}`:''}${ml.length?' + '+ml.map(m=>m.name).join(', '):''}${tt>0?' + 🚗 '+fmtMoney(tt):''}${matT>0?' + 🧱 '+fmtMoney(matT):''}</div>
       </div>
       <div style="font-size:15px;font-weight:700;color:${sel?'var(--amber)':'var(--text3)'};font-family:'Montserrat',system-ui,sans-serif;flex-shrink:0;margin-left:8px">${fmtMoney(total)}</div>`;
     le.appendChild(wrap);
@@ -2192,7 +2330,7 @@ function renderInvoice(){
     le.innerHTML='<div style="color:var(--text2);font-size:13px;padding:12px 0;text-align:center">No days to invoice for this client</div>';
   }
 
-  const grandTotal=te+sonTotal+grandMachineTotal+grandTravelTotal;
+  const grandTotal=te+sonTotal+grandMachineTotal+grandTravelTotal+grandMaterialsTotal;
   const gstOn=document.getElementById('toggle-gst')&&document.getElementById('toggle-gst').checked;
   const gst=gstOn?grandTotal*0.1:0;
   const selectedCount=allUninvoiced.filter(d=>isDaySelected(d)).length+archivedDays.filter(d=>isDaySelected(d)).length;
@@ -2215,6 +2353,8 @@ function renderInvoice(){
       ${grandMachineTotal>0?machineNames.map(n=>`<div class="inv-subtotal-row subdued"><span>${n} hire (${machineAgg[n].hours.toFixed(2)}h × $${machineAgg[n].rate}/hr)</span><span>${fmtMoney(machineAgg[n].total)}</span></div>`).join(''):''}
       ${grandMachineTotal>0?`<div class="inv-subtotal-row subdued"><span>Machine hire subtotal</span><span>${fmtMoney(grandMachineTotal)}</span></div>`:''}
       ${grandTravelTotal>0?`<div class="inv-subtotal-row subdued"><span>🚗 Travel</span><span>${fmtMoney(grandTravelTotal)}</span></div>`:''}
+      ${grandMaterialsTotal>0?Object.entries(materialAgg).map(([n,m])=>`<div class="inv-subtotal-row subdued"><span>🧱 ${n} (×${m.qty})</span><span>${fmtMoney(m.total)}</span></div>`).join(''):''}
+      ${grandMaterialsTotal>0&&Object.keys(materialAgg).length>1?`<div class="inv-subtotal-row subdued"><span>Materials subtotal</span><span>${fmtMoney(grandMaterialsTotal)}</span></div>`:''}
       <div class="inv-subtotal-row total"><span>Total Payable</span><span>${fmtMoney(grandTotal)}</span></div>
       ${gstOn?`<div class="inv-subtotal-row subdued"><span>GST (10%)</span><span>${fmtMoney(gst)}</span></div>`:''}
       ${gstOn?`<div class="inv-subtotal-row total"><span>Total inc. GST</span><span>${fmtMoney(grandTotal+gst)}</span></div>`:''}`;
@@ -2243,14 +2383,15 @@ function buildInvoiceHTML(){
   const invNumOverride=numInput&&numInput.value?parseInt(numInput.value)||s.invnum:s.invnum;
   const c=getSelectedClient();
   const clientLines=[c.company,c.contact,c.abn?'ABN '+c.abn:'',c.address,c.email,c.phone].filter(Boolean).join('<br>');
-  let rows='',te=0,th=0,sonTotal=0,sonTotalHrs=0,grandTravelTotal=0;
+  let rows='',te=0,th=0,sonTotal=0,sonTotalHrs=0,grandTravelTotal=0,grandMaterialsTotal=0;
   let sonrateUsed=s.sonrate||30;
-  const machineAgg={};
+  const machineAgg={},materialAgg2={};
   ui.forEach(d=>{
-    const{h,myE,sonH,sonE,total,sonrate,machineLines:ml,travelTotal,travelLine}=dayTotals(d);
-    te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;grandTravelTotal+=travelTotal;
+    const{h,myE,sonH,sonE,total,sonrate,machineLines:ml,travelTotal,materialLines:matL,materialsTotal:matT}=dayTotals(d);
+    te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;grandTravelTotal+=travelTotal;grandMaterialsTotal+=matT;
     if(d.sonWorking) sonrateUsed=sonrate;
     ml.forEach(m=>{if(!machineAgg[m.name])machineAgg[m.name]={hours:0,rate:m.rate,total:0};machineAgg[m.name].hours+=m.hours;machineAgg[m.name].total+=m.total;});
+    matL.forEach(m=>{if(!materialAgg2[m.name])materialAgg2[m.name]={qty:0,unitPrice:m.unitPrice,total:0};materialAgg2[m.name].qty+=m.qty;materialAgg2[m.name].total+=m.total;});
     rows+=`<tr>
       <td>${fmtDate(d.date)}</td><td>${d.start}</td><td>${d.finish||'—'}</td>
       <td>${d.lunchMins?d.lunchMins+'min':'—'}</td>
@@ -2261,7 +2402,7 @@ function buildInvoiceHTML(){
   });
   const machineNames=Object.keys(machineAgg);
   const grandMachineTotal=machineNames.reduce((s,n)=>s+machineAgg[n].total,0);
-  const grandTotal=te+sonTotal+grandMachineTotal+grandTravelTotal;
+  const grandTotal=te+sonTotal+grandMachineTotal+grandTravelTotal+grandMaterialsTotal;
   const gstOn=document.getElementById('toggle-gst')&&document.getElementById('toggle-gst').checked;
   const gst=gstOn?grandTotal*0.1:0;
   const n=String(invNumOverride).padStart(4,'0');
@@ -2276,6 +2417,11 @@ function buildInvoiceHTML(){
     machineLinesHTML+=`<div>Machine hire subtotal: $${grandMachineTotal.toFixed(2)}</div>`;
   }
   const travelLinesHTML=grandTravelTotal>0?`<div>Travel: $${grandTravelTotal.toFixed(2)}</div>`:'';
+  let materialsLinesHTML='';
+  if(grandMaterialsTotal>0){
+    materialsLinesHTML=Object.entries(materialAgg2).map(([n,m])=>`<div>${n}: ${m.qty} &times; $${m.unitPrice.toFixed(2)} = $${m.total.toFixed(2)}</div>`).join('');
+    if(Object.keys(materialAgg2).length>1) materialsLinesHTML+=`<div>Materials subtotal: $${grandMaterialsTotal.toFixed(2)}</div>`;
+  }
 
   const gstLines=gstOn?`<div>GST (10%): $${gst.toFixed(2)}</div><div class="tot">Total inc. GST: $${(grandTotal+gst).toFixed(2)}</div>`:`<div class="tot">Total Payable: $${grandTotal.toFixed(2)}</div>`;
   return`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice ${n} — ${s.name}</title>
@@ -2301,6 +2447,7 @@ td{padding:4px;border-bottom:1px solid #eee}.tots{text-align:right;margin-top:12
 ${sonLines}
 ${machineLinesHTML}
 ${travelLinesHTML}
+${materialsLinesHTML}
 ${gstLines}
 </div></body></html>`;
 }
@@ -2309,19 +2456,21 @@ function previewInvoice(){
   const s=S(),ui=_getSelectedInvoiceDays();
   const c=getSelectedClient();
   const clientLines=[c.company,c.contact,c.abn?'ABN '+c.abn:'',c.address,c.email,c.phone].filter(Boolean).join('<br>');
-  let rows='',te=0,th=0,sonTotal=0,sonTotalHrs=0,grandTravelTotal=0;
+  let rows='',te=0,th=0,sonTotal=0,sonTotalHrs=0,grandTravelTotal=0,grandMaterialsTotal=0;
   let sonrateUsed=s.sonrate||30;
   const machineAgg={};
+  const materialAggP={};
   ui.forEach(d=>{
-    const{h,myE,sonH,sonE,total,sonrate,machineLines:ml,travelTotal}=dayTotals(d);
-    te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;grandTravelTotal+=travelTotal;
+    const{h,myE,sonH,sonE,total,sonrate,machineLines:ml,travelTotal,materialLines:matL,materialsTotal:matT}=dayTotals(d);
+    te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;grandTravelTotal+=travelTotal;grandMaterialsTotal+=matT;
     if(d.sonWorking) sonrateUsed=sonrate;
     ml.forEach(m=>{if(!machineAgg[m.name])machineAgg[m.name]={hours:0,rate:m.rate,total:0};machineAgg[m.name].hours+=m.hours;machineAgg[m.name].total+=m.total;});
+    matL.forEach(m=>{if(!materialAggP[m.name])materialAggP[m.name]={qty:0,unitPrice:m.unitPrice,total:0};materialAggP[m.name].qty+=m.qty;materialAggP[m.name].total+=m.total;});
     rows+=`<tr><td>${fmtDate(d.date)}</td><td>${d.start}</td><td>${d.finish||'—'}</td><td>${d.lunchMins?d.lunchMins+'m':'—'}</td><td>${h.toFixed(2)}</td><td>$${d.rate}</td><td>${d.sonWorking?currentTradeProfile().label+'+Extra':currentTradeProfile().label}</td><td>$${total.toFixed(2)}</td></tr>`;
   });
   const machineNames=Object.keys(machineAgg);
   const grandMachineTotal=machineNames.reduce((sum,nm)=>sum+machineAgg[nm].total,0);
-  const grandTotal=te+sonTotal+grandMachineTotal+grandTravelTotal;
+  const grandTotal=te+sonTotal+grandMachineTotal+grandTravelTotal+grandMaterialsTotal;
   const gstOn=document.getElementById('toggle-gst')&&document.getElementById('toggle-gst').checked;
   const gst=gstOn?grandTotal*0.1:0;
   const numInput=document.getElementById('inv-num-input');
@@ -2338,6 +2487,11 @@ function previewInvoice(){
     machineLinesPreview+=`<div>Machine hire subtotal: $${grandMachineTotal.toFixed(2)}</div>`;
   }
   const travelLinesPreview=grandTravelTotal>0?`<div>Travel: $${grandTravelTotal.toFixed(2)}</div>`:'';
+  let materialsPreview='';
+  if(grandMaterialsTotal>0){
+    materialsPreview=Object.entries(materialAggP).map(([n,m])=>`<div>${n}: ${m.qty} × $${m.unitPrice.toFixed(2)} = $${m.total.toFixed(2)}</div>`).join('');
+    if(Object.keys(materialAggP).length>1) materialsPreview+=`<div>Materials subtotal: $${grandMaterialsTotal.toFixed(2)}</div>`;
+  }
   const gstPreview=gstOn?`<div>GST (10%): $${gst.toFixed(2)}</div><div class="inv-total-line">Total inc. GST: $${(grandTotal+gst).toFixed(2)}</div>`:`<div class="inv-total-line">Total Payable: $${grandTotal.toFixed(2)}</div>`;
   document.getElementById('invoice-preview-content').innerHTML=`
 <div class="inv-meta">
@@ -2349,7 +2503,7 @@ function previewInvoice(){
 <hr class="inv-divider">
 <table class="inv-table"><thead><tr><th>Date</th><th>Start</th><th>Finish</th><th>Lunch</th><th>Hrs</th><th>Rate</th><th>Desc</th><th>Amt</th></tr></thead>
 <tbody>${rows||'<tr><td colspan="8" style="text-align:center;color:#999;padding:8px">No days to invoice</td></tr>'}</tbody></table>
-<div class="inv-totals">${sonLinesPreview}${machineLinesPreview}${travelLinesPreview}${gstPreview}</div>`;
+<div class="inv-totals">${sonLinesPreview}${machineLinesPreview}${travelLinesPreview}${materialsPreview}${gstPreview}</div>`;
   sec.style.display='block';sec.scrollIntoView({behavior:'smooth'});
 }
 
@@ -2545,6 +2699,7 @@ function loadSettings(){
   renderTradeSelector();
   loadTravelSettings();
   renderMachineRatesCard();
+  renderMaterialsLib();
   updateExtraLabels();
   initCollapsibleCards();
   renderSitesList();renderClientsList();
@@ -2664,6 +2819,139 @@ function initCollapsibleCards(){
       });
     }
   });
+}
+
+// --- Materials UI helpers ---
+// Per-prefix live line store (mirrors what's rendered in the DOM)
+const _matLines = {};
+
+function initMaterialsSection(prefix, data){
+  _matLines[prefix] = (data && data.materials) ? JSON.parse(JSON.stringify(data.materials)) : [];
+  _renderMatLines(prefix);
+  _renderMatQuickAdd(prefix);
+}
+
+function _renderMatLines(prefix){
+  const container = document.getElementById('materials-'+prefix+'-lines');
+  if(!container) return;
+  const lines = _matLines[prefix] || [];
+  if(!lines.length){ container.innerHTML=''; return; }
+  container.innerHTML = lines.map((m,i)=>`
+    <div style="display:grid;grid-template-columns:1fr 70px 80px 28px;gap:5px;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:13px;font-weight:600;color:var(--text);padding-left:2px">${m.name}</div>
+      <input type="number" min="1" step="1" value="${m.qty||1}" style="padding:5px 7px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;text-align:center"
+        onchange="_updateMatQty('${prefix}',${i},this.value)">
+      <div style="font-size:12px;color:var(--text2);text-align:right">$${((m.qty||1)*(m.unitPrice||0)).toFixed(2)}</div>
+      <button onclick="_removeMatLine('${prefix}',${i})" style="background:var(--red-light);color:var(--red);border:none;border-radius:6px;width:24px;height:24px;font-size:14px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center">×</button>
+    </div>`).join('');
+}
+
+function _renderMatQuickAdd(prefix){
+  const container = document.getElementById('materials-'+prefix+'-quickadd');
+  if(!container) return;
+  const lib = getMaterialsLib();
+  if(!lib.length){ container.style.display='none'; return; }
+  container.style.display='flex';
+  container.innerHTML = lib.map(item=>{
+    const nameEsc = item.name.replace(/'/g,"\\'");
+    return`<button onclick="addMaterialLineUI('${prefix}','${nameEsc}',${item.defaultPrice})"
+      style="background:var(--surface2);border:1.5px solid var(--border);border-radius:999px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;color:var(--text)">
+      ${item.name} <span style="color:var(--amber)">$${(item.defaultPrice||0).toFixed(2)}</span>
+    </button>`;
+  }).join('');
+  // Show custom button
+  const custom = document.getElementById('materials-'+prefix+'-custom');
+  if(custom) custom.style.display = 'none'; // collapsed by default — show after first item or via custom toggle
+}
+
+function addMaterialLineUI(prefix, name, price){
+  if(!name){
+    // Toggle the custom entry row
+    const c = document.getElementById('materials-'+prefix+'-custom');
+    if(c) c.style.display = c.style.display==='none'?'block':'none';
+    return;
+  }
+  if(!_matLines[prefix]) _matLines[prefix]=[];
+  // If same item already exists, increment qty
+  const existing = _matLines[prefix].find(m=>m.name===name);
+  if(existing){ existing.qty=(existing.qty||1)+1; }
+  else { _matLines[prefix].push({name, qty:1, unitPrice:parseFloat(price)||0}); }
+  _renderMatLines(prefix);
+}
+
+function addCustomMaterial(prefix){
+  const nameEl = document.getElementById('materials-'+prefix+'-custom-name');
+  const priceEl = document.getElementById('materials-'+prefix+'-custom-price');
+  const name = nameEl ? nameEl.value.trim() : '';
+  const price = priceEl ? parseFloat(priceEl.value)||0 : 0;
+  if(!name){ toast('Enter an item name'); return; }
+  if(!_matLines[prefix]) _matLines[prefix]=[];
+  _matLines[prefix].push({name, qty:1, unitPrice:price});
+  _renderMatLines(prefix);
+  if(nameEl) nameEl.value='';
+  if(priceEl) priceEl.value='';
+}
+
+function _updateMatQty(prefix, idx, val){
+  if(!_matLines[prefix]) return;
+  _matLines[prefix][idx].qty = Math.max(1,parseFloat(val)||1);
+  _renderMatLines(prefix);
+}
+
+function _removeMatLine(prefix, idx){
+  if(!_matLines[prefix]) return;
+  _matLines[prefix].splice(idx,1);
+  _renderMatLines(prefix);
+}
+
+function readMaterialsFromUI(prefix){
+  return {materials: JSON.parse(JSON.stringify(_matLines[prefix]||[]))};
+}
+
+// Settings catalogue management
+function renderMaterialsLib(){
+  const lib = getMaterialsLib();
+  const el = document.getElementById('materials-lib-list');
+  if(!el) return;
+  if(!lib.length){ el.innerHTML='<div style="font-size:13px;color:var(--text2);padding:4px 0">No items yet — add your first item below, or reset to trade defaults.</div>'; return; }
+  el.innerHTML = lib.map((item,i)=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-size:14px;font-weight:600">${item.name}</div>
+        <div style="font-size:12px;color:var(--text2)">Default: $${(item.defaultPrice||0).toFixed(2)} each</div>
+      </div>
+      <button onclick="deleteFromMaterialsLib(${i})" style="background:var(--red-light);color:var(--red);border:none;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer">Remove</button>
+    </div>`).join('');
+}
+
+function addToMaterialsLib(){
+  const nameEl=document.getElementById('s-mat-name'),priceEl=document.getElementById('s-mat-price');
+  const name=nameEl?nameEl.value.trim():'',price=priceEl?parseFloat(priceEl.value)||0:0;
+  if(!name){toast('Enter an item name');return;}
+  const s=S(),lib=s.materialsLib||getMaterialsLib().slice();
+  lib.push({name,defaultPrice:price});
+  s.materialsLib=lib;
+  DB.set('settings',s);
+  if(nameEl)nameEl.value='';if(priceEl)priceEl.value='';
+  renderMaterialsLib();
+  toast('Added: '+name);
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+}
+
+function deleteFromMaterialsLib(idx){
+  const s=S(),lib=(s.materialsLib||getMaterialsLib().slice()).slice();
+  lib.splice(idx,1);
+  s.materialsLib=lib;
+  DB.set('settings',s);
+  renderMaterialsLib();
+}
+
+function seedMaterialsLib(){
+  const s=S();
+  s.materialsLib=currentTradeProfile().defaultMaterials.map(m=>({...m}));
+  DB.set('settings',s);
+  renderMaterialsLib();
+  toast('Materials reset to '+currentTradeProfile().label+' defaults ✓');
 }
 
 // --- Travel UI helpers ---
@@ -3413,6 +3701,7 @@ function initManualEntry(){
   const s = S();
   document.getElementById('me-son-rate-label').textContent = '$'+(s.sonrate||30)+'/hr';
   initTravelSection('me',null);
+  initMaterialsSection('me',null);
   mePreview();
 }
 
@@ -3449,7 +3738,16 @@ function mePreview(){
     const tel=document.getElementById('me-prev-travel');
     if(tel&&hrs>0) tel.textContent=fmtMoney(travelTotal)+' ('+hrs+'h × $'+(s.travelHrRate||30)+'/hr)';
   } else { if(travelRow) travelRow.style.display='none'; }
-  const total = myE + sonE + travelTotal;
+  // Materials preview
+  const matLines = _matLines['me'] || [];
+  const matTotal = matLines.reduce((s,m)=>s+(m.qty||0)*(m.unitPrice||0),0);
+  const matPrevRow = document.getElementById('me-prev-materials-row');
+  const matPrevEl = document.getElementById('me-prev-materials');
+  if(matPrevRow && matPrevEl){
+    if(matTotal>0){matPrevRow.style.display='';matPrevEl.textContent=fmtMoney(matTotal)+(matLines.length>1?' ('+matLines.length+' items)':'');}
+    else{matPrevRow.style.display='none';}
+  }
+  const total = myE + sonE + travelTotal + matTotal;
   preview.style.display = 'block';
   document.getElementById('me-prev-hours').textContent = formatHours(h) + (lunchMins ? ' (after '+lunchMins+'min lunch)' : '');
   document.getElementById('me-prev-my').textContent = fmtMoney(myE) + ' × $'+s.rate+'/hr';
@@ -3485,7 +3783,8 @@ function saveManualEntry(){
     sonrate: s.sonrate||30, machines: [],
     invoiced: false, manual: true,
     notes: notes||undefined,
-    ...readTravelFromUI('me')
+    ...readTravelFromUI('me'),
+    ...readMaterialsFromUI('me')
   };
   existing.push(entry);
   DB.set('days', existing);
@@ -3520,6 +3819,9 @@ function resetManualEntry(){
   if(hrsEl) hrsEl.value='';
   const prev=document.getElementById('travel-me-km-preview');
   if(prev) prev.textContent='';
+  // Clear materials
+  _matLines['me']=[];
+  _renderMatLines('me');
 }
 // ─────────────────────────────────────────────────────────────────────────────
 </script>
