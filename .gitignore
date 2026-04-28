@@ -12,6 +12,10 @@ android/local.properties
 android/.idea/
 *.keystore
 
+# Signing credentials — NEVER commit these
+keystore.properties
+*.jks
+
 # APK artifacts (distribute via Firebase App Distribution or direct share)
 *.apk
 *.aab
