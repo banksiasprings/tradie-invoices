@@ -690,12 +690,14 @@ window.firebaseSignOut = async function() {
       </div>
       <!-- Machine hire — only shown if trade has equipment -->
       <div id="idle-machine-row" style="display:none">
-        <div class="toggle-row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
-          <span style="font-size:14px;font-weight:600">Machine hire?</span>
-          <label class="toggle"><input type="checkbox" id="toggle-machine" onchange="document.getElementById('machine-section').style.display=this.checked?'block':'none'"><span class="toggle-slider"></span></label>
-        </div>
-        <div id="machine-section" style="display:none;margin-top:8px">
-          <div id="machine-idle-list"></div>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+          <div class="toggle-row" style="padding:0 0 8px">
+            <span style="font-size:14px;font-weight:600">🚜 Machine hire?</span>
+            <label class="toggle"><input type="checkbox" id="toggle-machine" onchange="document.getElementById('machine-section').style.display=this.checked?'block':'none'"><span class="toggle-slider"></span></label>
+          </div>
+          <div id="machine-section" style="display:none">
+            <div id="machine-idle-list"></div>
+          </div>
         </div>
       </div>
       <!-- Travel billing (idle) -->
@@ -774,12 +776,14 @@ window.firebaseSignOut = async function() {
       </div>
       <!-- Machine hire active — only shown if trade has equipment -->
       <div id="active-machine-row" style="display:none">
-        <div class="toggle-row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
-          <span style="font-size:14px;font-weight:600">Machine hire?</span>
-          <label class="toggle"><input type="checkbox" id="toggle-machine2" onchange="document.getElementById('machine-section2').style.display=this.checked?'block':'none';if(this.checked)renderMachineCheckboxes('machine-active-list',activeDay()&&activeDay().machines||[],'active')"><span class="toggle-slider"></span></label>
-        </div>
-        <div id="machine-section2" style="display:none;margin-top:8px">
-          <div id="machine-active-list"></div>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+          <div class="toggle-row" style="padding:0 0 8px">
+            <span style="font-size:14px;font-weight:600">🚜 Machine hire?</span>
+            <label class="toggle"><input type="checkbox" id="toggle-machine2" onchange="document.getElementById('machine-section2').style.display=this.checked?'block':'none';if(this.checked&&!(_machineLines['active']&&_machineLines['active'].length))renderMachineUI('machine-active-list',activeDay()&&activeDay().machines||[],'active')"><span class="toggle-slider"></span></label>
+          </div>
+          <div id="machine-section2" style="display:none">
+            <div id="machine-active-list"></div>
+          </div>
         </div>
       </div>
       <!-- Travel billing (active) -->
@@ -1255,7 +1259,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v32';
+const APP_VERSION = 'v33';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1431,8 +1435,8 @@ async function forceAppUpdate() {
     <!-- Machine hire in edit -->
     <div class="field">
       <div class="toggle-row" style="padding:6px 0">
-        <span style="font-size:14px">Machine hire this day?</span>
-        <label class="toggle"><input type="checkbox" id="edit-machine-toggle" onchange="document.getElementById('edit-machine-section').style.display=this.checked?'block':'none';if(this.checked)renderMachineCheckboxes('machine-edit-list',activeDay()&&activeDay().machines||[],'edit')"><span class="toggle-slider"></span></label>
+        <span style="font-size:14px">🚜 Machine hire this day?</span>
+        <label class="toggle"><input type="checkbox" id="edit-machine-toggle" onchange="document.getElementById('edit-machine-section').style.display=this.checked?'block':'none';if(this.checked&&!(_machineLines['edit']&&_machineLines['edit'].length))renderMachineUI('machine-edit-list',activeDay()&&activeDay().machines||[],'edit')"><span class="toggle-slider"></span></label>
       </div>
       <div id="edit-machine-section" style="display:none;margin-top:8px">
         <div id="machine-edit-list"></div>
@@ -1467,6 +1471,24 @@ async function forceAppUpdate() {
       </div>
     </div>
     <button class="btn btn-primary" style="margin-top:8px" onclick="saveEdit()">Update Day</button>
+  </div>
+</div>
+
+<!-- CUSTOM MACHINE MODAL -->
+<div class="modal-bg" id="custom-machine-modal">
+  <div class="modal" style="max-width:340px">
+    <div class="modal-title">Add Machine <button class="modal-close" onclick="closeCustomMachineModal()">✕</button></div>
+    <div class="field"><label>Machine name</label><input id="cm-name" class="mcn-input" placeholder="e.g. CAT 320 Excavator"></div>
+    <div class="field"><label>Plant number (optional)</label><input id="cm-plant" class="mcn-input" placeholder="e.g. EX001"></div>
+    <div class="field"><label>Hire type</label>
+      <select id="cm-hiretype" class="mcn-input" onchange="_updateCMModal()">
+        <option value="wet">Wet hire — hourly, meter tracked</option>
+        <option value="dry">Dry hire — hourly, operator independent</option>
+        <option value="day">Day rate — flat daily charge</option>
+      </select>
+    </div>
+    <div class="field"><label id="cm-rate-label">Rate ($/hr)</label><input id="cm-rate" type="number" class="mcn-input" placeholder="0" min="0" step="1"></div>
+    <button class="btn btn-primary" style="margin-top:4px" onclick="confirmCustomMachineModal()">Add Machine</button>
   </div>
 </div>
 
@@ -1688,6 +1710,7 @@ const DEFAULTS={
   travelMode:'none', travelKmRate:0.88, travelHrRate:30,
   machineRates:{Excavator:150,Grader:180,Bobcat:120,Dozer:200,Tractor:110},
   customMachines:null,
+  machinesLib:[],
   materialsLib:[],
   showExtraWorker:false,
   employeeName:'',
@@ -1890,22 +1913,27 @@ function saveExtraWorkerPref(){
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
 }
 function currentTradeProfile(){return TRADE_PROFILES[S().tradeType||'earthmoving']||TRADE_PROFILES.earthmoving;}
-function getMachines(){
-  const cm=S().customMachines;
-  if(cm&&cm.length) return cm.map(m=>m.name);
-  return currentTradeProfile().machines;
+function getMachinesLib(){
+  const s=S();
+  if(s.machinesLib&&s.machinesLib.length) return s.machinesLib;
+  // Migrate old customMachines format
+  if(s.customMachines&&s.customMachines.length)
+    return s.customMachines.map(m=>({name:m.name,plantNum:'',hireType:'wet',rate:m.rate||0,dayRate:0}));
+  // Trade defaults
+  return currentTradeProfile().machines.map(name=>{
+    const mr=s.machineRates||{};
+    const rate=mr[name]!==undefined?mr[name]:(currentTradeProfile().defaultRates[name]||0);
+    return{name,plantNum:'',hireType:'wet',rate,dayRate:0};
+  });
 }
+function getMachines(){return getMachinesLib().map(m=>m.name);}
 function getExtraLabel(){return currentTradeProfile().extraLabel;}
 function defaultMachineRates(){
-  const cm=S().customMachines;
-  if(cm&&cm.length){const r={};cm.forEach(m=>r[m.name]=m.rate);return r;}
-  return Object.assign({},currentTradeProfile().defaultRates);
+  const lib=getMachinesLib();const r={};lib.forEach(m=>r[m.name]=m.rate);return r;
 }
 function getMachineRate(name){
-  const cm=S().customMachines;
-  if(cm&&cm.length){const m=cm.find(m=>m.name===name);return m?m.rate:0;}
-  const mr=S().machineRates||{};
-  return mr[name]!==undefined?mr[name]:(currentTradeProfile().defaultRates[name]||0);
+  const lib=getMachinesLib();const m=lib.find(ml=>ml.name===name);
+  return m?(m.hireType==='day'?0:m.rate):0;
 }
 // Sanitise machine name to a valid HTML id suffix
 function mId(name){return name.replace(/[^a-zA-Z0-9]/g,'_');}
@@ -1945,45 +1973,132 @@ function toggleSonSection(sectionId, toggleId){
 }
 
 // --- Machine hire helpers ---
-function renderMachineCheckboxes(containerId,selectedMachines,prefix){
-  const machines=getMachines();
+const _machineLines={};
+
+function renderMachineUI(containerId,machines,prefix){
   const el=document.getElementById(containerId);if(!el)return;
-  if(!machines.length){el.innerHTML='<div style="font-size:13px;color:var(--text2)">No equipment configured. Add machines in Settings.</div>';return;}
-  el.innerHTML=machines.map(name=>{
-    const sid=mId(name);
-    const sel=(selectedMachines||[]).find(m=>m.name===name);
-    const checked=!!sel;
-    const hv=sel&&sel.hours!==null&&sel.hours!==undefined?sel.hours:'';
-    const rate=getMachineRate(name);
-    const nameEsc=name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-    return`<div style="padding:8px 0;border-bottom:1px solid var(--border)">
-      <div style="display:flex;align-items:center;gap:10px">
-        <label class="toggle"><input type="checkbox" id="mc-${prefix}-${sid}" data-machine="${name.replace(/"/g,'&quot;')}" ${checked?'checked':''} onchange="onMachineToggle('${prefix}',this)"><span class="toggle-slider"></span></label>
-        <div style="flex:1"><div style="font-size:14px">${name}</div><div style="font-size:11px;color:var(--text2)">$${rate}/hr</div></div>
-        <div id="mc-${prefix}-${sid}-wrap" style="${checked?'':'display:none'}">
-          <input type="number" id="mc-${prefix}-${sid}-hrs" value="${hv}" placeholder="hrs" step="0.25" min="0" style="width:65px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-family:Arial,sans-serif;font-size:13px;text-align:center">
-          <div style="font-size:10px;color:var(--text3);text-align:center;margin-top:2px">blank=mine</div>
-        </div>
+  const lib=getMachinesLib();
+  // Pills for quick-add from library
+  const pills=lib.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${lib.map(m=>{
+    const ne=m.name.replace(/'/g,"\\'");
+    const ht=m.hireType||'wet';
+    const rStr=ht==='day'?'$'+m.dayRate+'/day':'$'+m.rate+'/hr';
+    return`<button onclick="addMachineFromLib('${prefix}','${ne}')" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:999px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;color:var(--text)">${m.name} <span style="color:var(--amber)">${rStr}</span></button>`;
+  }).join('')}<button onclick="addCustomMachineUI('${prefix}')" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer">+ Custom</button></div>`
+  :`<div style="font-size:13px;color:var(--text2);margin-bottom:8px">No machines in library — add them in Settings first.</div><button onclick="addCustomMachineUI('${prefix}')" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px">+ Add one-off machine</button>`;
+  el.innerHTML=pills+`<div id="mch-lines-${prefix}"></div>`;
+  _machineLines[prefix]=machines?JSON.parse(JSON.stringify(machines)):[];
+  _renderMachineLines(prefix);
+}
+
+function _renderMachineLines(prefix){
+  const container=document.getElementById('mch-lines-'+prefix);if(!container)return;
+  const lines=_machineLines[prefix]||[];
+  if(!lines.length){container.innerHTML='';return;}
+  container.innerHTML=lines.map((m,i)=>{
+    const ht=m.hireType||'wet';
+    const plantStr=m.plantNum?` · #${m.plantNum}`:'';
+    const badgeLbl=ht==='wet'?'WET HIRE':ht==='dry'?'DRY HIRE':'DAY RATE';
+    const badgeSty=ht==='wet'?'color:#1E40AF;background:#DBEAFE':ht==='dry'?'color:#2D6B4A;background:#D4EDE0':'color:var(--amber);background:var(--amber-light)';
+    let body='';
+    if(ht==='day'){
+      body=`<div style="font-size:13px;color:var(--text2);margin-top:4px">Flat day rate: <strong>$${(m.dayRate||0).toFixed(2)}</strong></div>`;
+    } else {
+      const sv=m.startHrs!=null?m.startHrs:'';
+      const fv=m.finishHrs!=null?m.finishHrs:'';
+      body=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+        <div><div style="font-size:10px;font-weight:700;color:var(--text3);margin-bottom:2px">START HRS</div>
+          <input type="number" value="${sv}" placeholder="0.0" step="0.1" min="0" style="width:100%;padding:7px 8px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:14px;text-align:center" onchange="_setMachineHrs('${prefix}',${i},'start',this.value)"></div>
+        <div><div style="font-size:10px;font-weight:700;color:var(--text3);margin-bottom:2px">FINISH HRS</div>
+          <input type="number" value="${fv}" placeholder="0.0" step="0.1" min="0" style="width:100%;padding:7px 8px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:14px;text-align:center" onchange="_setMachineHrs('${prefix}',${i},'finish',this.value)"></div>
       </div>
-    </div>`;
+      <div id="mch-calc-${prefix}-${i}" style="font-size:11px;color:var(--text2);margin-top:3px;text-align:right"></div>`;
+    }
+    return`<div style="padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div><div style="font-size:14px;font-weight:600">${m.name}${plantStr}</div>
+          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;${badgeSty}">${badgeLbl}</span></div>
+        <button onclick="_removeMachineFromUI('${prefix}',${i})" style="background:var(--red-light);color:var(--red);border:none;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer">✕</button>
+      </div>${body}</div>`;
   }).join('');
+  lines.forEach((_,i)=>_updateMachineCalc(prefix,i));
 }
-function onMachineToggle(prefix,inputEl){
-  const name=inputEl.dataset.machine;
-  const sid=mId(name);
-  const wrap=document.getElementById('mc-'+prefix+'-'+sid+'-wrap');
-  if(wrap) wrap.style.display=inputEl.checked?'':'none';
-  if(prefix==='active'){
-    const ad=activeDay();if(!ad)return;
-    if(!ad.machines)ad.machines=[];
-    if(inputEl.checked){if(!ad.machines.find(m=>m.name===name))ad.machines.push({name,hours:null});}
-    else{ad.machines=ad.machines.filter(m=>m.name!==name);}
-    DB.set('activeDay',ad);
+
+function _setMachineHrs(prefix,i,field,val){
+  if(!_machineLines[prefix]) return;
+  _machineLines[prefix][i][field==='start'?'startHrs':'finishHrs']=val?parseFloat(val):null;
+  _updateMachineCalc(prefix,i);
+}
+
+function _updateMachineCalc(prefix,i){
+  const el=document.getElementById('mch-calc-'+prefix+'-'+i);if(!el)return;
+  const m=(_machineLines[prefix]||[])[i];if(!m||m.hireType==='day')return;
+  const hrs=Math.max(0,(m.finishHrs||0)-(m.startHrs||0));
+  const rate=m.rate||0;
+  el.textContent=hrs>0||m.finishHrs?`${hrs.toFixed(1)}h × $${rate}/hr = $${(hrs*rate).toFixed(2)}`:'';
+}
+
+function _removeMachineFromUI(prefix,i){
+  if(!_machineLines[prefix])return;
+  _machineLines[prefix].splice(i,1);
+  _renderMachineLines(prefix);
+}
+
+function addMachineFromLib(prefix,name){
+  const lib=getMachinesLib();
+  const m=lib.find(ml=>ml.name===name);if(!m)return;
+  if(!_machineLines[prefix])_machineLines[prefix]=[];
+  if(_machineLines[prefix].find(ml=>ml.name===name)){toast(name+' already added');return;}
+  const ht=m.hireType||'wet';
+  let startHrs=null;
+  if(ht!=='day'){
+    const pastDay=days().filter(d=>d.machines&&d.machines.find(dm=>dm.name===name&&dm.finishHrs!=null))
+      .sort((a,b)=>b.date.localeCompare(a.date))[0];
+    if(pastDay){const pm=pastDay.machines.find(dm=>dm.name===name);if(pm&&pm.finishHrs!=null)startHrs=pm.finishHrs;}
   }
+  _machineLines[prefix].push({...m,startHrs,finishHrs:null});
+  _renderMachineLines(prefix);
+  if(startHrs!=null)toast(name+': start hrs pre-filled ('+startHrs+') from last use — please confirm');
 }
+
+let _customMachinePrefix=null;
+function addCustomMachineUI(prefix){
+  _customMachinePrefix=prefix;
+  document.getElementById('cm-name').value='';
+  document.getElementById('cm-plant').value='';
+  document.getElementById('cm-hiretype').value='wet';
+  document.getElementById('cm-rate').value='';
+  _updateCMModal();
+  document.getElementById('custom-machine-modal').classList.add('open');
+}
+function _updateCMModal(){
+  const ht=document.getElementById('cm-hiretype').value;
+  document.getElementById('cm-rate-label').textContent=ht==='day'?'Day rate ($)':'Rate ($/hr)';
+}
+function closeCustomMachineModal(){document.getElementById('custom-machine-modal').classList.remove('open');}
+function confirmCustomMachineModal(){
+  const prefix=_customMachinePrefix;
+  const name=document.getElementById('cm-name').value.trim();
+  const plantNum=document.getElementById('cm-plant').value.trim();
+  const ht=document.getElementById('cm-hiretype').value;
+  const rateVal=parseFloat(document.getElementById('cm-rate').value)||0;
+  if(!name){toast('Enter a machine name');return;}
+  if(!_machineLines[prefix])_machineLines[prefix]=[];
+  _machineLines[prefix].push({name,plantNum,hireType:ht,rate:ht!=='day'?rateVal:0,dayRate:ht==='day'?rateVal:0,startHrs:null,finishHrs:null});
+  _renderMachineLines(prefix);
+  closeCustomMachineModal();
+  toast(name+' added ✓');
+}
+
 function readMachinesFromUI(prefix){
-  return getMachines().filter(name=>{const cb=document.getElementById('mc-'+prefix+'-'+mId(name));return cb&&cb.checked;})
-    .map(name=>{const hEl=document.getElementById('mc-'+prefix+'-'+mId(name)+'-hrs');return{name,hours:hEl&&hEl.value?parseFloat(hEl.value):null};});
+  const lines=_machineLines[prefix]||[];
+  lines.forEach((m,i)=>{
+    if(m.hireType!=='day'){
+      const se=document.querySelector(`#mch-lines-${prefix} input:nth-of-type(${i*2+1})`);
+      // Read from calc IDs instead — already synced via _setMachineHrs onChange
+    }
+  });
+  return JSON.parse(JSON.stringify(lines));
 }
 
 // --- GPS & Geofence ---
@@ -2201,7 +2316,7 @@ function initCheckinScreen(){
   sel.innerHTML='<option value="">Select site…</option>';
   sites().forEach(st=>{sel.innerHTML+=`<option value="${st.name}">${st.name}</option>`});
   updateClientIndicator(sel.value);
-  renderMachineCheckboxes('machine-idle-list',[],'idle');
+  renderMachineUI('machine-idle-list',[],'idle');
   initTravelSection('idle',null);
   initMaterialsSection('idle',null);
   document.getElementById('checkin-start').value=nowTime();
@@ -2243,7 +2358,7 @@ function showActiveTimer(ad){
   sonToggle.checked=!!ad.sonWorking;
   document.getElementById('son-section2').style.display=ad.sonWorking?'block':'none';
   document.getElementById('son-hours-input2').value=ad.sonHours!==null&&ad.sonHours!==undefined?ad.sonHours:'';
-  renderMachineCheckboxes('machine-active-list',ad.machines||[],'active');
+  renderMachineUI('machine-active-list',ad.machines||[],'active');
   document.getElementById('toggle-machine2').checked=!!(ad.machines&&ad.machines.length);
   document.getElementById('machine-section2').style.display=(ad.machines&&ad.machines.length)?'block':'none';
   initTravelSection('active',ad);
@@ -2316,11 +2431,8 @@ function finishDay(){
   const sv=document.getElementById('son-hours-input2').value;
   ad.sonHours=sv?parseFloat(sv):null;
   // Capture machine state from active UI
-  const activeMachineCheck=document.getElementById('toggle-machine2');
-  if(activeMachineCheck&&activeMachineCheck.checked){
-    const liveMachines=readMachinesFromUI('active');
-    if(liveMachines.length) ad.machines=liveMachines;
-  }
+  const liveMachines=readMachinesFromUI('active');
+  ad.machines=liveMachines;
   const travelData=readTravelFromUI('active');
   Object.assign(ad,travelData);
   Object.assign(ad,readMaterialsFromUI('active'));
@@ -2366,7 +2478,13 @@ function showReview(ad){
   const machineRevEl=document.getElementById('rev-machine-info');
   if(machineRevEl){
     if(machineLines&&machineLines.length){
-      machineRevEl.innerHTML=machineLines.map(ml=>`${ml.name}: ${ml.hours.toFixed(2)}h × $${ml.rate}/hr = ${fmtMoney(ml.total)}`).join(' | ');
+      machineRevEl.innerHTML=machineLines.map(ml=>{
+        if(ml.hireType==='day') return`${ml.name}: day rate = ${fmtMoney(ml.total)}`;
+        const pn=ml.plantNum?` #${ml.plantNum}`:'';
+        let s=`${ml.name}${pn} (${ml.hireType}): ${ml.machineHrs.toFixed(1)}h × $${ml.rate}/hr = ${fmtMoney(ml.machineHrs*ml.rate)}`;
+        if(ml.laborOvertHrs>0) s+=` + ${ml.laborOvertHrs.toFixed(1)}h overage × $${ml.laborRate}/hr = ${fmtMoney(ml.laborOverage)}`;
+        s+=` = ${fmtMoney(ml.total)}`;return s;
+      }).join(' | ');
       machineRevEl.style.display='block';
     } else {machineRevEl.innerHTML='';machineRevEl.style.display='none';}
   }
@@ -2381,7 +2499,7 @@ function editDay(){
   document.getElementById('edit-son-toggle').checked=!!ad.sonWorking;
   document.getElementById('edit-son-section').style.display=ad.sonWorking?'block':'none';
   document.getElementById('edit-son-hours').value=ad.sonHours!==null&&ad.sonHours!==undefined?ad.sonHours:'';
-  renderMachineCheckboxes('machine-edit-list',ad.machines||[],'edit');
+  renderMachineUI('machine-edit-list',ad.machines||[],'edit');
   document.getElementById('edit-machine-toggle').checked=!!(ad.machines&&ad.machines.length);
   document.getElementById('edit-machine-section').style.display=(ad.machines&&ad.machines.length)?'block':'none';
   initTravelSection('edit',ad);
@@ -2397,8 +2515,7 @@ function saveEdit(){
   ad.sonWorking=document.getElementById('edit-son-toggle').checked;
   const sv=document.getElementById('edit-son-hours').value;
   ad.sonHours=sv?parseFloat(sv):null;
-  const editMachineToggle=document.getElementById('edit-machine-toggle');
-  ad.machines=editMachineToggle&&editMachineToggle.checked?readMachinesFromUI('edit'):[];
+  ad.machines=readMachinesFromUI('edit');
   if(!ad.rate) ad.rate=S().rate;
   if(!ad.sonrate) ad.sonrate=S().sonrate||30;
   Object.assign(ad,readTravelFromUI('edit'));
@@ -2429,6 +2546,7 @@ function saveDay(){
   document.getElementById('machine-section').style.display='none';
   document.getElementById('toggle-machine2').checked=false;
   document.getElementById('machine-section2').style.display='none';
+  renderMachineUI('machine-idle-list',[],'idle');
 }
 
 function closeEditModal(){document.getElementById('edit-modal').classList.remove('open')}
@@ -2559,11 +2677,24 @@ function dayTotals(d){
   const s=S();
   let machineTotal=0;const machineLines=[];
   (d.machines||[]).forEach(m=>{
-    const mh=m.hours!==null&&m.hours!==undefined?m.hours:h;
-    const mrate=getMachineRate(m.name);
-    const me=mh*mrate;
-    machineTotal+=me;
-    machineLines.push({name:m.name,hours:mh,rate:mrate,total:me});
+    const ht=m.hireType||'wet';
+    if(ht==='day'){
+      const dr=m.dayRate||0;
+      machineTotal+=dr;
+      machineLines.push({name:m.name,plantNum:m.plantNum||'',hireType:'day',dayRate:dr,hours:0,rate:0,machineHrs:0,laborOvertHrs:0,laborOverage:0,total:dr});
+    } else {
+      const machineHrs=Math.max(0,(m.finishHrs||0)-(m.startHrs||0));
+      const mrate=m.rate!==undefined&&m.rate!==null?m.rate:getMachineRate(m.name);
+      let lineTotal=machineHrs*mrate;
+      let laborOvertHrs=0,laborOverage=0;
+      if(ht==='wet'&&h>machineHrs){
+        laborOvertHrs=h-machineHrs;
+        laborOverage=laborOvertHrs*d.rate;
+        lineTotal+=laborOverage;
+      }
+      machineTotal+=lineTotal;
+      machineLines.push({name:m.name,plantNum:m.plantNum||'',hireType:ht,machineHrs,rate:mrate,hours:machineHrs,laborOvertHrs,laborOverage,laborRate:d.rate,total:lineTotal});
+    }
   });
   const travelMode=d.travelMode||'none';
   let travelTotal=0,travelLine=null;
@@ -2761,7 +2892,11 @@ function buildInvoiceHTML(){
     const{h,myE,sonH,sonE,total,sonrate,machineLines:ml,travelTotal,materialLines:matL,materialsTotal:matT}=dayTotals(d);
     te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;grandTravelTotal+=travelTotal;grandMaterialsTotal+=matT;
     if(d.sonWorking) sonrateUsed=sonrate;
-    ml.forEach(m=>{if(!machineAgg[m.name])machineAgg[m.name]={hours:0,rate:m.rate,total:0};machineAgg[m.name].hours+=m.hours;machineAgg[m.name].total+=m.total;});
+    ml.forEach(m=>{
+      if(!machineAgg[m.name])machineAgg[m.name]={name:m.name,plantNum:m.plantNum||'',hireType:m.hireType,totalHrs:0,rate:m.rate||0,dayCount:0,dayRate:m.dayRate||0,laborOvertHrs:0,laborOverage:0,laborRate:m.laborRate||0,total:0};
+      const a=machineAgg[m.name];a.total+=m.total;
+      if(m.hireType==='day'){a.dayCount++;}else{a.totalHrs+=m.machineHrs||0;a.laborOvertHrs+=m.laborOvertHrs||0;a.laborOverage+=m.laborOverage||0;}
+    });
     matL.forEach(m=>{if(!materialAgg2[m.name])materialAgg2[m.name]={qty:0,unitPrice:m.unitPrice,total:0};materialAgg2[m.name].qty+=m.qty;materialAgg2[m.name].total+=m.total;});
     rows+=`<tr>
       <td>${fmtDate(d.date)}</td><td>${d.start}</td><td>${d.finish||'—'}</td>
@@ -2784,8 +2919,16 @@ function buildInvoiceHTML(){
     :'';
   let machineLinesHTML='';
   if(machineNames.length){
-    machineLinesHTML+=machineNames.map(nm=>`<div>${nm} hire: ${machineAgg[nm].hours.toFixed(2)} hrs &times; $${machineAgg[nm].rate.toFixed(2)} = $${machineAgg[nm].total.toFixed(2)}</div>`).join('');
-    machineLinesHTML+=`<div>Machine hire subtotal: $${grandMachineTotal.toFixed(2)}</div>`;
+    machineLinesHTML+=machineNames.map(nm=>{
+      const a=machineAgg[nm];const pn=a.plantNum?` (${a.plantNum})`:'';
+      if(a.hireType==='day') return`<div>${nm}${pn} &mdash; day rate &times; ${a.dayCount} day${a.dayCount!==1?'s':''}: $${a.total.toFixed(2)}</div>`;
+      const ht=a.hireType==='wet'?'wet hire':'dry hire';
+      let line=`<div>${nm}${pn} &mdash; ${ht}: ${a.totalHrs.toFixed(2)}h &times; $${a.rate.toFixed(2)}/hr = $${(a.totalHrs*a.rate).toFixed(2)}`;
+      if(a.laborOvertHrs>0) line+=` + operator overage ${a.laborOvertHrs.toFixed(2)}h &times; $${a.laborRate.toFixed(2)}/hr = $${a.laborOverage.toFixed(2)}`;
+      return line+` = $${a.total.toFixed(2)}</div>`;
+    }).join('');
+    if(machineNames.length>1||Object.values(machineAgg).some(a=>a.laborOvertHrs>0))
+      machineLinesHTML+=`<div>Machine hire subtotal: $${grandMachineTotal.toFixed(2)}</div>`;
   }
   const travelLinesHTML=grandTravelTotal>0?`<div>Travel: $${grandTravelTotal.toFixed(2)}</div>`:'';
   let materialsLinesHTML='';
@@ -2835,7 +2978,11 @@ function previewInvoice(){
     const{h,myE,sonH,sonE,total,sonrate,machineLines:ml,travelTotal,materialLines:matL,materialsTotal:matT}=dayTotals(d);
     te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;grandTravelTotal+=travelTotal;grandMaterialsTotal+=matT;
     if(d.sonWorking) sonrateUsed=sonrate;
-    ml.forEach(m=>{if(!machineAgg[m.name])machineAgg[m.name]={hours:0,rate:m.rate,total:0};machineAgg[m.name].hours+=m.hours;machineAgg[m.name].total+=m.total;});
+    ml.forEach(m=>{
+      if(!machineAgg[m.name])machineAgg[m.name]={name:m.name,plantNum:m.plantNum||'',hireType:m.hireType,totalHrs:0,rate:m.rate||0,dayCount:0,dayRate:m.dayRate||0,laborOvertHrs:0,laborOverage:0,laborRate:m.laborRate||0,total:0};
+      const a=machineAgg[m.name];a.total+=m.total;
+      if(m.hireType==='day'){a.dayCount++;}else{a.totalHrs+=m.machineHrs||0;a.laborOvertHrs+=m.laborOvertHrs||0;a.laborOverage+=m.laborOverage||0;}
+    });
     matL.forEach(m=>{if(!materialAggP[m.name])materialAggP[m.name]={qty:0,unitPrice:m.unitPrice,total:0};materialAggP[m.name].qty+=m.qty;materialAggP[m.name].total+=m.total;});
     rows+=`<tr><td>${fmtDate(d.date)}</td><td>${d.start}</td><td>${d.finish||'—'}</td><td>${d.lunchMins?d.lunchMins+'m':'—'}</td><td>${h.toFixed(2)}</td><td>$${d.rate}</td><td>${d.sonWorking?currentTradeProfile().label+'+Extra':currentTradeProfile().label}</td><td>$${total.toFixed(2)}</td></tr>`;
   });
@@ -2854,8 +3001,16 @@ function previewInvoice(){
     :'';
   let machineLinesPreview='';
   if(machineNames.length){
-    machineLinesPreview+=machineNames.map(nm=>`<div>${nm} hire: ${machineAgg[nm].hours.toFixed(2)}h × $${machineAgg[nm].rate.toFixed(2)} = $${machineAgg[nm].total.toFixed(2)}</div>`).join('');
-    machineLinesPreview+=`<div>Machine hire subtotal: $${grandMachineTotal.toFixed(2)}</div>`;
+    machineLinesPreview+=machineNames.map(nm=>{
+      const a=machineAgg[nm];const pn=a.plantNum?` (${a.plantNum})`:'';
+      if(a.hireType==='day') return`<div>${nm}${pn} — day rate × ${a.dayCount} day${a.dayCount!==1?'s':''}: $${a.total.toFixed(2)}</div>`;
+      const ht=a.hireType==='wet'?'wet hire':'dry hire';
+      let line=`<div>${nm}${pn} — ${ht}: ${a.totalHrs.toFixed(2)}h × $${a.rate.toFixed(2)}/hr = $${(a.totalHrs*a.rate).toFixed(2)}`;
+      if(a.laborOvertHrs>0) line+=` + overage ${a.laborOvertHrs.toFixed(2)}h × $${a.laborRate.toFixed(2)}/hr = $${a.laborOverage.toFixed(2)}`;
+      return line+` = $${a.total.toFixed(2)}</div>`;
+    }).join('');
+    if(machineNames.length>1||Object.values(machineAgg).some(a=>a.laborOvertHrs>0))
+      machineLinesPreview+=`<div>Machine hire subtotal: $${grandMachineTotal.toFixed(2)}</div>`;
   }
   const travelLinesPreview=grandTravelTotal>0?`<div>Travel: $${grandTravelTotal.toFixed(2)}</div>`:'';
   let materialsPreview='';
@@ -3115,10 +3270,11 @@ function saveSettings(){
   const thr=document.getElementById('s-travelHrRate');
   if(tkr&&tkr.value) s.travelKmRate=parseFloat(tkr.value)||0.88;
   if(thr&&thr.value) s.travelHrRate=parseFloat(thr.value)||30;
-  // Custom machines (name + rate from the card editor)
-  const customMachines=readCustomMachinesFromCard();
-  s.customMachines=customMachines.length?customMachines:null;
-  s.machineRates={}; // no longer needed when customMachines is set
+  // Machine library (name, plantNum, hireType, rate/dayRate)
+  const machinesLib=readCustomMachinesFromCard();
+  s.machinesLib=machinesLib;
+  s.customMachines=machinesLib.length?machinesLib.map(m=>({name:m.name,rate:m.rate})):null;
+  s.machineRates={};
   // Employee fields
   const _en=document.getElementById('s-employee-name');if(_en) s.employeeName=_en.value;
   const _er=document.getElementById('s-employer-name');if(_er) s.employerName=_er.value;
@@ -3151,6 +3307,7 @@ function selectTrade(key){
   const s=S();
   s.tradeType=key;
   // Reset machines to new trade's defaults when trade changes
+  s.machinesLib=[];
   s.customMachines=null;
   s.machineRates={};
   DB.set('settings',s);
@@ -3164,44 +3321,64 @@ function selectTrade(key){
 
 function renderMachineRatesCard(){
   const card=document.getElementById('machine-rates-card');if(!card)return;
-  const s=S();
-  const prof=currentTradeProfile();
-  // Build working list: customMachines if set, else trade defaults
-  const list=s.customMachines&&s.customMachines.length
-    ? s.customMachines
-    : prof.machines.map(name=>({name,rate:s.machineRates&&s.machineRates[name]!==undefined?s.machineRates[name]:(prof.defaultRates[name]||0)}));
-  const rows=list.map((m,i)=>`
-    <div class="machine-edit-row" style="display:grid;grid-template-columns:1fr 100px 36px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
-      <input type="text" class="mcn-input" placeholder="Machine / equipment name" value="${escHtml(m.name)}" style="font-size:14px" oninput="this.closest('.machine-edit-row').dataset.changed='1'">
-      <div style="display:flex;align-items:center;gap:4px">
-        <span style="font-size:13px;color:var(--text2)">$</span>
-        <input type="number" class="mcn-input" placeholder="0" value="${m.rate}" step="1" min="0" style="font-size:14px;text-align:right">
-        <span style="font-size:11px;color:var(--text3)">/hr</span>
+  const lib=getMachinesLib();
+  const rows=lib.map((m,i)=>{
+    const ht=m.hireType||'wet';
+    const rateVal=ht==='day'?(m.dayRate||0):(m.rate||0);
+    const rateLabel=ht==='day'?'/day':'/hr';
+    return`<div class="machine-edit-row" style="padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="display:grid;grid-template-columns:1fr 90px 36px;gap:6px;align-items:center;margin-bottom:6px">
+        <input type="text" class="mcn-input" placeholder="Machine name" value="${escHtml(m.name)}" style="font-size:14px">
+        <input type="text" class="mcn-input" placeholder="Plant #" value="${escHtml(m.plantNum||'')}" style="font-size:13px;text-align:center">
+        <button onclick="removeCustomMachineRow(this)" style="background:var(--red-light);color:var(--red);border:none;border-radius:6px;width:32px;height:32px;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">×</button>
       </div>
-      <button onclick="removeCustomMachineRow(this)" style="background:none;border:none;font-size:18px;color:var(--text3);cursor:pointer;padding:0;line-height:1;display:flex;align-items:center;justify-content:center">×</button>
-    </div>`).join('');
+      <div style="display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center">
+        <select class="mcn-input" style="font-size:13px" onchange="this.closest('.machine-edit-row').querySelector('.rate-lbl').textContent=this.value==='day'?'/day':'/hr'">
+          <option value="wet" ${ht==='wet'?'selected':''}>Wet hire (hourly, meter tracked)</option>
+          <option value="dry" ${ht==='dry'?'selected':''}>Dry hire (hourly, independent)</option>
+          <option value="day" ${ht==='day'?'selected':''}>Day rate (flat)</option>
+        </select>
+        <div style="display:flex;align-items:center;gap:4px">
+          <span style="font-size:13px;color:var(--text2)">$</span>
+          <input type="number" class="mcn-input" value="${rateVal}" min="0" step="1" style="width:70px;text-align:right;font-size:14px">
+          <span class="rate-lbl" style="font-size:11px;color:var(--text3)">${rateLabel}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  const prof=currentTradeProfile();
   card.innerHTML=`
-    <div class="card-title">${prof.equipLabel||'Plant & Equipment'}</div>
-    <div style="font-size:12px;color:var(--text3);margin:-4px 0 10px">Add, rename or remove equipment for your invoices.</div>
+    <div class="card-title">${prof.equipLabel||'Plant & Equipment'} Library</div>
+    <div style="font-size:12px;color:var(--text3);margin:-4px 0 10px">Machines here appear as quick-add options when logging days. Each day can also have one-off machines.</div>
     <div id="machine-rows-list">${rows}</div>
     <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
-      <button onclick="addCustomMachineRow()" style="flex:1;min-width:120px;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">+ Add machine</button>
-      <button onclick="resetMachinesToTradeDefaults()" style="flex:1;min-width:120px;padding:10px;background:none;border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text2);cursor:pointer">Reset to trade defaults</button>
+      <button onclick="addCustomMachineRow()" style="flex:1;min-width:120px;padding:10px;background:var(--amber);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">+ Add machine</button>
+      <button onclick="resetMachinesToTradeDefaults()" style="flex:1;min-width:120px;padding:10px;background:none;border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text2);cursor:pointer">Reset to defaults</button>
     </div>`;
 }
 function addCustomMachineRow(){
   const list=document.getElementById('machine-rows-list');if(!list)return;
   const row=document.createElement('div');
   row.className='machine-edit-row';
-  row.style.cssText='display:grid;grid-template-columns:1fr 100px 36px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)';
+  row.style.cssText='padding:10px 0;border-bottom:1px solid var(--border)';
   row.innerHTML=`
-    <input type="text" class="mcn-input" placeholder="Machine name" style="font-size:14px">
-    <div style="display:flex;align-items:center;gap:4px">
-      <span style="font-size:13px;color:var(--text2)">$</span>
-      <input type="number" class="mcn-input" placeholder="0" step="1" min="0" style="font-size:14px;text-align:right">
-      <span style="font-size:11px;color:var(--text3)">/hr</span>
+    <div style="display:grid;grid-template-columns:1fr 90px 36px;gap:6px;align-items:center;margin-bottom:6px">
+      <input type="text" class="mcn-input" placeholder="Machine name" style="font-size:14px">
+      <input type="text" class="mcn-input" placeholder="Plant #" style="font-size:13px;text-align:center">
+      <button onclick="removeCustomMachineRow(this)" style="background:var(--red-light);color:var(--red);border:none;border-radius:6px;width:32px;height:32px;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">×</button>
     </div>
-    <button onclick="removeCustomMachineRow(this)" style="background:none;border:none;font-size:18px;color:var(--text3);cursor:pointer;padding:0;line-height:1;display:flex;align-items:center;justify-content:center">×</button>`;
+    <div style="display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center">
+      <select class="mcn-input" style="font-size:13px" onchange="this.closest('.machine-edit-row').querySelector('.rate-lbl').textContent=this.value==='day'?'/day':'/hr'">
+        <option value="wet">Wet hire (hourly, meter tracked)</option>
+        <option value="dry">Dry hire (hourly, independent)</option>
+        <option value="day">Day rate (flat)</option>
+      </select>
+      <div style="display:flex;align-items:center;gap:4px">
+        <span style="font-size:13px;color:var(--text2)">$</span>
+        <input type="number" class="mcn-input" placeholder="0" min="0" step="1" style="width:70px;text-align:right;font-size:14px">
+        <span class="rate-lbl" style="font-size:11px;color:var(--text3)">/hr</span>
+      </div>
+    </div>`;
   list.appendChild(row);
   row.querySelector('input').focus();
 }
@@ -3210,6 +3387,7 @@ function removeCustomMachineRow(btn){
 }
 function resetMachinesToTradeDefaults(){
   const s=S(),prof=currentTradeProfile();
+  s.machinesLib=[];
   s.customMachines=null;
   s.machineRates={};
   DB.set('settings',s);
@@ -3222,9 +3400,13 @@ function readCustomMachinesFromCard(){
   const result=[];
   rows.forEach(row=>{
     const inputs=row.querySelectorAll('input');
+    const selects=row.querySelectorAll('select');
     const name=(inputs[0].value||'').trim();
-    const rate=parseFloat(inputs[1].value)||0;
-    if(name) result.push({name,rate});
+    const plantNum=(inputs[1].value||'').trim();
+    const hireType=selects[0]?selects[0].value:'wet';
+    const rateVal=parseFloat(inputs[2].value)||0;
+    if(!name) return;
+    result.push({name,plantNum,hireType,rate:hireType!=='day'?rateVal:0,dayRate:hireType==='day'?rateVal:0});
   });
   return result;
 }
