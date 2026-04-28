@@ -208,6 +208,20 @@
   .inv-day-row .inv-day-amount{font-size:15px;font-weight:700;color:var(--amber);font-family:'Montserrat',system-ui,sans-serif}
   .inv-day-row.selected{border-left-color:var(--green);background:var(--success-light)}
   .inv-day-row.selected .inv-day-amount{color:var(--green)}
+
+  /* Invoice day selection checkboxes */
+  .inv-day-check{width:20px;height:20px;accent-color:var(--amber);cursor:pointer;flex-shrink:0;margin-right:10px}
+  .inv-day-row-wrap{display:flex;align-items:center;border-bottom:1px solid var(--border);padding:10px 0}
+  .inv-day-row-wrap:last-child{border-bottom:none}
+  .inv-day-row-wrap.deselected{opacity:.55}
+
+  /* Archive toggle in log */
+  .log-filter-bar{display:flex;align-items:center;justify-content:space-between;padding:8px 16px 0;margin-bottom:-8px}
+  .btn-ghost{background:none;border:none;font-size:12px;font-weight:700;color:var(--amber);cursor:pointer;padding:4px 0;letter-spacing:.2px}
+
+  /* Stat card editable invoice number */
+  .inv-num-input{width:100%;font-size:22px;font-weight:700;font-family:'Montserrat',system-ui,sans-serif;letter-spacing:-1px;color:var(--text);background:none;border:none;border-bottom:2px solid var(--amber);outline:none;padding:0;text-align:center}
+  .inv-num-input:focus{border-bottom-color:var(--amber)}
 </style>
 
 <script type="module">
@@ -323,11 +337,13 @@ onAuthStateChanged(auth, async (user) => {
   const appWrapper    = document.getElementById('main-app-wrapper');
   const accountEl     = document.getElementById('cloud-account-display');
   const adminTab      = document.getElementById('nav-admin');
+  const adminSection  = document.getElementById('admin-only-section');
 
   if (user) {
     CloudSync.uid = user.uid;
     if (accountEl) accountEl.textContent = user.email;
     if (adminTab) adminTab.style.display = user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase() ? 'flex' : 'none';
+    if (adminSection) adminSection.style.display = user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase() ? 'block' : 'none';
     if (!_sessionInit) {
       // First sign-in this session — restore from cloud and init app
       _sessionInit = true;
@@ -604,6 +620,10 @@ window.firebaseSignOut = async function() {
 <!-- LOG SCREEN -->
 <div id="screen-log" class="screen">
   <div class="header"><h1>Work Log</h1><p id="log-uninvoiced">Uninvoiced days</p></div>
+  <div class="log-filter-bar">
+    <span style="font-size:12px;color:var(--text2)" id="log-filter-label">Active entries</span>
+    <button class="btn-ghost" id="archived-toggle-btn" onclick="toggleArchivedLogs()">Show archived</button>
+  </div>
   <div class="section"><div id="log-list"></div></div>
 </div>
 
@@ -680,7 +700,7 @@ window.firebaseSignOut = async function() {
   <div class="header"><h1>Invoice Generator</h1><p id="invoice-subtitle">Ready to generate</p></div>
   <div class="section">
     <div class="stats-grid">
-      <div class="stat-card"><div class="stat-label">Invoice #</div><div class="stat-value" id="inv-num-display">0045</div></div>
+      <div class="stat-card"><div class="stat-label">Invoice #</div><input type="number" class="inv-num-input" id="inv-num-input" value="0045" oninput="this.dataset.userEdited='1'" onchange="renderInvoice()"></div>
       <div class="stat-card" style="background:var(--navy);border:none"><div class="stat-label" style="color:rgba(255,255,255,.55)">Total Payable</div><div class="stat-value" style="color:var(--amber)" id="inv-total-display">$0</div></div>
       <div class="stat-card"><div class="stat-label">Days</div><div class="stat-value" id="inv-days-display">0</div></div>
       <div class="stat-card"><div class="stat-label">Hours</div><div class="stat-value" id="inv-hours-display">0</div></div>
@@ -699,10 +719,20 @@ window.firebaseSignOut = async function() {
     <div class="card">
       <div class="field" style="margin:0">
         <label>Bill to</label>
-        <select id="inv-client-select" onchange="renderInvoice()" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)"></select>
+        <select id="inv-client-select" onchange="resetInvoiceDaySelection();renderInvoice()" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)"></select>
       </div>
     </div>
-    <div id="invoice-day-list"></div>
+    <div class="card" id="inv-day-select-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div class="card-title" style="margin:0;border:none;padding:0">Days to include</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn-ghost" onclick="selectAllInvoiceDays(true)">All</button>
+          <button class="btn-ghost" onclick="selectAllInvoiceDays(false)">None</button>
+          <button class="btn-ghost" id="inv-show-archived-btn" onclick="toggleInvoiceArchive()" style="color:var(--text2)">+ Archived</button>
+        </div>
+      </div>
+      <div id="invoice-day-list"></div>
+    </div>
     <!-- Labour subtotals -->
     <div class="card" id="inv-subtotals-card" style="display:none">
       <div class="card-title">Labour Summary</div>
@@ -774,6 +804,15 @@ window.firebaseSignOut = async function() {
       </div>
     </div>
     <div class="card">
+      <div class="card-title">Rate increase benchmarks (AU)</div>
+      <div class="benchmark">
+        <div class="bench-item"><div class="bench-val">3.8%</div><div class="bench-label">CPI</div></div>
+        <div class="bench-item"><div class="bench-val">8.8%</div><div class="bench-label">House prices</div></div>
+        <div class="bench-item"><div class="bench-val">10.9%</div><div class="bench-label">Gold 20yr avg</div></div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:10px">Suggested: avg of above = ~7.8%/yr over 26 invoices</div>
+    </div>
+    <div class="card">
       <div class="card-title">Clients</div>
       <div id="clients-list"></div>
       <button class="btn btn-secondary" style="margin-top:8px" onclick="addClient()">+ Add client</button>
@@ -799,15 +838,6 @@ window.firebaseSignOut = async function() {
       <div class="field"><label>Tractor</label><input type="number" id="s-mr-Tractor" step="1" min="0"></div>
     </div>
     <div class="card">
-      <div class="card-title">Rate increase benchmarks (AU)</div>
-      <div class="benchmark">
-        <div class="bench-item"><div class="bench-val">3.8%</div><div class="bench-label">CPI</div></div>
-        <div class="bench-item"><div class="bench-val">8.8%</div><div class="bench-label">House prices</div></div>
-        <div class="bench-item"><div class="bench-val">10.9%</div><div class="bench-label">Gold 20yr avg</div></div>
-      </div>
-      <div style="font-size:11px;color:var(--text2);margin-top:10px">Suggested: avg of above = ~7.8%/yr over 26 invoices</div>
-    </div>
-    <div class="card">
       <div class="card-title">Work sites (GPS)</div>
       <div id="sites-list"></div>
       <button class="btn btn-secondary" style="margin-top:8px" onclick="addSite()">+ Add site</button>
@@ -820,34 +850,32 @@ window.firebaseSignOut = async function() {
       <input type="file" accept=".json" style="display:none" onchange="importData(this)">
     </label>
     <div class="card" style="margin-top:12px">
-      <div class="card-title">☁️ Cloud Account</div>
-      <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Signed in as <span id="cloud-account-display" style="font-weight:600;color:var(--text)">…</span></div>
-      <button class="btn btn-secondary" onclick="firebaseSignOut()" style="width:100%">Sign Out</button>
-    </div>
-    <div class="card" style="margin-top:12px">
-      <div class="card-title">ℹ️ About</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-        <div style="font-size:13px;color:var(--text2)">Version <span id="app-version">—</span></div>
-        <button id="update-btn" onclick="forceAppUpdate()" style="font-size:12px;font-weight:600;padding:6px 14px;border-radius:8px;border:none;background:var(--navy);color:#fff;cursor:pointer;letter-spacing:.3px">Check for Update</button>
-      </div>
-    </div>
-    <div class="card" style="margin-top:12px">
       <div class="card-title">📁 Saved Invoices</div>
       <div id="settings-saved-invoices-list"></div>
     </div>
     <div class="card" style="margin-top:12px">
-      <div class="card-title">👥 Admin</div>
-      <div id="admin-user-list-settings"><div style="color:var(--text2);font-size:13px">Tap refresh to load.</div></div>
-      <button class="btn btn-secondary" style="margin-top:14px;width:100%" onclick="loadAdminUsers('settings')">↻ Refresh</button>
-    </div>
-    <div class="card" style="margin-top:12px;background:var(--amber-light);border-color:var(--amber)">
-      <div class="card-title" style="color:var(--amber)">⚠️ Deleting accounts</div>
-      <div style="font-size:13px;color:var(--text2)">The Delete button removes all of a user's Firestore data. To fully remove their login credentials, go to <strong>Firebase Console → Authentication → Users</strong> and delete from there.</div>
+      <div class="card-title">☁️ Account &amp; Sync</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Signed in as <span id="cloud-account-display" style="font-weight:600;color:var(--text)">…</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+        <button class="btn btn-secondary" onclick="cloudSyncNow()" style="font-size:13px;padding:10px">↑ Push to Cloud</button>
+        <button class="btn btn-secondary" onclick="cloudPullNow()" style="font-size:13px;padding:10px">↓ Pull from Cloud</button>
+      </div>
+      <button class="btn btn-secondary" onclick="firebaseSignOut()" style="width:100%;margin-bottom:14px">Sign Out</button>
+      <div style="border-top:1px solid var(--border);padding-top:14px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div style="font-size:13px;color:var(--text2)">Version <span id="app-version">—</span></div>
+        <button id="update-btn" onclick="forceAppUpdate()" style="font-size:12px;font-weight:600;padding:8px 16px;border-radius:8px;border:none;background:var(--navy);color:#fff;cursor:pointer;letter-spacing:.3px">Check for Update</button>
+      </div>
+      <div id="admin-only-section" style="display:none;border-top:1px solid var(--border);padding-top:14px;margin-top:14px">
+        <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px;padding-left:10px;border-left:3px solid var(--amber)">👥 Registered Users</div>
+        <div id="admin-user-list-settings"><div style="color:var(--text2);font-size:13px">Tap refresh to load.</div></div>
+        <button class="btn btn-secondary" style="margin-top:12px;width:100%" onclick="loadAdminUsers('settings')">↻ Refresh User List</button>
+        <div style="font-size:11px;color:var(--text3);margin-top:8px">To delete login credentials, use Firebase Console → Authentication → Users.</div>
+      </div>
     </div>
   </div>
 </div>
 <script>
-const APP_VERSION = 'v21';
+const APP_VERSION = 'v22';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -957,6 +985,7 @@ async function forceAppUpdate() {
   <div class="modal">
     <div class="modal-title">Add Work Site <button class="modal-close" onclick="closeSiteModal()">✕</button></div>
     <div class="field"><label>Site name</label><input type="text" id="modal-site-name" placeholder="e.g. Main Farm"></div>
+    <div class="field"><label>Client</label><select id="modal-site-client" style="width:100%;padding:11px 14px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)"><option value="">— Not assigned —</option></select></div>
     <div class="field">
       <label>Coordinates</label>
       <div style="font-size:13px;color:var(--text2);margin-bottom:8px" id="modal-coords">Not captured yet</div>
@@ -1170,6 +1199,91 @@ function invoices(){return DB.def('invoices',[])}
 function sites(){return DB.def('sites',[])}
 function activeDay(){return DB.get('activeDay')}
 
+// --- Invoice day selection state ---
+// null = use all uninvoiced (default); Set of day ids = user has explicitly chosen
+let _invoiceDaySelection = null; // null means "all uninvoiced checked"
+let _invoiceShowArchived = false; // whether archived days are shown in invoice picker
+
+function resetInvoiceDaySelection(){ _invoiceDaySelection = null; _invoiceShowArchived = false; }
+
+function toggleInvoiceDay(id){
+  // Lazily initialise selection from current rendered list
+  if(_invoiceDaySelection === null){
+    // Start with all currently uninvoiced days selected
+    const cl = clientsData(), sel = document.getElementById('inv-client-select');
+    const clientIdx = sel ? parseInt(sel.value) : NaN;
+    const selClient = (!isNaN(clientIdx) && cl[clientIdx]) ? cl[clientIdx] : cl.find(c=>c.isDefault)||cl[0];
+    const ss = sites();
+    const eligible = days().filter(d=>{
+      if(d.invoiced) return false;
+      if(selClient){
+        const site = ss.find(s=>s.name===d.site);
+        if(site && site.client && site.client !== selClient.company) return false;
+      }
+      return true;
+    });
+    _invoiceDaySelection = new Set(eligible.map(d=>d.id||d.date));
+  }
+  if(_invoiceDaySelection.has(id)) _invoiceDaySelection.delete(id);
+  else _invoiceDaySelection.add(id);
+  renderInvoice();
+}
+
+function selectAllInvoiceDays(checked){
+  const allWraps = document.querySelectorAll('.inv-day-row-wrap');
+  if(checked){
+    // Select all currently visible days
+    _invoiceDaySelection = new Set();
+    allWraps.forEach(w=>{
+      const cb = w.querySelector('.inv-day-check');
+      if(cb) _invoiceDaySelection.add(cb.dataset.id);
+    });
+  } else {
+    _invoiceDaySelection = new Set(); // empty = none selected
+  }
+  renderInvoice();
+}
+
+function toggleInvoiceArchive(){
+  _invoiceShowArchived = !_invoiceShowArchived;
+  const btn = document.getElementById('inv-show-archived-btn');
+  if(btn) btn.textContent = _invoiceShowArchived ? '− Archived' : '+ Archived';
+  renderInvoice();
+}
+
+// --- Log archive state ---
+let showArchivedLogs = false;
+function toggleArchivedLogs(){
+  showArchivedLogs = !showArchivedLogs;
+  const btn = document.getElementById('archived-toggle-btn');
+  if(btn) btn.textContent = showArchivedLogs ? 'Hide archived' : 'Show archived';
+  renderLog();
+}
+
+// --- Cloud sync helpers ---
+async function cloudSyncNow(){
+  if(!window.CloudSync||!window.CloudSync.uid){toast('Not signed in');return;}
+  toast('Pushing to cloud…');
+  await window.CloudSync.pushAll();
+  toast('☁ Synced to cloud ✓');
+}
+async function cloudPullNow(){
+  if(!window.CloudSync||!window.CloudSync.uid){toast('Not signed in');return;}
+  toast('Pulling from cloud…');
+  // Force full pull: temporarily clear local keys, restore, then reload
+  const SYNC_KEYS=['settings','clients','days','sites','activeDay','invoices','gst_on'];
+  SYNC_KEYS.forEach(k=>localStorage.removeItem('mcn_'+k));
+  await window.CloudSync.restore();
+  toast('Cloud data restored — reloading…');
+  setTimeout(()=>location.reload(),1200);
+}
+
+// Helper: get site's client company name
+function siteClient(siteName){
+  const s = sites().find(s=>s.name===siteName);
+  return s ? (s.client||null) : null;
+}
+
 const MACHINES=['Excavator','Grader','Bobcat','Dozer','Tractor'];
 function defaultMachineRates(){return{Excavator:150,Grader:180,Bobcat:120,Dozer:200,Tractor:110};}
 
@@ -1186,7 +1300,7 @@ function showScreen(id,btn){
   if(id==='log') renderLog();
   if(id==='invoice'){populateClientDropdown();renderInvoice();}
   if(id==='analytics') renderAnalytics();
-  if(id==='settings') {loadSettings();renderSavedInvoices('settings');loadAdminUsers('settings');}
+  if(id==='settings') {loadSettings();renderSavedInvoices('settings');}
 }
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400)}
 function nowTime(){const n=new Date();return String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0')}
@@ -1786,14 +1900,23 @@ function dayTotals(d){
 
 // --- Log ---
 function renderLog(){
-  const list=days().sort((a,b)=>b.date.localeCompare(a.date)),el=document.getElementById('log-list');
-  const ui=list.filter(d=>!d.invoiced).length;
+  const allDays=days().sort((a,b)=>b.date.localeCompare(a.date));
+  const el=document.getElementById('log-list');
+  const archivedCount=allDays.filter(d=>d.invoiced).length;
+  const ui=allDays.filter(d=>!d.invoiced).length;
   document.getElementById('log-uninvoiced').textContent=ui+' uninvoiced day'+(ui!==1?'s':'');
-  if(!list.length){el.innerHTML='<div class="empty"><div class="empty-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></div><h3>No days logged yet</h3><p>Use the Today tab to check in and start tracking your time</p></div>';return;}
+  const filterLabel=document.getElementById('log-filter-label');
+  const toggleBtn=document.getElementById('archived-toggle-btn');
+  if(filterLabel) filterLabel.textContent=showArchivedLogs?'All entries ('+allDays.length+')':'Active entries ('+ui+')';
+  if(toggleBtn) toggleBtn.textContent=showArchivedLogs?'Hide archived':'Show archived ('+archivedCount+')';
+  const list=showArchivedLogs?allDays:allDays.filter(d=>!d.invoiced);
+  if(!allDays.length){el.innerHTML='<div class="empty"><div class="empty-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></div><h3>No days logged yet</h3><p>Use the Today tab to check in and start tracking your time</p></div>';return;}
+  if(!list.length){el.innerHTML='<div class="empty"><div class="empty-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></div><h3>All days are invoiced</h3><p>Tap "Show archived" above to view invoiced entries</p></div>';return;}
   el.innerHTML='';
   list.forEach(d=>{
     const{h,myE,sonH,sonE,total,sonrate}=dayTotals(d);
     const c=document.createElement('div');c.className='card';
+    if(d.invoiced) c.style.opacity='0.65';
     c.innerHTML=`<div class="day-item" style="border:none;padding:0">
       <div class="day-item-left">
         <div class="date">${fmtDate(d.date)}</div>
@@ -1802,7 +1925,7 @@ function renderLog(){
           <span class="badge badge-green">Earthmoving</span>
           ${d.sonWorking?`<span class="badge badge-blue" style="margin-left:4px">Extra ${formatHours(sonH)} @$${sonrate}</span>`:''}
           ${(d.machines||[]).map(m=>`<span class="badge badge-amber" style="margin-left:4px">${m.name}</span>`).join('')}
-          ${d.invoiced?'<span class="badge badge-amber" style="margin-left:4px">Invoiced</span>':''}
+          ${d.invoiced?'<span class="badge badge-amber" style="margin-left:4px">Archived</span>':''}
         </div>
       </div>
       <div class="day-item-right" style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
@@ -1815,56 +1938,98 @@ function renderLog(){
 }
 
 // --- Invoice ---
+function _getInvoiceClientFilter(){
+  const cl=clientsData(),sel=document.getElementById('inv-client-select');
+  if(!cl.length) return null;
+  const idx=sel?parseInt(sel.value):NaN;
+  return(!isNaN(idx)&&cl[idx])||cl.find(c=>c.isDefault)||cl[0]||null;
+}
+
+function _dayMatchesClient(d,selClient){
+  if(!selClient) return true; // no clients configured — show all
+  const sc=siteClient(d.site);
+  // Include day if site belongs to selected client, OR if site has no client assigned
+  return !sc || sc===selClient.company;
+}
+
 function renderInvoice(){
-  const s=S(),ui=days().filter(d=>!d.invoiced).sort((a,b)=>a.date.localeCompare(b.date));
+  const s=S();
   const ap=parseFloat(s.incpct??7.8),pi=(parseFloat(s.rate)*ap/100)/26,nr=Math.round((parseFloat(s.rate)+pi)*20)/20;
-  document.getElementById('inv-num-display').textContent=String(s.invnum).padStart(4,'0');
+  // Populate/update invoice number input (only on first paint, don't overwrite if user edited)
+  const numInput=document.getElementById('inv-num-input');
+  if(numInput&&numInput.dataset.userEdited!=='1') numInput.value=String(s.invnum).padStart(4,'0');
   document.getElementById('inv-rate-display').textContent='$'+parseFloat(s.rate).toFixed(2)+'/hr';
   document.getElementById('inv-rate-increase').textContent='After generating: rate becomes $'+nr.toFixed(2)+'/hr (+$'+pi.toFixed(2)+')';
+
+  const selClient=_getInvoiceClientFilter();
+  // All uninvoiced days matching client filter
+  const allUninvoiced=days().filter(d=>!d.invoiced&&_dayMatchesClient(d,selClient)).sort((a,b)=>a.date.localeCompare(b.date));
+  // Archived days matching client filter (for optional inclusion)
+  const archivedDays=_invoiceShowArchived?days().filter(d=>d.invoiced&&_dayMatchesClient(d,selClient)).sort((a,b)=>a.date.localeCompare(b.date)):[];
+
+  // Determine which days are "selected" (will go into invoice)
+  // _invoiceDaySelection===null means "all uninvoiced" (default)
+  function isDaySelected(d){
+    if(_invoiceDaySelection===null) return !d.invoiced; // default: uninvoiced = selected
+    return _invoiceDaySelection.has(d.id||d.date);
+  }
+
   let te=0,th=0,sonTotal=0,sonTotalHrs=0,machineAgg={},grandMachineTotal=0;
   const le=document.getElementById('invoice-day-list');le.innerHTML='';
-  ui.forEach(d=>{
+
+  // Render uninvoiced days with checkboxes
+  const renderDayRow=(d,isArchived)=>{
     const{h,myE,sonH,sonE,total,sonrate,machineTotal:mt,machineLines:ml}=dayTotals(d);
-    te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;grandMachineTotal+=mt;
-    ml.forEach(m=>{if(!machineAgg[m.name])machineAgg[m.name]={hours:0,rate:m.rate,total:0};machineAgg[m.name].hours+=m.hours;machineAgg[m.name].total+=m.total;});
-    const i=document.createElement('div');i.className='card';
-    i.innerHTML=`<div class="day-item" style="border:none;padding:0">
-      <div class="day-item-left">
-        <div class="date">${fmtDate(d.date)}</div>
-        <div class="detail">${d.site} · ${formatHours(h)} · $${d.rate}/hr${d.sonWorking?` + Extra ${formatHours(sonH)} @$${sonrate}`:''}${ml.length?' + '+ml.map(m=>m.name).join(', '):''}</div>
+    const id=d.id||d.date;
+    const sel=isDaySelected(d);
+    if(sel){te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;grandMachineTotal+=mt;ml.forEach(m=>{if(!machineAgg[m.name])machineAgg[m.name]={hours:0,rate:m.rate,total:0};machineAgg[m.name].hours+=m.hours;machineAgg[m.name].total+=m.total;});}
+    const wrap=document.createElement('div');
+    wrap.className='inv-day-row-wrap'+(sel?'':' deselected');
+    wrap.innerHTML=`
+      <input type="checkbox" class="inv-day-check" data-id="${id}" ${sel?'checked':''} onchange="toggleInvoiceDay('${id}')">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;color:var(--text)">${fmtDate(d.date)}${isArchived?' <span class="badge badge-amber" style="font-size:9px;margin-left:4px">archived</span>':''}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">${d.site} · ${formatHours(h)} · $${d.rate}/hr${d.sonWorking?` + Extra ${formatHours(sonH)} @$${sonrate}`:''}${ml.length?' + '+ml.map(m=>m.name).join(', '):''}</div>
       </div>
-      <div class="day-item-right"><div class="amount">${fmtMoney(total)}</div><div class="hours">Earthmoving</div></div>
-    </div>`;
-    le.appendChild(i);
-  });
+      <div style="font-size:15px;font-weight:700;color:${sel?'var(--amber)':'var(--text3)'};font-family:'Montserrat',system-ui,sans-serif;flex-shrink:0;margin-left:8px">${fmtMoney(total)}</div>`;
+    le.appendChild(wrap);
+  };
+
+  allUninvoiced.forEach(d=>renderDayRow(d,false));
+  if(archivedDays.length){
+    const sep=document.createElement('div');
+    sep.style.cssText='font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;padding:10px 0 4px;border-top:1px solid var(--border);margin-top:6px';
+    sep.textContent='Archived days';
+    le.appendChild(sep);
+    archivedDays.forEach(d=>renderDayRow(d,true));
+  }
+  if(!allUninvoiced.length&&!archivedDays.length){
+    le.innerHTML='<div style="color:var(--text2);font-size:13px;padding:12px 0;text-align:center">No days to invoice for this client</div>';
+  }
+
   const grandTotal=te+sonTotal+grandMachineTotal;
   const gstOn=document.getElementById('toggle-gst')&&document.getElementById('toggle-gst').checked;
   const gst=gstOn?grandTotal*0.1:0;
+  const selectedCount=allUninvoiced.filter(d=>isDaySelected(d)).length+archivedDays.filter(d=>isDaySelected(d)).length;
   document.getElementById('inv-total-display').textContent=fmtMoney(grandTotal+gst);
-  document.getElementById('inv-days-display').textContent=ui.length;
+  document.getElementById('inv-days-display').textContent=selectedCount;
   document.getElementById('inv-hours-display').textContent=th.toFixed(1);
-  document.getElementById('invoice-subtitle').textContent=ui.length+' day'+(ui.length!==1?'s':'')+' to invoice';
-  // Show subtotals card
+  document.getElementById('invoice-subtitle').textContent=selectedCount+' day'+(selectedCount!==1?'s':'')+' selected';
+  // Subtotals card
   const sc=document.getElementById('inv-subtotals-card'),scContent=document.getElementById('inv-subtotals-content');
-  if(ui.length){
+  if(selectedCount){
     sc.style.display='block';
-    const sonrateDisplay=ui.find(d=>d.sonWorking)?ui.find(d=>d.sonWorking).sonrate||(S().sonrate||30):S().sonrate||30;
+    const sonrateDisplay=allUninvoiced.concat(archivedDays).find(d=>d.sonWorking&&isDaySelected(d))?.sonrate||(S().sonrate||30);
     const machineNames=Object.keys(machineAgg);
     scContent.innerHTML=`
       <div class="inv-subtotal-row subdued">
         <span>My labour (${th.toFixed(2)}h × $${parseFloat(s.rate).toFixed(2)}/hr)</span>
         <span>${fmtMoney(te)}</span>
       </div>
-      ${sonTotal>0?`<div class="inv-subtotal-row subdued">
-        <span>Extra labourer (${sonTotalHrs.toFixed(2)}h × $${sonrateDisplay.toFixed(2)}/hr)</span>
-        <span>${fmtMoney(sonTotal)}</span>
-      </div>`:''}
+      ${sonTotal>0?`<div class="inv-subtotal-row subdued"><span>Extra labourer (${sonTotalHrs.toFixed(2)}h × $${(typeof sonrateDisplay==='number'?sonrateDisplay:parseFloat(sonrateDisplay)||30).toFixed(2)}/hr)</span><span>${fmtMoney(sonTotal)}</span></div>`:''}
       ${grandMachineTotal>0?machineNames.map(n=>`<div class="inv-subtotal-row subdued"><span>${n} hire (${machineAgg[n].hours.toFixed(2)}h × $${machineAgg[n].rate}/hr)</span><span>${fmtMoney(machineAgg[n].total)}</span></div>`).join(''):''}
       ${grandMachineTotal>0?`<div class="inv-subtotal-row subdued"><span>Machine hire subtotal</span><span>${fmtMoney(grandMachineTotal)}</span></div>`:''}
-      <div class="inv-subtotal-row total">
-        <span>Total Payable</span>
-        <span>${fmtMoney(grandTotal)}</span>
-      </div>
+      <div class="inv-subtotal-row total"><span>Total Payable</span><span>${fmtMoney(grandTotal)}</span></div>
       ${gstOn?`<div class="inv-subtotal-row subdued"><span>GST (10%)</span><span>${fmtMoney(gst)}</span></div>`:''}
       ${gstOn?`<div class="inv-subtotal-row total"><span>Total inc. GST</span><span>${fmtMoney(grandTotal+gst)}</span></div>`:''}`;
   } else {
@@ -1872,8 +2037,24 @@ function renderInvoice(){
   }
 }
 
+// Get the list of days selected for invoicing
+function _getSelectedInvoiceDays(){
+  const selClient=_getInvoiceClientFilter();
+  const allDays=days().filter(d=>_dayMatchesClient(d,selClient));
+  const uninvoiced=allDays.filter(d=>!d.invoiced).sort((a,b)=>a.date.localeCompare(b.date));
+  const archived=_invoiceShowArchived?allDays.filter(d=>d.invoiced).sort((a,b)=>a.date.localeCompare(b.date)):[];
+  const pool=[...uninvoiced,...archived];
+  if(_invoiceDaySelection===null){
+    // Default: all uninvoiced
+    return uninvoiced;
+  }
+  return pool.filter(d=>_invoiceDaySelection.has(d.id||d.date));
+}
+
 function buildInvoiceHTML(){
-  const s=S(),ui=days().filter(d=>!d.invoiced).sort((a,b)=>a.date.localeCompare(b.date));
+  const s=S(),ui=_getSelectedInvoiceDays();
+  const numInput=document.getElementById('inv-num-input');
+  const invNumOverride=numInput&&numInput.value?parseInt(numInput.value)||s.invnum:s.invnum;
   const c=getSelectedClient();
   const clientLines=[c.company,c.contact,c.abn?'ABN '+c.abn:'',c.address,c.email,c.phone].filter(Boolean).join('<br>');
   let rows='',te=0,th=0,sonTotal=0,sonTotalHrs=0;
@@ -1897,7 +2078,7 @@ function buildInvoiceHTML(){
   const grandTotal=te+sonTotal+grandMachineTotal;
   const gstOn=document.getElementById('toggle-gst')&&document.getElementById('toggle-gst').checked;
   const gst=gstOn?grandTotal*0.1:0;
-  const n=String(s.invnum).padStart(4,'0');
+  const n=String(invNumOverride).padStart(4,'0');
   const sonLines=sonTotal>0
     ?`<div>My labour: ${th.toFixed(2)} hrs &times; $${parseFloat(s.rate).toFixed(2)} = $${te.toFixed(2)}</div>
       <div>Extra labourer: ${sonTotalHrs.toFixed(2)} hrs &times; $${sonrateUsed.toFixed(2)} = $${sonTotal.toFixed(2)}</div>
@@ -1936,7 +2117,7 @@ ${gstLines}
 }
 
 function previewInvoice(){
-  const s=S(),ui=days().filter(d=>!d.invoiced).sort((a,b)=>a.date.localeCompare(b.date));
+  const s=S(),ui=_getSelectedInvoiceDays();
   const c=getSelectedClient();
   const clientLines=[c.company,c.contact,c.abn?'ABN '+c.abn:'',c.address,c.email,c.phone].filter(Boolean).join('<br>');
   let rows='',te=0,th=0,sonTotal=0,sonTotalHrs=0;
@@ -1954,7 +2135,9 @@ function previewInvoice(){
   const grandTotal=te+sonTotal+grandMachineTotal;
   const gstOn=document.getElementById('toggle-gst')&&document.getElementById('toggle-gst').checked;
   const gst=gstOn?grandTotal*0.1:0;
-  const n=String(s.invnum).padStart(4,'0'),sec=document.getElementById('invoice-preview-section');
+  const numInput=document.getElementById('inv-num-input');
+  const invNumOverride=numInput&&numInput.value?parseInt(numInput.value)||s.invnum:s.invnum;
+  const n=String(invNumOverride).padStart(4,'0'),sec=document.getElementById('invoice-preview-section');
   const sonLinesPreview=sonTotal>0
     ?`<div>My labour: ${th.toFixed(2)}h × $${parseFloat(s.rate).toFixed(2)} = $${te.toFixed(2)}</div>
       <div>Extra labourer: ${sonTotalHrs.toFixed(2)}h × $${sonrateUsed.toFixed(2)} = $${sonTotal.toFixed(2)}</div>
@@ -2109,25 +2292,35 @@ async function generatePDF(html, filename, emailOpts) {
 }
 
 function generateInvoice(){
-  const s=S(),ui=days().filter(d=>!d.invoiced);
-  if(!ui.length){toast('No uninvoiced days to include');return;}
+  const s=S();
+  const ui=_getSelectedInvoiceDays();
+  if(!ui.length){toast('No days selected \u2014 tick at least one day');return;}
+  // Read invoice number from editable input
+  const numInput=document.getElementById('inv-num-input');
+  const invNumOverride=numInput&&numInput.value?parseInt(numInput.value)||s.invnum:s.invnum;
+  s.invnum=invNumOverride; // use the user-edited number
   const html=buildInvoiceHTML();
   const ic=getSelectedClient();
-  const invNum=String(s.invnum).padStart(4,'0');
+  const invNum=String(invNumOverride).padStart(4,'0');
   const filename='Invoice_'+invNum+'_'+(ic.company||s.client||'Client').replace(/\s/g,'_')+'.html';
   generatePDF(html, filename, {to:ic.email||'',clientName:ic.contact||ic.company||'',invoiceNum:invNum,senderName:s.name||''});
+  // Mark only the selected days as invoiced
+  const selectedIds=new Set(ui.map(d=>d.id||d.date));
   const ad=days();
   const it=ui.reduce((sum,d)=>{const{total}=dayTotals(d);return sum+total;},0);
-  ad.forEach(d=>{if(!d.invoiced)d.invoiced=true;});DB.set('days',ad);
-  const il=invoices();il.push({num:s.invnum,date:todayStr(),total:it,days:ui.length});DB.set('invoices',il);
+  ad.forEach(d=>{if(selectedIds.has(d.id||d.date))d.invoiced=true;});DB.set('days',ad);
+  const il=invoices();il.push({num:invNumOverride,date:todayStr(),total:it,days:ui.length});DB.set('invoices',il);
   const ap=parseFloat(s.incpct??7.8),pi=(parseFloat(s.rate)*ap/100)/26,nr=Math.round((parseFloat(s.rate)+pi)*20)/20;
   // Save to IndexedDB
-  const savedNum=String(s.invnum).padStart(4,'0');
+  const savedNum=String(invNumOverride).padStart(4,'0');
   const savedFilename='Invoice #'+savedNum+' \u2014 '+(ic.company||'Client')+' \u2014 '+todayStr()+'.html';
   InvoiceDB.save({filename:savedFilename,date:todayStr(),clientName:ic.company||'',html:html})
     .then(()=>setTimeout(()=>toast('Saved to Saved Invoices \u2713'),800))
     .catch(()=>{});
-  s.invnum=s.invnum+1;s.rate=nr;DB.set('settings',s);
+  s.invnum=invNumOverride+1;s.rate=nr;DB.set('settings',s);
+  // Reset selection state
+  resetInvoiceDaySelection();
+  if(numInput) numInput.dataset.userEdited='';
   toast('Invoice downloaded! Rate \u2192 $'+nr.toFixed(2));renderInvoice();
 }
 
@@ -2202,10 +2395,43 @@ function renderSitesList(){
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
       <div>
         <div style="font-size:14px;font-weight:700">${s.name}</div>
-        <div style="font-size:11px;color:var(--text2)">${s.lat?s.lat.toFixed(5)+', '+s.lng.toFixed(5)+' · '+(s.radius||100)+'m radius':'No GPS set'}</div>
+        <div style="font-size:11px;color:var(--text2)">${s.client?'Client: '+s.client+' · ':''} ${s.lat?s.lat.toFixed(5)+', '+s.lng.toFixed(5)+' · '+(s.radius||100)+'m radius':'No GPS set'}</div>
       </div>
-      <button class="btn btn-danger btn-sm" onclick="deleteSite(${i})">Remove</button>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-secondary btn-sm" onclick="editSiteClient(${i})">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteSite(${i})">Remove</button>
+      </div>
     </div>`).join('');
+}
+
+function editSiteClient(i){
+  const ss=sites();const s=ss[i];if(!s)return;
+  const cl=clientsData();
+  // Quick inline prompt using a select
+  const sel=document.createElement('select');
+  sel.style.cssText='width:100%;padding:10px;border:1.5px solid var(--amber);border-radius:8px;font-family:inherit;font-size:14px;margin-top:6px';
+  sel.innerHTML='<option value="">— Not assigned —</option>'+cl.map(c=>`<option value="${c.company}" ${s.client===c.company?'selected':''}>${c.company}</option>`).join('');
+  const modal=document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:300;display:flex;align-items:flex-end';
+  modal.innerHTML=`<div style="background:#fff;border-radius:24px 24px 0 0;padding:24px 16px;width:100%;padding-bottom:calc(24px + env(safe-area-inset-bottom))">
+    <div style="font-size:17px;font-weight:700;margin-bottom:12px">Assign client: ${s.name}</div>
+    <div id="site-client-sel-wrap"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px">
+      <button class="btn btn-secondary" onclick="this.closest('.site-client-modal').remove()">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmSiteClient(${i},this)">Save</button>
+    </div>
+  </div>`;
+  modal.classList.add('site-client-modal');
+  modal.querySelector('#site-client-sel-wrap').appendChild(sel);
+  document.body.appendChild(modal);
+}
+function confirmSiteClient(i,btn){
+  const modal=btn.closest('.site-client-modal');
+  const sel=modal.querySelector('select');
+  const ss=sites();
+  ss[i].client=sel.value||null;
+  DB.set('sites',ss);renderSitesList();modal.remove();
+  toast('Site client updated ✓');
 }
 
 function addSite(){
@@ -2214,6 +2440,12 @@ function addSite(){
   document.getElementById('modal-coords').textContent='Not captured yet';
   document.getElementById('modal-radius-display').textContent='100m';
   document.getElementById('modal-gps-status').textContent='';
+  // Populate client dropdown
+  const cl=clientsData(),sel=document.getElementById('modal-site-client');
+  sel.innerHTML='<option value="">— Not assigned —</option>'+cl.map(c=>`<option value="${c.company}">${c.company}</option>`).join('');
+  // Pre-select default client
+  const defClient=cl.find(c=>c.isDefault)||cl[0];
+  if(defClient) sel.value=defClient.company;
   document.getElementById('site-modal').classList.add('open');
 }
 
@@ -2234,8 +2466,10 @@ function saveSite(){
   const name=document.getElementById('modal-site-name').value.trim();
   if(!name){toast('Please enter a site name');return;}
   if(!modalLat){toast('Please capture location or pick on map');return;}
+  const clientSel=document.getElementById('modal-site-client');
+  const assignedClient=clientSel&&clientSel.value?clientSel.value:null;
   const ss=sites();
-  ss.push({name,lat:modalLat,lng:modalLng,radius:modalRadius||100});
+  ss.push({name,lat:modalLat,lng:modalLng,radius:modalRadius||100,client:assignedClient});
   DB.set('sites',ss);closeSiteModal();renderSitesList();
   const sel=document.getElementById('checkin-site');
   sel.innerHTML='<option value="">Select site…</option>';
