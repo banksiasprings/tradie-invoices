@@ -530,9 +530,12 @@ window.firebaseSignOut = async function() {
       <div class="field" style="margin-top:14px">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <label>Site</label>
-          <button onclick="addSite()" style="background:none;border:none;color:var(--amber);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:none">＋ Add Site</button>
+          <button onclick="openNewJobSheet()" style="background:none;border:none;color:var(--amber);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:none">＋ New Job</button>
         </div>
-        <select id="checkin-site"><option value="">Select site…</option></select>
+        <select id="checkin-site" onchange="updateClientIndicator(this.value)"><option value="">Select site…</option></select>
+        <div id="checkin-client-pill" style="display:none;margin-top:6px;font-size:12px;color:var(--text2);display:flex;align-items:center;gap:4px">
+          <span style="font-size:11px">👤</span><span id="checkin-client-name"></span>
+        </div>
       </div>
       <div class="field">
         <label>Start time</label>
@@ -1044,7 +1047,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v26';
+const APP_VERSION = 'v27';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1362,6 +1365,39 @@ async function forceAppUpdate() {
       <button class="btn btn-secondary" onclick="closeDeleteConfirm()">Cancel</button>
       <button class="btn btn-danger" onclick="confirmDeleteLogEntry()">Delete</button>
     </div>
+  </div>
+</div>
+
+<!-- NEW JOB SHEET -->
+<div class="modal-bg" id="new-job-modal">
+  <div class="modal" style="border-radius:24px 24px 0 0;margin:0;max-width:100%;width:100%;padding-bottom:calc(24px + env(safe-area-inset-bottom))">
+    <div class="modal-title">New Job <button class="modal-close" onclick="closeNewJobSheet()">✕</button></div>
+
+    <!-- Client section -->
+    <div style="margin-bottom:16px">
+      <div style="font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">Who are you working for?</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+        <button id="nj-tab-existing" onclick="njClientTab('existing')" class="btn btn-primary" style="font-size:13px;padding:9px 0">Existing client</button>
+        <button id="nj-tab-new" onclick="njClientTab('new')" class="btn btn-secondary" style="font-size:13px;padding:9px 0">New client</button>
+      </div>
+      <div id="nj-client-existing">
+        <select id="nj-client-select" style="width:100%;padding:11px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)"><option value="">— Select client —</option></select>
+      </div>
+      <div id="nj-client-new" style="display:none">
+        <input type="text" id="nj-new-client-name" placeholder="Company name" style="width:100%;padding:11px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text);box-sizing:border-box">
+        <div style="font-size:11px;color:var(--text2);margin-top:5px">You can add ABN, address & contact details in Settings later</div>
+      </div>
+    </div>
+
+    <!-- Site section -->
+    <div style="border-top:1px solid var(--border);padding-top:16px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">Where's the job?</div>
+      <div class="field" style="margin-bottom:10px"><input type="text" id="nj-site-name" placeholder="Site name (e.g. Smith Farm)" style="width:100%;padding:11px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text);box-sizing:border-box"></div>
+      <button class="btn btn-secondary" style="width:100%;margin-bottom:8px" onclick="njCaptureGPS()">📍 Capture GPS location</button>
+      <div id="nj-gps-status" style="font-size:12px;color:var(--text2);text-align:center;min-height:18px"></div>
+    </div>
+
+    <button class="btn btn-primary" style="width:100%" onclick="saveNewJob()">Save &amp; Start Here ✓</button>
   </div>
 </div>
 
@@ -1901,6 +1937,7 @@ function initCheckinScreen(){
   const sel=document.getElementById('checkin-site');
   sel.innerHTML='<option value="">Select site…</option>';
   sites().forEach(st=>{sel.innerHTML+=`<option value="${st.name}">${st.name}</option>`});
+  updateClientIndicator(sel.value);
   renderMachineCheckboxes('machine-idle-list',[],'idle');
   initTravelSection('idle',null);
   initMaterialsSection('idle',null);
@@ -3458,16 +3495,132 @@ function deleteClient(i){
 
 function closeClientModal(){document.getElementById('client-modal').classList.remove('open')}
 
+// --- New Job Sheet ---
+let _njLat=null, _njLng=null;
+
+function openNewJobSheet(){
+  _njLat=null; _njLng=null;
+  document.getElementById('nj-site-name').value='';
+  document.getElementById('nj-new-client-name').value='';
+  document.getElementById('nj-gps-status').textContent='';
+  // Populate existing clients
+  const cl=clientsData(), sel=document.getElementById('nj-client-select');
+  sel.innerHTML='<option value="">— Select client —</option>'+cl.map((c,i)=>`<option value="${i}">${c.company}</option>`).join('');
+  // Pre-select default client
+  const defIdx=cl.findIndex(c=>c.isDefault);
+  if(defIdx>=0) sel.value=String(defIdx);
+  njClientTab(cl.length?'existing':'new');
+  document.getElementById('new-job-modal').classList.add('open');
+}
+
+function closeNewJobSheet(){document.getElementById('new-job-modal').classList.remove('open');}
+
+function njClientTab(mode){
+  document.getElementById('nj-client-existing').style.display=mode==='existing'?'block':'none';
+  document.getElementById('nj-client-new').style.display=mode==='new'?'block':'none';
+  document.getElementById('nj-tab-existing').className='btn '+(mode==='existing'?'btn-primary':'btn-secondary')+' btn-sm';
+  document.getElementById('nj-tab-existing').style.cssText='font-size:13px;padding:9px 0';
+  document.getElementById('nj-tab-new').className='btn '+(mode==='new'?'btn-primary':'btn-secondary')+' btn-sm';
+  document.getElementById('nj-tab-new').style.cssText='font-size:13px;padding:9px 0';
+}
+
+function njCaptureGPS(){
+  const status=document.getElementById('nj-gps-status');
+  status.textContent='Getting location…';
+  if(!navigator.geolocation){status.textContent='GPS not available';return;}
+  navigator.geolocation.getCurrentPosition(pos=>{
+    _njLat=pos.coords.latitude; _njLng=pos.coords.longitude;
+    status.textContent='📍 '+_njLat.toFixed(5)+', '+_njLng.toFixed(5)+' ✓';
+    status.style.color='var(--amber)';
+  },()=>{status.textContent='Could not get location — try again';status.style.color='';},{enableHighAccuracy:true,timeout:15000});
+}
+
+function saveNewJob(){
+  const siteName=document.getElementById('nj-site-name').value.trim();
+  if(!siteName){toast('Please enter a site name');return;}
+  if(!_njLat){toast('Please capture GPS location first');return;}
+
+  // Resolve client
+  let clientCompany=null;
+  const isNew=document.getElementById('nj-client-new').style.display!=='none';
+  if(isNew){
+    const newName=document.getElementById('nj-new-client-name').value.trim();
+    if(newName){
+      const cl=clientsData();
+      const existing=cl.find(c=>c.company.toLowerCase()===newName.toLowerCase());
+      if(!existing){
+        cl.push({company:newName,contact:'',abn:'',address:'',email:'',phone:'',isDefault:!cl.length});
+        DB.set('clients',cl);
+        renderClientsList();
+        populateClientDropdown();
+        toast('Client "'+newName+'" added ✓');
+      }
+      clientCompany=newName;
+    }
+  } else {
+    const sel=document.getElementById('nj-client-select');
+    const cl=clientsData();
+    const idx=parseInt(sel.value);
+    if(!isNaN(idx)&&cl[idx]) clientCompany=cl[idx].company;
+  }
+
+  // Save site
+  const ss=sites();
+  ss.push({name:siteName,lat:_njLat,lng:_njLng,radius:100,client:clientCompany});
+  DB.set('sites',ss);
+  renderSitesList();
+  if(typeof window.onSitesChanged==='function') window.onSitesChanged();
+
+  // Update checkin dropdown and select the new site
+  const sel=document.getElementById('checkin-site');
+  sel.innerHTML='<option value="">Select site…</option>';
+  ss.forEach(s=>{sel.innerHTML+=`<option value="${s.name}">${s.name}</option>`;});
+  sel.value=siteName;
+  updateClientIndicator(siteName);
+
+  closeNewJobSheet();
+  toast('Job set up — site "'+siteName+'"'+(clientCompany?' for '+clientCompany:'')+' ✓');
+}
+
+function updateClientIndicator(siteName){
+  const pill=document.getElementById('checkin-client-pill');
+  const label=document.getElementById('checkin-client-name');
+  if(!pill||!label) return;
+  if(!siteName){pill.style.display='none';return;}
+  const site=sites().find(s=>s.name===siteName);
+  if(site&&site.client){
+    label.textContent=site.client;
+    pill.style.display='flex';
+  } else {
+    pill.style.display='none';
+  }
+}
+
 function populateClientDropdown(){
   const cl=clientsData(),sel=document.getElementById('inv-client-select');
   if(!sel) return;
   if(!cl.length){sel.innerHTML='<option value="-1">No clients — add in Settings</option>';return;}
   const prev=sel.value;
   sel.innerHTML=cl.map((c,i)=>`<option value="${i}">${c.company}</option>`).join('');
-  const defIdx=cl.findIndex(c=>c.isDefault);
-  if(prev!==''&&prev!==null&&cl[parseInt(prev)]){sel.value=prev;}
-  else if(defIdx>=0){sel.value=String(defIdx);}
-  else{sel.value='0';}
+  // Try to auto-detect client from uninvoiced days' site assignments
+  if(prev===''||prev===null||!cl[parseInt(prev)]){
+    const ss=sites();
+    const uninvoiced=days().filter(d=>!d.invoiced);
+    const siteClients=uninvoiced.map(d=>{
+      const s=ss.find(st=>st.name===d.site);
+      return s?s.client:null;
+    }).filter(Boolean);
+    const uniqueClients=[...new Set(siteClients)];
+    if(uniqueClients.length===1){
+      const autoIdx=cl.findIndex(c=>c.company===uniqueClients[0]);
+      if(autoIdx>=0){sel.value=String(autoIdx);return;}
+    }
+    const defIdx=cl.findIndex(c=>c.isDefault);
+    if(defIdx>=0){sel.value=String(defIdx);}
+    else{sel.value='0';}
+  } else {
+    sel.value=prev;
+  }
 }
 
 function getSelectedClient(){
