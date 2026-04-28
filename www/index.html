@@ -847,7 +847,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v19';
+const APP_VERSION = 'v20';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1361,8 +1361,8 @@ function checkNearbySites(lat,lng){
   }
 }
 
-function autoStartTimer(site){
-  const s=S(),startTime=nowTime();
+function autoStartTimer(site, overrideTime){
+  const s=S(),startTime=overrideTime||nowTime();
   const ad={
     site:site.name,start:startTime,date:todayStr(),
     rate:s.rate,sonrate:s.sonrate||30,
@@ -1374,7 +1374,7 @@ function autoStartTimer(site){
   DB.set('activeDay',ad);
   showActiveTimer(ad);
   showGeofenceNotification(site.name,startTime);
-  toast('Auto-started at '+site.name);
+  toast('Auto-started at '+site.name+(overrideTime?' (replayed '+overrideTime+')':''));
 }
 
 function showGeofenceNotification(siteName,startTime){
@@ -1396,19 +1396,19 @@ function showGeofenceNotification(siteName,startTime){
   }).catch(()=>{});
 }
 
-function autoStopTimer(){
+function autoStopTimer(overrideTime){
   clearInterval(timerInterval);
   const ad=activeDay();if(!ad)return;
   if(ad.lunchStart){
     const[sh,sm]=ad.lunchStart.split(':').map(Number),now=new Date(),mins=now.getHours()*60+now.getMinutes()-sh*60-sm;
     ad.lunchMins=(ad.lunchMins||0)+Math.max(0,mins);ad.lunchStart=null;
   }
-  const stopTime=nowTime();
+  const stopTime=overrideTime||nowTime();
   ad.finish=stopTime;
   DB.set('activeDay',ad);
   showReview(ad);
   showGeofenceDepartureNotification(ad.site,stopTime);
-  toast('Auto-stopped: left '+ad.site);
+  toast('Auto-stopped: left '+ad.site+(overrideTime?' (replayed '+overrideTime+')':''));
 }
 
 function showGeofenceDepartureNotification(siteName,stopTime){
@@ -2241,9 +2241,14 @@ function saveSite(){
   sel.innerHTML='<option value="">Select site…</option>';
   ss.forEach(s=>{sel.innerHTML+=`<option value="${s.name}">${s.name}</option>`;});
   toast('Site saved: '+name);
+  // Re-register native geofences with the updated site list
+  if(typeof window.onSitesChanged==='function') window.onSitesChanged();
 }
 
-function deleteSite(i){const ss=sites();ss.splice(i,1);DB.set('sites',ss);renderSitesList();toast('Site removed')}
+function deleteSite(i){
+  const ss=sites();ss.splice(i,1);DB.set('sites',ss);renderSitesList();toast('Site removed');
+  if(typeof window.onSitesChanged==='function') window.onSitesChanged();
+}
 function closeSiteModal(){document.getElementById('site-modal').classList.remove('open')}
 
 // --- Map Picker ---
@@ -2614,87 +2619,190 @@ window.initApp = function() {
   // Only runs in the native APK context
   if (!window.Capacitor || !window.Capacitor.isNativePlatform()) return;
 
-  const { BackgroundGeolocation, LocalNotifications } = window.Capacitor.Plugins;
-  if (!BackgroundGeolocation || !LocalNotifications) {
-    console.warn('Capacitor plugins not found');
-    return;
-  }
+  const Plugins = window.Capacitor.Plugins;
+  const { BackgroundGeolocation, LocalNotifications, NativeGeo } = Plugins;
 
-  console.log('[Capacitor] Native bridge active — using background geolocation');
+  console.log('[Capacitor] Native bridge active — NativeGeo:', !!NativeGeo);
 
   // ---- Native notification helper ----
   let _notifId = 2000;
   async function nativeNotify(title, body) {
     try {
-      await LocalNotifications.requestPermissions();
-      await LocalNotifications.schedule({
-        notifications: [{
-          title,
-          body,
-          id: _notifId++,
-          schedule: { at: new Date(Date.now() + 800) },
-          sound: 'default',
-          actionTypeId: 'OPEN_APP'
-        }]
-      });
+      if (LocalNotifications) {
+        await LocalNotifications.requestPermissions();
+        await LocalNotifications.schedule({
+          notifications: [{
+            title, body,
+            id: _notifId++,
+            schedule: { at: new Date(Date.now() + 800) },
+            sound: 'default',
+            actionTypeId: 'OPEN_APP'
+          }]
+        });
+      }
     } catch(e) { console.warn('[Capacitor] Notification failed:', e); }
   }
 
   // ---- Override web notification calls with native ones ----
-  // These functions exist in the main app — we wrap them to also fire native
   const _webArrival = window.showGeofenceNotification;
   window.showGeofenceNotification = function(siteName, startTime) {
-    nativeNotify('Arriving at ' + siteName, 'Starting work? Time: ' + startTime + '. Tap to open app.');
-    // Still call the web version (in-app toast) if app is open
+    nativeNotify('Arrived at ' + siteName, 'Timer started at ' + startTime + '. Tap to confirm.');
     if (_webArrival) _webArrival(siteName, startTime);
   };
 
   const _webDeparture = window.showGeofenceDepartureNotification;
   window.showGeofenceDepartureNotification = function(siteName, stopTime) {
-    nativeNotify('Leaving ' + siteName, 'Time: ' + stopTime + '. Tap to review your day.');
+    nativeNotify('Left ' + siteName, 'Timer stopped at ' + stopTime + '. Tap to review.');
     if (_webDeparture) _webDeparture(siteName, stopTime);
   };
 
-  // ---- Start background location watcher ----
-  // This runs even when app is backgrounded or screen is locked.
-  // Uses a 30m distance filter so it only fires when meaningfully moved — battery friendly.
-  document.addEventListener('DOMContentLoaded', async function() {
-    try {
-      await LocalNotifications.requestPermissions();
+  // ────────────────────────────────────────────────────────────────────────────
+  // NATIVE GEOFENCING (primary)
+  // The Android GeofencingClient fires our BroadcastReceiver even when the app
+  // process is completely dead — far more reliable than the JS background watcher.
+  // Events are saved to SharedPreferences by the receiver; we read and replay
+  // them the next time the app opens or comes to the foreground.
+  // ────────────────────────────────────────────────────────────────────────────
 
-      BackgroundGeolocation.addWatcher(
-        {
-          backgroundMessage: 'Monitoring your work site.',
-          backgroundTitle: 'Invoice & PDF',
-          requestPermissions: true,
-          stale: false,
-          distanceFilter: 30  // metres — fires when moved 30m
-        },
-        function(location, error) {
-          if (error) {
-            if (error.code === 'NOT_AUTHORIZED') {
-              // Guide user to settings if permission denied
-              nativeNotify('Location permission needed',
-                'Open app settings and allow location "All the time" for site detection.');
-            }
-            return;
-          }
-          if (!location) return;
-          // Feed into the existing geofence logic (checkNearbySites is already defined)
-          if (typeof checkNearbySites === 'function') {
-            checkNearbySites(location.latitude, location.longitude);
-          }
-        }
-      ).then(function(watcherId) {
-        console.log('[Capacitor] Background watcher started:', watcherId);
-        // Store so we can clean up if needed
-        window._bgWatcherId = watcherId;
-      });
+  async function initNativeGeo() {
+    if (!NativeGeo) {
+      console.warn('[NativeGeo] Plugin not found — falling back to BackgroundGeolocation');
+      initBackgroundGeoFallback();
+      return;
+    }
+
+    try {
+      // Register all configured sites as Android geofences
+      const sitesArr = (typeof sites === 'function') ? sites() : [];
+      if (sitesArr.length === 0) {
+        console.warn('[NativeGeo] No sites configured yet — will register when sites are saved');
+      } else {
+        const result = await NativeGeo.registerSites({ sites: sitesArr });
+        console.log('[NativeGeo] Registered', result.registered, 'geofences');
+      }
+
+      // Process any events that fired while the app was dead
+      await processPendingGeoEvents();
 
     } catch(e) {
-      console.warn('[Capacitor] Bridge init failed:', e);
+      console.warn('[NativeGeo] Init error:', e);
     }
+  }
+
+  // Re-register geofences whenever the user saves/edits sites (the app calls
+  // window.onSitesChanged() if you define it before they save).
+  window.onSitesChanged = async function() {
+    if (!NativeGeo) return;
+    try {
+      await NativeGeo.removeAll();
+      const sitesArr = (typeof sites === 'function') ? sites() : [];
+      if (sitesArr.length > 0) {
+        await NativeGeo.registerSites({ sites: sitesArr });
+        console.log('[NativeGeo] Re-registered', sitesArr.length, 'geofences after site change');
+      }
+    } catch(e) { console.warn('[NativeGeo] Re-register error:', e); }
+  };
+
+  async function processPendingGeoEvents() {
+    if (!NativeGeo) return;
+    try {
+      const { events: raw } = await NativeGeo.getPendingEvents();
+      const events = JSON.parse(raw || '[]');
+      if (events.length === 0) return;
+      console.log('[NativeGeo] Replaying', events.length, 'pending events');
+      for (const ev of events) {
+        await processGeoEvent(ev);
+      }
+      await NativeGeo.clearPendingEvents();
+    } catch(e) {
+      console.warn('[NativeGeo] processPendingEvents error:', e);
+    }
+  }
+
+  async function processGeoEvent(ev) {
+    // ev = { site, type: 'enter'|'exit', time, date, timestamp }
+    const hour = parseInt((ev.time || '00:00').substring(0, 2), 10);
+    if (hour < 5 || hour >= 21) return; // outside working hours
+
+    if (ev.type === 'enter') {
+      // Only auto-start if there's no active day already
+      if (activeDay()) {
+        console.log('[NativeGeo] ENTER ignored — timer already running');
+        return;
+      }
+      if (geoAutoStartTriggered) return;
+      const siteList = (typeof sites === 'function') ? sites() : [];
+      const site = siteList.find(s => s.name === ev.site);
+      if (!site) {
+        console.warn('[NativeGeo] Site not found for enter event:', ev.site);
+        return;
+      }
+      geoAutoStartTriggered = true;
+      autoStartTimer(site, ev.time);
+
+    } else if (ev.type === 'exit') {
+      const ad = activeDay();
+      if (!ad) {
+        console.log('[NativeGeo] EXIT ignored — no active day');
+        return;
+      }
+      if (geoAutoStopTriggered) return;
+      if (ad.site !== ev.site) {
+        console.log('[NativeGeo] EXIT ignored — active site is', ad.site, 'not', ev.site);
+        return;
+      }
+      geoAutoStopTriggered = true;
+      autoStopTimer(ev.time);
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // BACKGROUND GEOLOCATION (fallback — used only if NativeGeo unavailable)
+  // ────────────────────────────────────────────────────────────────────────────
+  function initBackgroundGeoFallback() {
+    if (!BackgroundGeolocation) return;
+    if (LocalNotifications) LocalNotifications.requestPermissions().catch(()=>{});
+
+    BackgroundGeolocation.addWatcher(
+      {
+        backgroundMessage: 'Monitoring your work site.',
+        backgroundTitle: 'Invoice & PDF',
+        requestPermissions: true,
+        stale: false,
+        distanceFilter: 30
+      },
+      function(location, error) {
+        if (error) {
+          if (error.code === 'NOT_AUTHORIZED') {
+            nativeNotify('Location permission needed',
+              'Open app settings and allow location "All the time" for site detection.');
+          }
+          return;
+        }
+        if (!location) return;
+        if (typeof checkNearbySites === 'function') {
+          checkNearbySites(location.latitude, location.longitude);
+        }
+      }
+    ).then(function(watcherId) {
+      console.log('[BGGeo fallback] Watcher started:', watcherId);
+      window._bgWatcherId = watcherId;
+    }).catch(e => console.warn('[BGGeo fallback] Failed:', e));
+  }
+
+  // ── Wire up ─────────────────────────────────────────────────────────────────
+  // Run on DOMContentLoaded (app start) and on resume (foreground after background)
+  document.addEventListener('DOMContentLoaded', initNativeGeo);
+  document.addEventListener('resume', function() {
+    // Reset double-fire guards so a new day's events can fire
+    geoAutoStartTriggered = false;
+    geoAutoStopTriggered = false;
+    processPendingGeoEvents();
   });
+
+  // Expose so app can call it directly (e.g. after permission grant)
+  window.processPendingGeoEvents = processPendingGeoEvents;
+  window.initNativeGeo = initNativeGeo;
 
 })();
 

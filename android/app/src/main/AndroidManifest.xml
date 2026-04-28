@@ -43,6 +43,15 @@
             </intent-filter>
         </receiver>
 
+        <!-- Native geofencing: fires even when app process is completely dead -->
+        <receiver
+            android:name=".GeofenceBroadcastReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.banksiasprings.invoices.GEOFENCE_TRANSITION" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
     <!-- Permissions -->
