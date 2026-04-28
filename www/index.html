@@ -4493,6 +4493,11 @@ window.initApp = function() {
     }
 
     try {
+      // Request location permissions (foreground first, then background "Allow all the time").
+      // This must happen before registerSites — Android won't pop the dialog otherwise.
+      const perms = await NativeGeo.requestNativePermissions();
+      console.log('[NativeGeo] Permissions:', perms);
+
       // Register all configured sites as Android geofences
       const sitesArr = (typeof sites === 'function') ? sites() : [];
       if (sitesArr.length === 0) {

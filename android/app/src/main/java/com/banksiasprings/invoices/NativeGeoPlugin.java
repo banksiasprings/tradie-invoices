@@ -11,10 +11,13 @@ import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
+import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 import com.google.android.gms.location.Geofence;
 import com.google.android.gms.location.GeofencingClient;
 import com.google.android.gms.location.GeofencingRequest;
@@ -26,7 +29,19 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.List;
 
-@CapacitorPlugin(name = "NativeGeo")
+@CapacitorPlugin(
+    name = "NativeGeo",
+    permissions = {
+        @Permission(
+            strings = { Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION },
+            alias = "location"
+        ),
+        @Permission(
+            strings = { Manifest.permission.ACCESS_BACKGROUND_LOCATION },
+            alias = "backgroundLocation"
+        )
+    }
+)
 public class NativeGeoPlugin extends Plugin {
 
     private static final String TAG = "NativeGeoPlugin";
@@ -43,8 +58,51 @@ public class NativeGeoPlugin extends Plugin {
     }
 
     /**
+     * Request location permissions — must be called from JS before registerSites().
+     * Android requires two steps: foreground first, then background separately.
+     * Background location shows a system Settings page where user selects "Allow all the time".
+     */
+    @PluginMethod
+    public void requestNativePermissions(PluginCall call) {
+        if (getPermissionState("location") != PermissionState.GRANTED) {
+            requestPermissionForAlias("location", call, "locationPermissionCallback");
+        } else if (getPermissionState("backgroundLocation") != PermissionState.GRANTED) {
+            requestPermissionForAlias("backgroundLocation", call, "backgroundPermissionCallback");
+        } else {
+            // Already fully granted
+            JSObject result = new JSObject();
+            result.put("location", "granted");
+            result.put("backgroundLocation", "granted");
+            call.resolve(result);
+        }
+    }
+
+    @PermissionCallback
+    private void locationPermissionCallback(PluginCall call) {
+        if (getPermissionState("location") == PermissionState.GRANTED) {
+            // Foreground granted — now request background (takes user to Settings)
+            requestPermissionForAlias("backgroundLocation", call, "backgroundPermissionCallback");
+        } else {
+            call.reject("Location permission denied. Please allow location access to use geofencing.");
+        }
+    }
+
+    @PermissionCallback
+    private void backgroundPermissionCallback(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("location", getPermissionState("location").toString().toLowerCase());
+        result.put("backgroundLocation", getPermissionState("backgroundLocation").toString().toLowerCase());
+        if (getPermissionState("backgroundLocation") == PermissionState.GRANTED) {
+            call.resolve(result);
+        } else {
+            call.reject("Background location not granted. Open Settings → Invoice & PDF → Location and select 'Allow all the time'.");
+        }
+    }
+
+    /**
      * Called from JS to register all job sites as native geofences.
      * Expects: { sites: [ { name, lat, lng, radius } ] }
+     * Call requestNativePermissions() first.
      */
     @PluginMethod
     public void registerSites(PluginCall call) {
@@ -54,12 +112,12 @@ public class NativeGeoPlugin extends Plugin {
             return;
         }
 
-        // Check location permissions
+        // Check permissions are granted
         if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(getContext(), Manifest.permission.ACCESS_BACKGROUND_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
-            call.reject("Location permissions not granted");
+            call.reject("Location permissions not granted — call requestNativePermissions() first");
             return;
         }
 
