@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — Invoice & PDF Generator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #F8F4ED;
+      color: #1C2A44;
+      line-height: 1.7;
+      padding: 0 0 60px;
+    }
+    header {
+      background: #1C2A44;
+      color: #fff;
+      padding: 28px 24px 24px;
+    }
+    header h1 {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 800;
+      font-size: 22px;
+      margin-bottom: 4px;
+    }
+    header p {
+      font-size: 13px;
+      color: rgba(255,255,255,0.65);
+    }
+    .back-link {
+      display: inline-block;
+      margin-bottom: 14px;
+      font-size: 13px;
+      color: #C1583A;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .back-link:hover { text-decoration: underline; }
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 32px 20px 0;
+    }
+    h2 {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 800;
+      font-size: 16px;
+      color: #1C2A44;
+      margin: 32px 0 10px;
+      padding-left: 12px;
+      border-left: 3px solid #C1583A;
+    }
+    p { margin-bottom: 12px; font-size: 15px; }
+    ul { margin: 8px 0 12px 20px; font-size: 15px; }
+    ul li { margin-bottom: 6px; }
+    .updated {
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 24px;
+    }
+    a { color: #C1583A; }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 20px;
+      margin-top: 32px;
+      border: 1px solid rgba(28,42,68,0.1);
+    }
+    .card h3 {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 800;
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Invoice &amp; PDF Generator</h1>
+  <p>Privacy Policy</p>
+</header>
+
+<main>
+  <a class="back-link" href="./">← Back to app</a>
+  <p class="updated">Last updated: 28 April 2026</p>
+
+  <p>This Privacy Policy explains how the <strong>Invoice &amp; PDF Generator</strong> app ("the App") collects, uses, stores, and protects your personal information. The App is operated by <strong>Steven McNichol</strong>, a sole trader based in Stanthorpe, QLD, Australia (ABN available on request).</p>
+  <p>By using the App you agree to the practices described in this policy.</p>
+
+  <h2>1. Information We Collect</h2>
+  <p>The App collects the following categories of information:</p>
+  <ul>
+    <li><strong>Account information</strong> — your email address and display name, provided when you sign in via Firebase Authentication.</li>
+    <li><strong>Location data</strong> — GPS coordinates used for worksite geofencing (auto-detecting when you arrive at or leave a job site). Location is accessed only while the app is in use unless you explicitly enable background location for automatic timer start/stop.</li>
+    <li><strong>Work records</strong> — job sites, work days, hours worked, machine hire entries, materials used, and invoice data you enter into the App.</li>
+    <li><strong>Settings and preferences</strong> — trade type, hourly rates, client details, GST preferences, and notification settings.</li>
+    <li><strong>Employee / employer link data</strong> — if you use the team timesheet feature, a 6-character business code is used to link employee accounts to a business owner account. Employee hours are then synced to the owner's account for invoicing purposes.</li>
+  </ul>
+
+  <h2>2. How We Use Your Information</h2>
+  <ul>
+    <li>To provide core app functionality — time tracking, invoice generation, and PDF export.</li>
+    <li>To sync your data across devices via Firebase / Firestore cloud storage.</li>
+    <li>To enable GPS-based worksite detection and automatic timer start/stop.</li>
+    <li>To support the team timesheet feature, where employee hours are made available to the linked business owner.</li>
+    <li>To send optional push notifications (workout reminders, geofence alerts) that you configure in Settings.</li>
+  </ul>
+  <p>We do <strong>not</strong> use your data for advertising, profiling, or any purpose beyond operating the App.</p>
+
+  <h2>3. Data Storage and Security</h2>
+  <p>Your data is stored using <strong>Google Firebase</strong> (Authentication and Firestore), hosted on Google's infrastructure. Data is protected by Firebase security rules that restrict each user to their own records only. Employee hours are the only data that crosses user boundaries, and only to the linked employer's account — no other user can access your data.</p>
+  <p>PDFs are generated entirely on-device using jsPDF and are never uploaded to any server unless you choose to share them yourself.</p>
+
+  <h2>4. Data Sharing</h2>
+  <p>We do <strong>not</strong> sell, rent, or share your personal information with third parties, except:</p>
+  <ul>
+    <li><strong>Google Firebase</strong> — as the underlying infrastructure for authentication and data storage. Firebase's own privacy policy applies: <a href="https://firebase.google.com/support/privacy" target="_blank">firebase.google.com/support/privacy</a></li>
+    <li><strong>Your employer</strong> — if you link your account to a business owner using a business code, your name, trade, and daily hours will be visible to that owner within the App.</li>
+    <li><strong>Legal requirements</strong> — if required by law or to protect legal rights.</li>
+  </ul>
+
+  <h2>5. Location Data</h2>
+  <p>Location access is used solely to detect proximity to saved worksites. The App requests <em>Precise Location</em> permission. Your GPS coordinates are used in real time to trigger geofence events and are not stored or transmitted beyond what is needed for that check. Saved worksite coordinates (latitude/longitude) are stored in Firestore as part of your work records.</p>
+  <p>You can disable location access at any time in your device settings. The App will continue to work without it; however, automatic geofence detection will be unavailable.</p>
+
+  <h2>6. Notifications</h2>
+  <p>The App may send push notifications for geofence entry/exit events and reminders you configure. You can disable notifications at any time in your device settings or within the App's Settings screen.</p>
+
+  <h2>7. Data Retention and Deletion</h2>
+  <p>Your data is retained for as long as your account is active. To request deletion of your account and all associated data, contact us at the email address below. We will action deletion requests within 30 days.</p>
+
+  <h2>8. Children's Privacy</h2>
+  <p>The App is intended for use by adults operating businesses. It is not directed at children under the age of 13, and we do not knowingly collect data from children.</p>
+
+  <h2>9. Changes to This Policy</h2>
+  <p>We may update this Privacy Policy from time to time. Changes will be posted at this URL with an updated date. Continued use of the App after changes constitutes acceptance of the revised policy.</p>
+
+  <h2>10. Contact</h2>
+  <div class="card">
+    <h3>Steven McNichol</h3>
+    <p style="margin:0;font-size:14px;">Stanthorpe, QLD, Australia<br>
+    Email: <a href="mailto:smcnichol@outlook.com">smcnichol@outlook.com</a></p>
+  </div>
+</main>
+
+</body>
+</html>
