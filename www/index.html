@@ -834,7 +834,40 @@ window.firebaseSignOut = async function() {
 
 <!-- INVOICE SCREEN -->
 <div id="screen-invoice" class="screen">
-  <div class="header"><h1>Invoice Generator</h1><p id="invoice-subtitle">Ready to generate</p></div>
+  <div class="header"><h1 id="inv-screen-title">Invoice Generator</h1><p id="invoice-subtitle">Ready to generate</p></div>
+
+  <!-- TIMESHEET MODE (employee trade) -->
+  <div id="timesheet-mode-section" style="display:none">
+    <div class="section">
+      <div class="stats-grid">
+        <div class="stat-card" style="background:var(--navy);border:none"><div class="stat-label" style="color:rgba(255,255,255,.55)">Total Pay</div><div class="stat-value" style="color:var(--amber)" id="ts-total-pay">$0</div></div>
+        <div class="stat-card"><div class="stat-label">Hours</div><div class="stat-value" id="ts-total-hours">0</div></div>
+        <div class="stat-card"><div class="stat-label">Days</div><div class="stat-value" id="ts-total-days">0</div></div>
+        <div class="stat-card"><div class="stat-label">Rate</div><div class="stat-value" id="ts-rate-display">$0</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Pay period</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap" id="ts-period-btns">
+          <button onclick="setTsPeriod('this-week')" class="btn btn-secondary btn-sm" id="ts-btn-this-week">This week</button>
+          <button onclick="setTsPeriod('last-week')" class="btn btn-primary btn-sm" id="ts-btn-last-week">Last week</button>
+          <button onclick="setTsPeriod('this-fortnight')" class="btn btn-secondary btn-sm" id="ts-btn-this-fortnight">This fortnight</button>
+          <button onclick="setTsPeriod('last-fortnight')" class="btn btn-secondary btn-sm" id="ts-btn-last-fortnight">Last fortnight</button>
+          <button onclick="setTsPeriod('this-month')" class="btn btn-secondary btn-sm" id="ts-btn-this-month">This month</button>
+          <button onclick="setTsPeriod('last-month')" class="btn btn-secondary btn-sm" id="ts-btn-last-month">Last month</button>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-top:8px" id="ts-period-label"></div>
+      </div>
+      <div class="card" id="ts-days-card">
+        <div class="card-title">Days in period</div>
+        <div id="ts-day-list"><div style="color:var(--text2);font-size:13px">No days recorded in this period</div></div>
+      </div>
+      <button class="btn btn-primary" style="margin-bottom:10px" onclick="generateTimesheetPDF()">Generate Timesheet PDF</button>
+      <button class="btn btn-secondary" onclick="shareTimesheet()">Share Timesheet</button>
+    </div>
+  </div>
+
+  <!-- INVOICE MODE (all other trades) -->
+  <div id="invoice-mode-section">
   <div class="section">
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-label">Invoice #</div><input type="number" class="inv-num-input" id="inv-num-input" value="0045" oninput="this.dataset.userEdited='1'" onchange="renderInvoice()"></div>
@@ -882,6 +915,7 @@ window.firebaseSignOut = async function() {
     <div class="card-title" style="padding:0 0 8px">Preview</div>
     <div class="invoice-preview" id="invoice-preview-content"></div>
   </div>
+  </div><!-- /invoice-mode-section -->
 </div>
 
 <!-- ANALYTICS SCREEN -->
@@ -923,7 +957,22 @@ window.firebaseSignOut = async function() {
       <div style="font-size:13px;color:var(--text2);margin-bottom:4px">Customises equipment types, labels, and terminology.</div>
       <div class="trade-grid" id="trade-selector-grid"></div>
     </div>
-    <div class="card">
+    <!-- Employee mode card — only visible when trade = employee -->
+    <div class="card" id="employee-settings-card" style="display:none">
+      <div class="card-title">👷 Employee details</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Your timesheets will be sent to your employer. Fill in their details here.</div>
+      <div class="field"><label>Your name</label><input type="text" id="s-employee-name" placeholder="e.g. Jake Smith"></div>
+      <div class="field"><label>Employer / Business name</label><input type="text" id="s-employer-name" placeholder="e.g. Smith Constructions"></div>
+      <div class="field"><label>Employer email or phone</label><input type="text" id="s-employer-contact" placeholder="e.g. boss@email.com or 0400 000 000"></div>
+      <div class="field" style="margin-bottom:0"><label>Pay period</label>
+        <select id="s-pay-period" style="width:100%;padding:11px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
+          <option value="week">Weekly</option>
+          <option value="fortnight" selected>Fortnightly</option>
+          <option value="month">Monthly</option>
+        </select>
+      </div>
+    </div>
+    <div class="card" id="business-settings-card">
       <div class="card-title">Business details</div>
       <div class="field"><label>Name</label><input type="text" id="s-name"></div>
       <div class="field"><label>ABN</label><input type="text" id="s-abn"></div>
@@ -1047,7 +1096,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v27';
+const APP_VERSION = 'v28';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1159,7 +1208,7 @@ async function forceAppUpdate() {
 <nav class="nav">
   <button class="nav-btn active" onclick="showScreen('checkin',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg></span>Today</button>
   <button class="nav-btn" onclick="showScreen('log',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></span>Log</button>
-  <button class="nav-btn" onclick="showScreen('invoice',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/></svg></span>Invoice</button>
+  <button class="nav-btn" id="nav-btn-invoice" onclick="showScreen('invoice',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/></svg></span><span id="nav-invoice-label">Invoice</span></button>
   <button class="nav-btn" onclick="showScreen('analytics',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>Stats</button>
   <button class="nav-btn" onclick="showScreen('settings',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings</button>
 </nav>
@@ -1480,7 +1529,11 @@ const DEFAULTS={
   travelMode:'none', travelKmRate:0.88, travelHrRate:30,
   machineRates:{Excavator:150,Grader:180,Bobcat:120,Dozer:200,Tractor:110},
   materialsLib:[],
-  showExtraWorker:false
+  showExtraWorker:false,
+  employeeName:'',
+  employerName:'',
+  employerContact:'',
+  payPeriod:'fortnight'
 };
 
 function S(){return DB.def('settings',DEFAULTS)}
@@ -1609,6 +1662,8 @@ const TRADE_PROFILES={
     defaultRates:{'EWP / Scissor Lift':120,'Crane / Hiab':250,'Vacuum Pump':60,'Manifold Set':40,Generator:80},
     defaultMaterials:[{name:'Refrigerant Gas (kg)',defaultPrice:45},{name:'Copper Pipe (m)',defaultPrice:22},{name:'Insulation (m)',defaultPrice:8},{name:'Duct Tape',defaultPrice:12},{name:'Flare Fittings (set)',defaultPrice:35}]},
   custom:{label:'Custom',icon:'⚙️',extraLabel:'Extra worker',equipLabel:'Equipment',defaultRate:75,
+    machines:[],defaultRates:{},defaultMaterials:[]},
+  employee:{label:'Employee',icon:'👷',extraLabel:'Overtime',equipLabel:'Equipment',defaultRate:35,
     machines:[],defaultRates:{},defaultMaterials:[]}
 };
 function getMaterialsLib(){
@@ -1618,10 +1673,11 @@ function getMaterialsLib(){
   return lib;
 }
 
-// Helper: show/hide trade-specific and setting-specific sections on Today screens
+/// Helper: show/hide trade-specific and setting-specific sections on Today screens
 function applyTradeVisibility(){
-  const hasMachines = getMachines().length > 0;
-  const showExtra = S().showExtraWorker || false;
+  const emp = isEmployeeMode();
+  const hasMachines = !emp && getMachines().length > 0;
+  const showExtra = !emp && (S().showExtraWorker || false);
   // Idle screen
   ['idle-machine-row'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=hasMachines?'block':'none';});
   ['idle-extra-worker-row'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=showExtra?'block':'none';});
@@ -1631,6 +1687,26 @@ function applyTradeVisibility(){
   // Manual entry
   const meCard=document.getElementById('me-extra-worker-card');
   if(meCard) meCard.style.display=showExtra?'block':'none';
+  // Materials section on Today (hide for employees)
+  ['idle-materials-section','active-materials-section'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=emp?'none':'block';});
+  // Nav label
+  const navLabel=document.getElementById('nav-invoice-label');
+  if(navLabel) navLabel.textContent=emp?'Timesheet':'Invoice';
+  const invTitle=document.getElementById('inv-screen-title');
+  if(invTitle) invTitle.textContent=emp?'My Timesheet':'Invoice Generator';
+  // Settings cards
+  const empCard=document.getElementById('employee-settings-card');
+  const bizCard=document.getElementById('business-settings-card');
+  if(empCard) empCard.style.display=emp?'block':'none';
+  if(bizCard) bizCard.style.display=emp?'none':'block';
+  // Invoice mode vs timesheet mode sections
+  const invSection=document.getElementById('invoice-mode-section');
+  const tsSection=document.getElementById('timesheet-mode-section');
+  if(invSection) invSection.style.display=emp?'none':'block';
+  if(tsSection) tsSection.style.display=emp?'block':'none';
+  // Start Day button label
+  const startBtn=document.querySelector('[onclick="startDay()"]');
+  if(startBtn) startBtn.textContent=emp?'⏱  Clock In':'🚜  Start Day';
 }
 
 function saveExtraWorkerPref(){
@@ -1655,13 +1731,18 @@ window.addEventListener('online',()=>document.getElementById('offline-banner').c
 window.addEventListener('offline',()=>document.getElementById('offline-banner').classList.add('show'));
 if(!navigator.onLine) document.getElementById('offline-banner').classList.add('show');
 
+function isEmployeeMode(){return (S().tradeType||'earthmoving')==='employee';}
+
 function showScreen(id,btn){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('screen-'+id).classList.add('active');
   if(btn) btn.classList.add('active');
   if(id==='log') renderLog();
-  if(id==='invoice'){populateClientDropdown();renderInvoice();}
+  if(id==='invoice'){
+    if(isEmployeeMode()){renderTimesheet();}
+    else{populateClientDropdown();renderInvoice();}
+  }
   if(id==='analytics') renderAnalytics();
   if(id==='settings') {loadSettings();renderSavedInvoices('settings');}
 }
@@ -2817,6 +2898,11 @@ function loadSettings(){
   if(ewCb) ewCb.checked=!!(s.showExtraWorker);
   const ewRate=document.getElementById('s-extra-worker-rate');
   if(ewRate) ewRate.style.display=s.showExtraWorker?'block':'none';
+  // Employee fields
+  const enEl=document.getElementById('s-employee-name');if(enEl) enEl.value=s.employeeName||'';
+  const erEl=document.getElementById('s-employer-name');if(erEl) erEl.value=s.employerName||'';
+  const ecEl=document.getElementById('s-employer-contact');if(ecEl) ecEl.value=s.employerContact||'';
+  const ppEl=document.getElementById('s-pay-period');if(ppEl) ppEl.value=s.payPeriod||'fortnight';
   applyTradeVisibility();
 }
 
@@ -2846,6 +2932,11 @@ function saveSettings(){
   const mr=s.machineRates||{};
   getMachines().forEach(name=>{const el=document.getElementById('s-mr-'+mId(name));if(el&&el.value!=='') mr[name]=parseFloat(el.value)||0;});
   s.machineRates=mr;
+  // Employee fields
+  const _en=document.getElementById('s-employee-name');if(_en) s.employeeName=_en.value;
+  const _er=document.getElementById('s-employer-name');if(_er) s.employerName=_er.value;
+  const _ec=document.getElementById('s-employer-contact');if(_ec) s.employerContact=_ec.value;
+  const _pp=document.getElementById('s-pay-period');if(_pp) s.payPeriod=_pp.value;
   DB.set('settings',s);
   // Refresh rate labels on checkin screen
   document.getElementById('owner-rate-label').textContent='$'+s.rate+'/hr';
@@ -2876,6 +2967,7 @@ function selectTrade(key){
   renderTradeSelector();
   renderMachineRatesCard();
   updateExtraLabels();
+  applyTradeVisibility();
   toast('Trade: '+TRADE_PROFILES[key].label+' ✓');
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
 }
@@ -3593,6 +3685,172 @@ function updateClientIndicator(siteName){
     pill.style.display='flex';
   } else {
     pill.style.display='none';
+  }
+}
+
+// --- Timesheet (Employee Mode) ---
+let _tsPeriod = 'last-week';
+
+function getPeriodRange(key){
+  const now = new Date();
+  const dow = now.getDay(); // 0=Sun, 1=Mon
+  const mondayOffset = (dow===0?-6:1-dow);
+  const thisMonday = new Date(now); thisMonday.setDate(now.getDate()+mondayOffset); thisMonday.setHours(0,0,0,0);
+  const lastMonday = new Date(thisMonday); lastMonday.setDate(thisMonday.getDate()-7);
+  const toStr = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  const addDays = (d,n) => {const r=new Date(d);r.setDate(r.getDate()+n);return r;};
+  const firstOfMonth = new Date(now.getFullYear(),now.getMonth(),1);
+  const firstOfLastMonth = new Date(now.getFullYear(),now.getMonth()-1,1);
+  const firstOfNextMonth = new Date(now.getFullYear(),now.getMonth()+1,1);
+  switch(key){
+    case 'this-week': return {from:toStr(thisMonday), to:toStr(addDays(thisMonday,6)), label:'This week ('+fmtDate(toStr(thisMonday))+' – '+fmtDate(toStr(addDays(thisMonday,6)))+')'};
+    case 'last-week': return {from:toStr(lastMonday), to:toStr(addDays(lastMonday,6)), label:'Last week ('+fmtDate(toStr(lastMonday))+' – '+fmtDate(toStr(addDays(lastMonday,6)))+')'};
+    case 'this-fortnight': return {from:toStr(lastMonday), to:toStr(addDays(thisMonday,6)), label:'This fortnight ('+fmtDate(toStr(lastMonday))+' – '+fmtDate(toStr(addDays(thisMonday,6)))+')'};
+    case 'last-fortnight':{const ll=new Date(lastMonday);ll.setDate(ll.getDate()-7);return {from:toStr(ll), to:toStr(addDays(lastMonday,-1)), label:'Last fortnight ('+fmtDate(toStr(ll))+' – '+fmtDate(toStr(addDays(lastMonday,-1)))+')'};}
+    case 'this-month': return {from:toStr(firstOfMonth), to:toStr(addDays(firstOfNextMonth,-1)), label:'This month ('+firstOfMonth.toLocaleString('en-AU',{month:'long',year:'numeric'})+')'};
+    case 'last-month': return {from:toStr(firstOfLastMonth), to:toStr(addDays(firstOfMonth,-1)), label:'Last month ('+firstOfLastMonth.toLocaleString('en-AU',{month:'long',year:'numeric'})+')'};
+    default: return {from:'', to:'', label:''};
+  }
+}
+
+function setTsPeriod(key){
+  _tsPeriod=key;
+  document.querySelectorAll('#ts-period-btns .btn').forEach(b=>{
+    const active=b.id==='ts-btn-'+key;
+    b.className='btn '+(active?'btn-primary':'btn-secondary')+' btn-sm';
+  });
+  renderTimesheet();
+}
+
+function renderTimesheet(){
+  const inv=document.getElementById('invoice-mode-section');
+  const ts=document.getElementById('timesheet-mode-section');
+  if(!isEmployeeMode()){
+    if(inv)inv.style.display='block';if(ts)ts.style.display='none';return;
+  }
+  if(inv)inv.style.display='none';if(ts)ts.style.display='block';
+
+  const {from,to,label} = getPeriodRange(_tsPeriod);
+  const periodLabel=document.getElementById('ts-period-label');
+  if(periodLabel) periodLabel.textContent=label;
+
+  // Filter days in period
+  const allDays=days().filter(d=>d.date>=from&&d.date<=to);
+  allDays.sort((a,b)=>a.date.localeCompare(b.date));
+
+  const s=S();
+  let totalHrs=0, totalPay=0;
+  const dayList=document.getElementById('ts-day-list');
+  if(!allDays.length){
+    dayList.innerHTML='<div style="color:var(--text2);font-size:13px;padding:8px 0">No days recorded in this period</div>';
+  } else {
+    dayList.innerHTML=allDays.map(d=>{
+      const t=dayTotals(d);
+      totalHrs+=t.h;
+      totalPay+=t.myE; // employee only tracks own pay
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+        <div>
+          <div style="font-size:14px;font-weight:700">${fmtDate(d.date)}</div>
+          <div style="font-size:12px;color:var(--text2)">${d.site||'—'} · ${d.start||''}${d.finish?' – '+d.finish:''}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:14px;font-weight:700;color:var(--amber)">${fmtMoney(t.myE)}</div>
+          <div style="font-size:11px;color:var(--text2)">${t.h.toFixed(2)}h @ $${d.rate||s.rate}/hr</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('ts-total-hours').textContent=totalHrs.toFixed(2)+'h';
+  document.getElementById('ts-total-pay').textContent=fmtMoney(totalPay);
+  document.getElementById('ts-total-days').textContent=allDays.length;
+  document.getElementById('ts-rate-display').textContent='$'+s.rate+'/hr';
+}
+
+function generateTimesheetPDF(){
+  const s=S();
+  const {from,to,label}=getPeriodRange(_tsPeriod);
+  const allDays=days().filter(d=>d.date>=from&&d.date<=to).sort((a,b)=>a.date.localeCompare(b.date));
+  if(!allDays.length){toast('No days in this period');return;}
+
+  const {jsPDF}=window.jspdf;
+  const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const W=210,mL=15,mR=15,cW=W-mL-mR;
+  let y=18;
+  const navy=[28,42,68], amber=[193,88,58], cream=[248,244,237];
+
+  // Header bar
+  pdf.setFillColor(...navy);pdf.rect(0,0,W,32,'F');
+  pdf.setTextColor(255,255,255);pdf.setFont('helvetica','bold');pdf.setFontSize(18);
+  pdf.text('WORK TIMESHEET',mL,14);
+  pdf.setFontSize(9);pdf.setFont('helvetica','normal');
+  pdf.text(label,mL,21);
+  y=40;
+
+  // Employee / Employer info
+  pdf.setTextColor(0,0,0);pdf.setFontSize(10);pdf.setFont('helvetica','bold');
+  pdf.text('Employee',mL,y);pdf.text('Employer',W/2,y);
+  y+=5;pdf.setFont('helvetica','normal');pdf.setFontSize(10);
+  pdf.text(s.employeeName||s.name||'—',mL,y);
+  pdf.text(s.employerName||'—',W/2,y);
+  if(s.email||s.phone){y+=5;pdf.setTextColor(100,100,100);pdf.text((s.email||s.phone||''),mL,y);}
+  if(s.employerContact){pdf.text(s.employerContact,W/2,y);}
+  y+=12;
+
+  // Table header
+  pdf.setFillColor(...navy);pdf.rect(mL,y-5,cW,8,'F');
+  pdf.setTextColor(255,255,255);pdf.setFontSize(9);pdf.setFont('helvetica','bold');
+  const cols={date:mL,site:mL+28,start:mL+72,finish:mL+90,hours:mL+112,pay:mL+130};
+  pdf.text('Date',cols.date,y);pdf.text('Site',cols.site,y);
+  pdf.text('Start',cols.start,y);pdf.text('Finish',cols.finish,y);
+  pdf.text('Hours',cols.hours,y);pdf.text('Pay',cols.pay,y);
+  y+=6;
+
+  let totalHrs=0,totalPay=0;
+  allDays.forEach((d,i)=>{
+    if(i%2===0){pdf.setFillColor(...cream);pdf.rect(mL,y-4,cW,7,'F');}
+    const t=dayTotals(d);totalHrs+=t.h;totalPay+=t.myE;
+    pdf.setTextColor(0,0,0);pdf.setFont('helvetica','normal');pdf.setFontSize(9);
+    pdf.text(fmtDate(d.date),cols.date,y);
+    pdf.text((d.site||'—').substring(0,18),cols.site,y);
+    pdf.text(d.start||'—',cols.start,y);
+    pdf.text(d.finish||'—',cols.finish,y);
+    pdf.text(t.h.toFixed(2)+'h',cols.hours,y);
+    pdf.text(fmtMoney(t.myE),cols.pay,y);
+    y+=7;
+    if(y>270){pdf.addPage();y=20;}
+  });
+
+  // Totals row
+  y+=4;pdf.setFillColor(...amber);pdf.rect(mL,y-5,cW,8,'F');
+  pdf.setTextColor(255,255,255);pdf.setFont('helvetica','bold');pdf.setFontSize(9);
+  pdf.text('TOTAL',cols.date,y);
+  pdf.text(totalHrs.toFixed(2)+'h',cols.hours,y);
+  pdf.text(fmtMoney(totalPay),cols.pay,y);
+  y+=12;
+
+  // Rate note
+  pdf.setTextColor(120,120,120);pdf.setFont('helvetica','normal');pdf.setFontSize(8);
+  pdf.text('Rate: $'+(s.rate||35)+'/hr  ·  Generated by Invoice and PDF Generator',mL,y);
+
+  pdf.save('timesheet_'+from+'_to_'+to+'.pdf');
+  toast('Timesheet PDF downloaded ✓');
+}
+
+function shareTimesheet(){
+  const s=S();
+  const {from,to,label}=getPeriodRange(_tsPeriod);
+  const allDays=days().filter(d=>d.date>=from&&d.date<=to).sort((a,b)=>a.date.localeCompare(b.date));
+  if(!allDays.length){toast('No days in this period');return;}
+  let totalHrs=0,totalPay=0;
+  const lines=allDays.map(d=>{const t=dayTotals(d);totalHrs+=t.h;totalPay+=t.myE;
+    return `${fmtDate(d.date)}  ${d.site||''}  ${t.h.toFixed(2)}h  ${fmtMoney(t.myE)}`;}).join('\n');
+  const text=`WORK TIMESHEET\n${label}\n\nEmployee: ${s.employeeName||s.name||''}\nEmployer: ${s.employerName||''}\n\n${lines}\n\nTOTAL: ${totalHrs.toFixed(2)}h  ${fmtMoney(totalPay)}\nRate: $${s.rate||35}/hr`;
+  if(navigator.share){
+    navigator.share({title:'Work Timesheet',text}).catch(()=>{});
+  } else {
+    const contact=s.employerContact||'';
+    const mailto=contact.includes('@')?`mailto:${contact}?subject=Work Timesheet&body=${encodeURIComponent(text)}`:`sms:${contact}?body=${encodeURIComponent(text)}`;
+    window.open(mailto);
   }
 }
 
