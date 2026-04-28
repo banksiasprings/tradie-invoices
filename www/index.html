@@ -271,40 +271,64 @@ const SYNC_KEYS = ['settings', 'clients', 'days', 'sites', 'activeDay', 'invoice
 const CloudSync = {
   uid: null,
 
+  // ── Timestamp helpers ──────────────────────────────────────────────────────
+  // We store a per-key "last modified" timestamp locally (mcn_modTimes).
+  // Every write via DB.set records Date.now() for that key.
+  // Every push to Firestore includes that clientTs.
+  // On restore(), we compare timestamps: whichever is newer wins.
+  // This means reinstall/delete correctly pulls fresh Firestore data,
+  // and the most recently modified device always wins conflicts.
+
+  _getModTimes() {
+    try { return JSON.parse(localStorage.getItem('mcn_modTimes') || '{}'); } catch { return {}; }
+  },
+  _setModTime(key) {
+    const mt = this._getModTimes();
+    mt[key] = Date.now();
+    localStorage.setItem('mcn_modTimes', JSON.stringify(mt));
+  },
+
   async syncKey(key, rawValue) {
     if (!this.uid) return;
     try {
+      const modTimes = this._getModTimes();
+      const clientTs = modTimes[key] || Date.now();
       const ref = doc(firestoreDb, 'users', this.uid, 'data', key);
-      await setDoc(ref, { value: rawValue, updatedAt: serverTimestamp() }, { merge: true });
+      await setDoc(ref, { value: rawValue, clientTs, updatedAt: serverTimestamp() }, { merge: true });
     } catch(e) { console.warn('CloudSync.syncKey failed:', key, e); }
   },
 
   async restore() {
     if (!this.uid) return;
-    // Per-key merge: local wins for keys that exist locally, pull from Firestore for missing keys.
-    // This handles: (a) fresh install — pull everything, (b) device switch — fill gaps,
-    // (c) same device sign-out/sign-in — local data preserved, nothing overwritten.
+    // Timestamp-based conflict resolution: for each key, read Firestore and compare
+    // clientTs (when it was last pushed from any device) with our local modTime
+    // (when we last wrote it here). The newer one wins.
+    // Fresh install / reinstall: modTimes is empty (all 0) → Firestore always wins → correct.
     try {
-      const toFetch = [];
+      const modTimes = this._getModTimes();
       for (const key of SYNC_KEYS) {
-        if (localStorage.getItem('mcn_' + key) === null) {
-          toFetch.push(key); // missing locally — fetch from Firestore
-        }
-      }
-      if (toFetch.length > 0) {
-        for (const key of toFetch) {
-          const ref = doc(firestoreDb, 'users', this.uid, 'data', key);
-          const snap = await getDoc(ref);
-          if (snap.exists()) {
-            const raw = snap.data().value;
-            if (raw !== undefined && raw !== null) {
-              const stored = typeof raw === 'string' ? raw : JSON.stringify(raw);
-              localStorage.setItem('mcn_' + key, stored);
-            }
+        const ref = doc(firestoreDb, 'users', this.uid, 'data', key);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) continue; // nothing in Firestore for this key — keep local
+        const data = snap.data();
+        const fsClientTs = data.clientTs || 0; // when any device last pushed this key
+        const localModTs = modTimes[key] || 0;  // when THIS device last modified this key
+        const localVal = localStorage.getItem('mcn_' + key);
+        if (localVal === null || fsClientTs > localModTs) {
+          // Firestore is newer (or we have nothing locally) — pull from Firestore
+          const raw = data.value;
+          if (raw !== undefined && raw !== null) {
+            const stored = typeof raw === 'string' ? raw : JSON.stringify(raw);
+            localStorage.setItem('mcn_' + key, stored);
+            // Record the Firestore timestamp as our local modTime so we don't
+            // keep re-pulling this version on future restores
+            modTimes[key] = fsClientTs;
           }
         }
+        // else: local is newer — keep it, pushAll() below will update Firestore
       }
-      // Always push whatever we have locally so Firestore stays current
+      localStorage.setItem('mcn_modTimes', JSON.stringify(modTimes));
+      // Push whatever won locally so Firestore stays current
       await this.pushAll();
     } catch(e) { console.warn('CloudSync.restore failed:', e); }
   },
@@ -421,6 +445,9 @@ document.addEventListener('DOMContentLoaded', () => {
     window.DB.set = function(key, value) {
       _orig(key, value);
       if (SYNC_KEYS.includes(key)) {
+        // Record local modification time BEFORE syncing — this is what restore()
+        // uses to decide if local data is newer than Firestore
+        CloudSync._setModTime(key);
         const raw = localStorage.getItem('mcn_' + key);
         if (raw !== null) CloudSync.syncKey(key, raw);
         // If employee has a linked boss and days changed, mirror to employer
@@ -1228,7 +1255,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v30';
+const APP_VERSION = 'v31';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1750,9 +1777,10 @@ async function cloudSyncNow(){
 async function cloudPullNow(){
   if(!window.CloudSync||!window.CloudSync.uid){toast('Not signed in');return;}
   toast('Pulling from cloud…');
-  // Force full pull: temporarily clear local keys, restore, then reload
+  // Force full pull: wipe local data + modTimes so Firestore beats local for ALL keys
   const SYNC_KEYS=['settings','clients','days','sites','activeDay','invoices','gst_on'];
   SYNC_KEYS.forEach(k=>localStorage.removeItem('mcn_'+k));
+  localStorage.removeItem('mcn_modTimes'); // clear timestamps so Firestore always wins
   await window.CloudSync.restore();
   toast('Cloud data restored — reloading…');
   setTimeout(()=>location.reload(),1200);
