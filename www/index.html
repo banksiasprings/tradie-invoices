@@ -560,6 +560,23 @@ window.firebaseSignOut = async function() {
       <div id="machine-section" style="display:none;margin-top:8px">
         <div id="machine-idle-list"></div>
       </div>
+      <!-- Travel billing (idle) -->
+      <div id="travel-idle-section" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <div style="font-size:14px;font-weight:600;margin-bottom:8px">🚗 Travel</div>
+        <div id="travel-idle-km-wrap" style="display:none">
+          <div class="field" style="margin:0">
+            <label>Kilometres travelled</label>
+            <input type="number" id="travel-idle-km" placeholder="0 km" step="1" min="0" oninput="updateTravelKmPreview('idle')">
+          </div>
+          <div style="font-size:12px;color:var(--text2);margin-top:4px" id="travel-idle-km-preview"></div>
+        </div>
+        <div id="travel-idle-hrs-wrap" style="display:none">
+          <div class="field" style="margin:0">
+            <label>Travel time (hours)</label>
+            <input type="number" id="travel-idle-hrs" placeholder="0 hrs" step="0.25" min="0">
+          </div>
+        </div>
+      </div>
       <button class="btn btn-primary btn-hero" onclick="startDay()">🚜  Start Day</button>
       <button class="btn btn-secondary" style="width:100%;margin-top:10px" onclick="showScreen('manual',window.event.target);initManualEntry()">+ Manual Entry</button>
     </div>
@@ -604,6 +621,23 @@ window.firebaseSignOut = async function() {
       <div id="machine-section2" style="display:none;margin-top:8px">
         <div id="machine-active-list"></div>
       </div>
+      <!-- Travel billing (active) -->
+      <div id="travel-active-section" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <div style="font-size:14px;font-weight:600;margin-bottom:8px">🚗 Travel</div>
+        <div id="travel-active-km-wrap" style="display:none">
+          <div class="field" style="margin:0">
+            <label>Kilometres travelled</label>
+            <input type="number" id="travel-active-km" placeholder="0 km" step="1" min="0" oninput="updateTravelKmPreview('active')">
+          </div>
+          <div style="font-size:12px;color:var(--text2);margin-top:4px" id="travel-active-km-preview"></div>
+        </div>
+        <div id="travel-active-hrs-wrap" style="display:none">
+          <div class="field" style="margin:0">
+            <label>Travel time (hours)</label>
+            <input type="number" id="travel-active-hrs" placeholder="0 hrs" step="0.25" min="0">
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -620,6 +654,7 @@ window.firebaseSignOut = async function() {
         <tr><td style="color:var(--text2)">My labour</td><td style="text-align:right;font-weight:600" id="rev-my-earn"></td></tr>
         <tr id="rev-son-row" style="display:none"><td style="color:var(--text2)">Extra labourer hrs</td><td style="text-align:right;font-weight:600" id="rev-son-hours"></td></tr>
         <tr id="rev-son-earn-row" style="display:none"><td style="color:var(--text2)">Extra labourer</td><td style="text-align:right;font-weight:600" id="rev-son-earn"></td></tr>
+        <tr id="rev-travel-row" style="display:none"><td style="color:var(--text2)">🚗 Travel</td><td style="text-align:right;font-weight:600" id="rev-travel"></td></tr>
         <tr><td style="color:var(--text2);font-weight:700;border-top:1px solid var(--border);padding-top:4px">Total</td><td style="text-align:right;font-weight:700;font-size:18px;color:var(--amber);border-top:1px solid var(--border);padding-top:4px" id="rev-earnings"></td></tr>
       </table>
       <div id="rev-machine-info" style="display:none;font-size:12px;color:var(--text2);padding:4px 0;border-top:1px solid var(--border);margin-top:4px"></div>
@@ -687,6 +722,23 @@ window.firebaseSignOut = async function() {
       </div>
     </div>
 
+    <div class="card" id="me-travel-card" style="display:none">
+      <div class="section-heading" style="margin-bottom:8px">🚗 Travel</div>
+      <div id="travel-me-km-wrap" style="display:none">
+        <div class="field" style="margin:0">
+          <label>Kilometres travelled</label>
+          <input type="number" id="travel-me-km" placeholder="0 km" step="1" min="0" oninput="updateTravelKmPreview('me');mePreview()">
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px" id="travel-me-km-preview"></div>
+      </div>
+      <div id="travel-me-hrs-wrap" style="display:none">
+        <div class="field" style="margin:0">
+          <label>Travel time (hours)</label>
+          <input type="number" id="travel-me-hrs" placeholder="0 hrs" step="0.25" min="0" onchange="mePreview()">
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="field" style="margin:0">
         <label>Notes <span style="color:var(--text2);font-weight:400">(optional — reason for manual entry)</span></label>
@@ -701,6 +753,7 @@ window.firebaseSignOut = async function() {
         <tr><td style="color:rgba(255,255,255,.6)">Hours worked</td><td style="text-align:right;font-weight:600" id="me-prev-hours">—</td></tr>
         <tr><td style="color:rgba(255,255,255,.6)">My labour</td><td style="text-align:right;font-weight:600" id="me-prev-my">—</td></tr>
         <tr id="me-prev-son-row" style="display:none"><td style="color:rgba(255,255,255,.6)">Extra labourer</td><td style="text-align:right;font-weight:600" id="me-prev-son">—</td></tr>
+        <tr id="me-prev-travel-row" style="display:none"><td style="color:rgba(255,255,255,.6)">🚗 Travel</td><td style="text-align:right;font-weight:600" id="me-prev-travel">—</td></tr>
         <tr><td style="color:rgba(255,255,255,.6);font-weight:700;border-top:1px solid rgba(255,255,255,.15);padding-top:4px">Total</td><td style="text-align:right;font-size:20px;font-weight:800;color:var(--amber);border-top:1px solid rgba(255,255,255,.15);padding-top:4px" id="me-prev-total">—</td></tr>
       </table>
     </div>
@@ -845,6 +898,24 @@ window.firebaseSignOut = async function() {
       </div>
       <div style="font-size:11px;color:var(--text2)">These rates appear as labels on invoices and can be updated here.</div>
     </div>
+    <div class="card card-collapsible">
+      <div class="card-title">Travel billing</div>
+      <div class="card-body">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Bill for travel to and from the job site.</div>
+        <div class="trade-grid" style="margin-top:0;margin-bottom:14px">
+          <button class="trade-btn" id="tm-btn-none" onclick="setTravelModeBtn('none')"><span class="trade-btn-icon">🚫</span><span class="trade-btn-label">Disabled</span></button>
+          <button class="trade-btn" id="tm-btn-km" onclick="setTravelModeBtn('km')"><span class="trade-btn-icon">🗺️</span><span class="trade-btn-label">Per km</span></button>
+          <button class="trade-btn" id="tm-btn-time" onclick="setTravelModeBtn('time')"><span class="trade-btn-icon">⏱️</span><span class="trade-btn-label">Per hour</span></button>
+        </div>
+        <div id="travel-km-rate-field" style="display:none">
+          <div class="field"><label>Rate ($/km)</label><input type="number" id="s-travelKmRate" step="0.01" min="0" placeholder="0.88"></div>
+          <div style="font-size:11px;color:var(--text2);margin-top:-4px">ATO cents-per-km rate for 2025–26: $0.88/km</div>
+        </div>
+        <div id="travel-hr-rate-field" style="display:none">
+          <div class="field"><label>Travel rate ($/hr)</label><input type="number" id="s-travelHrRate" step="1" min="0"></div>
+        </div>
+      </div>
+    </div>
     <div id="machine-rates-card" class="card"></div>
     <div class="card card-collapsible">
       <div class="card-title">Work sites (GPS)</div>
@@ -884,7 +955,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v23';
+const APP_VERSION = 'v24';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1067,6 +1138,16 @@ async function forceAppUpdate() {
         <div id="machine-edit-list"></div>
       </div>
     </div>
+    <!-- Travel in edit -->
+    <div id="edit-travel-section" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+      <div style="font-size:14px;font-weight:600;margin-bottom:8px">🚗 Travel</div>
+      <div id="edit-travel-km-wrap" style="display:none">
+        <div class="field" style="margin:0"><label>Kilometres</label><input type="number" id="travel-edit-km" placeholder="0 km" step="1" min="0"></div>
+      </div>
+      <div id="edit-travel-hrs-wrap" style="display:none">
+        <div class="field" style="margin:0"><label>Travel hours</label><input type="number" id="travel-edit-hrs" placeholder="0 hrs" step="0.25" min="0"></div>
+      </div>
+    </div>
     <button class="btn btn-primary" style="margin-top:8px" onclick="saveEdit()">Update Day</button>
   </div>
 </div>
@@ -1103,6 +1184,16 @@ async function forceAppUpdate() {
       <div id="le-son-section" class="son-box" style="display:none">
         <label>Extra labourer hours (blank = same as mine)</label>
         <input type="number" id="le-son-hours" placeholder="Same as mine" step="0.25" min="0">
+      </div>
+    </div>
+    <!-- Travel (log edit) -->
+    <div id="le-travel-section" style="display:none;margin-bottom:14px;padding-top:10px;border-top:1px solid var(--border)">
+      <div style="font-size:14px;font-weight:600;margin-bottom:8px">🚗 Travel</div>
+      <div id="le-travel-km-wrap" style="display:none">
+        <div class="field" style="margin:0"><label>Kilometres</label><input type="number" id="le-travel-km" placeholder="0 km" step="1" min="0"></div>
+      </div>
+      <div id="le-travel-hrs-wrap" style="display:none">
+        <div class="field" style="margin:0"><label>Travel hours</label><input type="number" id="le-travel-hrs" placeholder="0 hrs" step="0.25" min="0"></div>
       </div>
     </div>
     <input type="hidden" id="le-date">
@@ -1211,6 +1302,7 @@ const DEFAULTS={
   phone:'',email:'',bsb:'',account:'',
   client:'Muirlawn Pty Ltd',service:'Construction and Maintenance services',
   rate:55, sonrate:30, incpct:7.8, invnum:45,
+  travelMode:'none', travelKmRate:0.88, travelHrRate:30,
   machineRates:{Excavator:150,Grader:180,Bobcat:120,Dozer:200,Tractor:110}
 };
 
@@ -1629,6 +1721,7 @@ function initCheckinScreen(){
   sel.innerHTML='<option value="">Select site…</option>';
   sites().forEach(st=>{sel.innerHTML+=`<option value="${st.name}">${st.name}</option>`});
   renderMachineCheckboxes('machine-idle-list',[],'idle');
+  initTravelSection('idle',null);
   document.getElementById('checkin-start').value=nowTime();
   const ad=activeDay();
   if(ad) showActiveTimer(ad);
@@ -1649,7 +1742,8 @@ function startDay(){
     rate:s.rate,sonrate:s.sonrate||30,
     sonWorking,sonHours:sonHoursVal?parseFloat(sonHoursVal):null,
     machines:readMachinesFromUI('idle'),
-    lunchMins:0,lunchStart:null
+    lunchMins:0,lunchStart:null,
+    ...readTravelFromUI('idle')
   };
   DB.set('activeDay',ad);showActiveTimer(ad);toast('Day started — good luck out there!');
 }
@@ -1668,6 +1762,7 @@ function showActiveTimer(ad){
   renderMachineCheckboxes('machine-active-list',ad.machines||[],'active');
   document.getElementById('toggle-machine2').checked=!!(ad.machines&&ad.machines.length);
   document.getElementById('machine-section2').style.display=(ad.machines&&ad.machines.length)?'block':'none';
+  initTravelSection('active',ad);
   updateLunchDisplay(ad);
   clearInterval(timerInterval);timerInterval=setInterval(tickTimer,1000);tickTimer();
   // Start backup GPS polling and set initial status bar state
@@ -1740,6 +1835,8 @@ function finishDay(){
     const liveMachines=readMachinesFromUI('active');
     if(liveMachines.length) ad.machines=liveMachines;
   }
+  const travelData=readTravelFromUI('active');
+  Object.assign(ad,travelData);
   ad.finish=nowTime();DB.set('activeDay',ad);showReview(ad);
 }
 
@@ -1747,7 +1844,7 @@ function showReview(ad){
   document.getElementById('checkin-idle').style.display='none';
   document.getElementById('checkin-active').style.display='none';
   document.getElementById('checkin-review').style.display='block';
-  const{h,myE,sonH,sonE,total,sonrate,machineTotal,machineLines}=dayTotals(ad);
+  const{h,myE,sonH,sonE,total,sonrate,machineTotal,machineLines,travelTotal,travelLine}=dayTotals(ad);
   document.getElementById('rev-site').textContent=ad.site;
   document.getElementById('rev-start').textContent=ad.start;
   document.getElementById('rev-finish').textContent=ad.finish;
@@ -1761,6 +1858,17 @@ function showReview(ad){
     document.getElementById('rev-son-earn').textContent=fmtMoney(sonE)+' × $'+sonrate+'/hr';
   } else {sonRow.style.display='none';sonEarnRow.style.display='none';}
   // Machine info
+  // Travel row
+  const travelRevRow=document.getElementById('rev-travel-row');
+  const travelRevEl=document.getElementById('rev-travel');
+  if(travelRevRow&&travelRevEl){
+    if(travelLine){
+      travelRevRow.style.display='';
+      travelRevEl.textContent=travelLine.mode==='km'
+        ?`${fmtMoney(travelLine.total)} (${travelLine.km}km × $${travelLine.rate.toFixed(2)}/km)`
+        :`${fmtMoney(travelLine.total)} (${travelLine.hrs}h × $${travelLine.rate}/hr)`;
+    } else {travelRevRow.style.display='none';}
+  }
   const machineRevEl=document.getElementById('rev-machine-info');
   if(machineRevEl){
     if(machineLines&&machineLines.length){
@@ -1782,6 +1890,7 @@ function editDay(){
   renderMachineCheckboxes('machine-edit-list',ad.machines||[],'edit');
   document.getElementById('edit-machine-toggle').checked=!!(ad.machines&&ad.machines.length);
   document.getElementById('edit-machine-section').style.display=(ad.machines&&ad.machines.length)?'block':'none';
+  initTravelSection('edit',ad);
   document.getElementById('edit-modal').classList.add('open');
 }
 
@@ -1797,6 +1906,7 @@ function saveEdit(){
   ad.machines=editMachineToggle&&editMachineToggle.checked?readMachinesFromUI('edit'):[];
   if(!ad.rate) ad.rate=S().rate;
   if(!ad.sonrate) ad.sonrate=S().sonrate||30;
+  Object.assign(ad,readTravelFromUI('edit'));
   DB.set('activeDay',ad);closeEditModal();showReview(ad);
 }
 
@@ -1865,6 +1975,7 @@ window.editLogDay = function(entryKey){
   document.getElementById('le-son-toggle').checked=!!d.sonWorking;
   document.getElementById('le-son-section').style.display=d.sonWorking?'block':'none';
   document.getElementById('le-son-hours').value=d.sonHours!==null&&d.sonHours!==undefined?d.sonHours:'';
+  initTravelSection('le',d);
   document.getElementById('log-edit-modal').classList.add('open');
 };
 window.closeLogEditModal = function(){
@@ -1882,6 +1993,7 @@ window.saveLogEdit = function(){
   d.sonWorking=document.getElementById('le-son-toggle').checked;
   const sv=document.getElementById('le-son-hours').value;
   d.sonHours=sv?parseFloat(sv):null;
+  Object.assign(d,readTravelFromUI('le'));
   dl[idx]=d;
   DB.set('days',dl);
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
@@ -1956,7 +2068,18 @@ function dayTotals(d){
     machineTotal+=me;
     machineLines.push({name:m.name,hours:mh,rate:mrate,total:me});
   });
-  return{h,myE,sonH,sonE,total:myE+sonE+machineTotal,sonrate,machineTotal,machineLines};
+  const travelMode=d.travelMode||'none';
+  let travelTotal=0,travelLine=null;
+  if(travelMode==='km'&&d.travelKm>0){
+    const rate=d.travelKmRate!==undefined?d.travelKmRate:(s.travelKmRate||0.88);
+    travelTotal=d.travelKm*rate;
+    travelLine={mode:'km',km:d.travelKm,rate,total:travelTotal};
+  } else if(travelMode==='time'&&d.travelHrs>0){
+    const rate=d.travelHrRate!==undefined?d.travelHrRate:(s.travelHrRate||30);
+    travelTotal=d.travelHrs*rate;
+    travelLine={mode:'time',hrs:d.travelHrs,rate,total:travelTotal};
+  }
+  return{h,myE,sonH,sonE,total:myE+sonE+machineTotal+travelTotal,sonrate,machineTotal,machineLines,travelTotal,travelLine};
 }
 
 // --- Log ---
@@ -1975,7 +2098,7 @@ function renderLog(){
   if(!list.length){el.innerHTML='<div class="empty"><div class="empty-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></div><h3>All days are invoiced</h3><p>Tap "Show archived" above to view invoiced entries</p></div>';return;}
   el.innerHTML='';
   list.forEach(d=>{
-    const{h,myE,sonH,sonE,total,sonrate}=dayTotals(d);
+    const{h,myE,sonH,sonE,total,sonrate,travelTotal,travelLine}=dayTotals(d);
     const c=document.createElement('div');c.className='card';
     if(d.invoiced) c.style.opacity='0.65';
     c.innerHTML=`<div class="day-item" style="border:none;padding:0">
@@ -1983,9 +2106,10 @@ function renderLog(){
         <div class="date">${fmtDate(d.date)}</div>
         <div class="detail">${d.site} · ${d.start}–${d.finish||'?'} · ${d.lunchMins?d.lunchMins+'min lunch':'no lunch'}</div>
         <div style="margin-top:4px">
-          <span class="badge badge-green">Earthmoving</span>
+          <span class="badge badge-green">${currentTradeProfile().label}</span>
           ${d.sonWorking?`<span class="badge badge-blue" style="margin-left:4px">Extra ${formatHours(sonH)} @$${sonrate}</span>`:''}
           ${(d.machines||[]).map(m=>`<span class="badge badge-amber" style="margin-left:4px">${m.name}</span>`).join('')}
+          ${travelLine?`<span class="badge" style="margin-left:4px;background:var(--surface2);color:var(--text2)">🚗 ${travelLine.mode==='km'?travelLine.km+'km':travelLine.hrs+'h'}</span>`:''}
           ${d.invoiced?'<span class="badge badge-amber" style="margin-left:4px">Archived</span>':''}
         </div>
       </div>
@@ -2035,22 +2159,22 @@ function renderInvoice(){
     return _invoiceDaySelection.has(d.id||d.date);
   }
 
-  let te=0,th=0,sonTotal=0,sonTotalHrs=0,machineAgg={},grandMachineTotal=0;
+  let te=0,th=0,sonTotal=0,sonTotalHrs=0,machineAgg={},grandMachineTotal=0,grandTravelTotal=0;
   const le=document.getElementById('invoice-day-list');le.innerHTML='';
 
   // Render uninvoiced days with checkboxes
   const renderDayRow=(d,isArchived)=>{
-    const{h,myE,sonH,sonE,total,sonrate,machineTotal:mt,machineLines:ml}=dayTotals(d);
+    const{h,myE,sonH,sonE,total,sonrate,machineTotal:mt,machineLines:ml,travelTotal:tt}=dayTotals(d);
     const id=d.id||d.date;
     const sel=isDaySelected(d);
-    if(sel){te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;grandMachineTotal+=mt;ml.forEach(m=>{if(!machineAgg[m.name])machineAgg[m.name]={hours:0,rate:m.rate,total:0};machineAgg[m.name].hours+=m.hours;machineAgg[m.name].total+=m.total;});}
+    if(sel){te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;grandMachineTotal+=mt;grandTravelTotal+=tt;ml.forEach(m=>{if(!machineAgg[m.name])machineAgg[m.name]={hours:0,rate:m.rate,total:0};machineAgg[m.name].hours+=m.hours;machineAgg[m.name].total+=m.total;});}
     const wrap=document.createElement('div');
     wrap.className='inv-day-row-wrap'+(sel?'':' deselected');
     wrap.innerHTML=`
       <input type="checkbox" class="inv-day-check" data-id="${id}" ${sel?'checked':''} onchange="toggleInvoiceDay('${id}')">
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:700;color:var(--text)">${fmtDate(d.date)}${isArchived?' <span class="badge badge-amber" style="font-size:9px;margin-left:4px">archived</span>':''}</div>
-        <div style="font-size:11px;color:var(--text2);margin-top:2px">${d.site} · ${formatHours(h)} · $${d.rate}/hr${d.sonWorking?` + Extra ${formatHours(sonH)} @$${sonrate}`:''}${ml.length?' + '+ml.map(m=>m.name).join(', '):''}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">${d.site} · ${formatHours(h)} · $${d.rate}/hr${d.sonWorking?` + Extra ${formatHours(sonH)} @$${sonrate}`:''}${ml.length?' + '+ml.map(m=>m.name).join(', '):''}${tt>0?' + 🚗 '+fmtMoney(tt):''}</div>
       </div>
       <div style="font-size:15px;font-weight:700;color:${sel?'var(--amber)':'var(--text3)'};font-family:'Montserrat',system-ui,sans-serif;flex-shrink:0;margin-left:8px">${fmtMoney(total)}</div>`;
     le.appendChild(wrap);
@@ -2068,7 +2192,7 @@ function renderInvoice(){
     le.innerHTML='<div style="color:var(--text2);font-size:13px;padding:12px 0;text-align:center">No days to invoice for this client</div>';
   }
 
-  const grandTotal=te+sonTotal+grandMachineTotal;
+  const grandTotal=te+sonTotal+grandMachineTotal+grandTravelTotal;
   const gstOn=document.getElementById('toggle-gst')&&document.getElementById('toggle-gst').checked;
   const gst=gstOn?grandTotal*0.1:0;
   const selectedCount=allUninvoiced.filter(d=>isDaySelected(d)).length+archivedDays.filter(d=>isDaySelected(d)).length;
@@ -2090,6 +2214,7 @@ function renderInvoice(){
       ${sonTotal>0?`<div class="inv-subtotal-row subdued"><span>Extra labourer (${sonTotalHrs.toFixed(2)}h × $${(typeof sonrateDisplay==='number'?sonrateDisplay:parseFloat(sonrateDisplay)||30).toFixed(2)}/hr)</span><span>${fmtMoney(sonTotal)}</span></div>`:''}
       ${grandMachineTotal>0?machineNames.map(n=>`<div class="inv-subtotal-row subdued"><span>${n} hire (${machineAgg[n].hours.toFixed(2)}h × $${machineAgg[n].rate}/hr)</span><span>${fmtMoney(machineAgg[n].total)}</span></div>`).join(''):''}
       ${grandMachineTotal>0?`<div class="inv-subtotal-row subdued"><span>Machine hire subtotal</span><span>${fmtMoney(grandMachineTotal)}</span></div>`:''}
+      ${grandTravelTotal>0?`<div class="inv-subtotal-row subdued"><span>🚗 Travel</span><span>${fmtMoney(grandTravelTotal)}</span></div>`:''}
       <div class="inv-subtotal-row total"><span>Total Payable</span><span>${fmtMoney(grandTotal)}</span></div>
       ${gstOn?`<div class="inv-subtotal-row subdued"><span>GST (10%)</span><span>${fmtMoney(gst)}</span></div>`:''}
       ${gstOn?`<div class="inv-subtotal-row total"><span>Total inc. GST</span><span>${fmtMoney(grandTotal+gst)}</span></div>`:''}`;
@@ -2118,12 +2243,12 @@ function buildInvoiceHTML(){
   const invNumOverride=numInput&&numInput.value?parseInt(numInput.value)||s.invnum:s.invnum;
   const c=getSelectedClient();
   const clientLines=[c.company,c.contact,c.abn?'ABN '+c.abn:'',c.address,c.email,c.phone].filter(Boolean).join('<br>');
-  let rows='',te=0,th=0,sonTotal=0,sonTotalHrs=0;
+  let rows='',te=0,th=0,sonTotal=0,sonTotalHrs=0,grandTravelTotal=0;
   let sonrateUsed=s.sonrate||30;
   const machineAgg={};
   ui.forEach(d=>{
-    const{h,myE,sonH,sonE,total,sonrate,machineLines:ml}=dayTotals(d);
-    te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;
+    const{h,myE,sonH,sonE,total,sonrate,machineLines:ml,travelTotal,travelLine}=dayTotals(d);
+    te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;grandTravelTotal+=travelTotal;
     if(d.sonWorking) sonrateUsed=sonrate;
     ml.forEach(m=>{if(!machineAgg[m.name])machineAgg[m.name]={hours:0,rate:m.rate,total:0};machineAgg[m.name].hours+=m.hours;machineAgg[m.name].total+=m.total;});
     rows+=`<tr>
@@ -2136,7 +2261,7 @@ function buildInvoiceHTML(){
   });
   const machineNames=Object.keys(machineAgg);
   const grandMachineTotal=machineNames.reduce((s,n)=>s+machineAgg[n].total,0);
-  const grandTotal=te+sonTotal+grandMachineTotal;
+  const grandTotal=te+sonTotal+grandMachineTotal+grandTravelTotal;
   const gstOn=document.getElementById('toggle-gst')&&document.getElementById('toggle-gst').checked;
   const gst=gstOn?grandTotal*0.1:0;
   const n=String(invNumOverride).padStart(4,'0');
@@ -2150,6 +2275,8 @@ function buildInvoiceHTML(){
     machineLinesHTML+=machineNames.map(nm=>`<div>${nm} hire: ${machineAgg[nm].hours.toFixed(2)} hrs &times; $${machineAgg[nm].rate.toFixed(2)} = $${machineAgg[nm].total.toFixed(2)}</div>`).join('');
     machineLinesHTML+=`<div>Machine hire subtotal: $${grandMachineTotal.toFixed(2)}</div>`;
   }
+  const travelLinesHTML=grandTravelTotal>0?`<div>Travel: $${grandTravelTotal.toFixed(2)}</div>`:'';
+
   const gstLines=gstOn?`<div>GST (10%): $${gst.toFixed(2)}</div><div class="tot">Total inc. GST: $${(grandTotal+gst).toFixed(2)}</div>`:`<div class="tot">Total Payable: $${grandTotal.toFixed(2)}</div>`;
   return`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice ${n} — ${s.name}</title>
 <style>
@@ -2173,6 +2300,7 @@ td{padding:4px;border-bottom:1px solid #eee}.tots{text-align:right;margin-top:12
 <div class="tots">
 ${sonLines}
 ${machineLinesHTML}
+${travelLinesHTML}
 ${gstLines}
 </div></body></html>`;
 }
@@ -2181,19 +2309,19 @@ function previewInvoice(){
   const s=S(),ui=_getSelectedInvoiceDays();
   const c=getSelectedClient();
   const clientLines=[c.company,c.contact,c.abn?'ABN '+c.abn:'',c.address,c.email,c.phone].filter(Boolean).join('<br>');
-  let rows='',te=0,th=0,sonTotal=0,sonTotalHrs=0;
+  let rows='',te=0,th=0,sonTotal=0,sonTotalHrs=0,grandTravelTotal=0;
   let sonrateUsed=s.sonrate||30;
   const machineAgg={};
   ui.forEach(d=>{
-    const{h,myE,sonH,sonE,total,sonrate,machineLines:ml}=dayTotals(d);
-    te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;
+    const{h,myE,sonH,sonE,total,sonrate,machineLines:ml,travelTotal}=dayTotals(d);
+    te+=myE;th+=h;sonTotal+=sonE;sonTotalHrs+=sonH;grandTravelTotal+=travelTotal;
     if(d.sonWorking) sonrateUsed=sonrate;
     ml.forEach(m=>{if(!machineAgg[m.name])machineAgg[m.name]={hours:0,rate:m.rate,total:0};machineAgg[m.name].hours+=m.hours;machineAgg[m.name].total+=m.total;});
     rows+=`<tr><td>${fmtDate(d.date)}</td><td>${d.start}</td><td>${d.finish||'—'}</td><td>${d.lunchMins?d.lunchMins+'m':'—'}</td><td>${h.toFixed(2)}</td><td>$${d.rate}</td><td>${d.sonWorking?currentTradeProfile().label+'+Extra':currentTradeProfile().label}</td><td>$${total.toFixed(2)}</td></tr>`;
   });
   const machineNames=Object.keys(machineAgg);
   const grandMachineTotal=machineNames.reduce((sum,nm)=>sum+machineAgg[nm].total,0);
-  const grandTotal=te+sonTotal+grandMachineTotal;
+  const grandTotal=te+sonTotal+grandMachineTotal+grandTravelTotal;
   const gstOn=document.getElementById('toggle-gst')&&document.getElementById('toggle-gst').checked;
   const gst=gstOn?grandTotal*0.1:0;
   const numInput=document.getElementById('inv-num-input');
@@ -2209,6 +2337,7 @@ function previewInvoice(){
     machineLinesPreview+=machineNames.map(nm=>`<div>${nm} hire: ${machineAgg[nm].hours.toFixed(2)}h × $${machineAgg[nm].rate.toFixed(2)} = $${machineAgg[nm].total.toFixed(2)}</div>`).join('');
     machineLinesPreview+=`<div>Machine hire subtotal: $${grandMachineTotal.toFixed(2)}</div>`;
   }
+  const travelLinesPreview=grandTravelTotal>0?`<div>Travel: $${grandTravelTotal.toFixed(2)}</div>`:'';
   const gstPreview=gstOn?`<div>GST (10%): $${gst.toFixed(2)}</div><div class="inv-total-line">Total inc. GST: $${(grandTotal+gst).toFixed(2)}</div>`:`<div class="inv-total-line">Total Payable: $${grandTotal.toFixed(2)}</div>`;
   document.getElementById('invoice-preview-content').innerHTML=`
 <div class="inv-meta">
@@ -2220,7 +2349,7 @@ function previewInvoice(){
 <hr class="inv-divider">
 <table class="inv-table"><thead><tr><th>Date</th><th>Start</th><th>Finish</th><th>Lunch</th><th>Hrs</th><th>Rate</th><th>Desc</th><th>Amt</th></tr></thead>
 <tbody>${rows||'<tr><td colspan="8" style="text-align:center;color:#999;padding:8px">No days to invoice</td></tr>'}</tbody></table>
-<div class="inv-totals">${sonLinesPreview}${machineLinesPreview}${gstPreview}</div>`;
+<div class="inv-totals">${sonLinesPreview}${machineLinesPreview}${travelLinesPreview}${gstPreview}</div>`;
   sec.style.display='block';sec.scrollIntoView({behavior:'smooth'});
 }
 
@@ -2414,6 +2543,7 @@ function loadSettings(){
     const el=document.getElementById('s-'+k);if(el) el.value=s[k]!==undefined?s[k]:'';
   });
   renderTradeSelector();
+  loadTravelSettings();
   renderMachineRatesCard();
   updateExtraLabels();
   initCollapsibleCards();
@@ -2435,6 +2565,14 @@ function saveSettings(){
   const _incpctStr=document.getElementById('s-incpct').value;
   if(_incpctStr!==''){const _p=parseFloat(_incpctStr);if(!isNaN(_p))s.incpct=_p;}
   s.invnum=parseInt(document.getElementById('s-invnum').value)||s.invnum;
+  // Travel settings
+  const activeBtn=document.querySelector('#tm-btn-none.active,#tm-btn-km.active,#tm-btn-time.active');
+  s.travelMode=activeBtn?activeBtn.id.replace('tm-btn-',''):'none';
+  const tkr=document.getElementById('s-travelKmRate');
+  const thr=document.getElementById('s-travelHrRate');
+  if(tkr&&tkr.value) s.travelKmRate=parseFloat(tkr.value)||0.88;
+  if(thr&&thr.value) s.travelHrRate=parseFloat(thr.value)||30;
+  // Machine rates
   const mr=s.machineRates||{};
   getMachines().forEach(name=>{const el=document.getElementById('s-mr-'+mId(name));if(el&&el.value!=='') mr[name]=parseFloat(el.value)||0;});
   s.machineRates=mr;
@@ -2526,6 +2664,78 @@ function initCollapsibleCards(){
       });
     }
   });
+}
+
+// --- Travel UI helpers ---
+function initTravelSection(prefix, data){
+  // Determine travel mode: use data if available, otherwise fall back to settings default
+  const mode=(data&&data.travelMode)||S().travelMode||'none';
+  const kmWrap=document.getElementById('travel-'+prefix+'-km-wrap');
+  const hrsWrap=document.getElementById('travel-'+prefix+'-hrs-wrap');
+  const section=document.getElementById('travel-'+prefix+'-section');
+  if(!section) return;
+  // Show/hide entire section
+  section.style.display=(mode==='none')?'none':'block';
+  if(kmWrap) kmWrap.style.display=(mode==='km')?'block':'none';
+  if(hrsWrap) hrsWrap.style.display=(mode==='time')?'block':'none';
+  // Restore values if data present
+  if(data){
+    const kmInput=document.getElementById('travel-'+prefix+'-km');
+    const hrsInput=document.getElementById('travel-'+prefix+'-hrs');
+    if(kmInput&&data.travelKm) kmInput.value=data.travelKm;
+    if(hrsInput&&data.travelHrs) hrsInput.value=data.travelHrs;
+  }
+  updateTravelKmPreview(prefix);
+}
+
+function readTravelFromUI(prefix){
+  const mode=S().travelMode||'none';
+  if(mode==='none') return{travelMode:'none'};
+  if(mode==='km'){
+    const kmInput=document.getElementById('travel-'+prefix+'-km');
+    const km=kmInput?parseFloat(kmInput.value)||0:0;
+    return{travelMode:'km',travelKm:km,travelKmRate:S().travelKmRate||0.88};
+  }
+  if(mode==='time'){
+    const hrsInput=document.getElementById('travel-'+prefix+'-hrs');
+    const hrs=hrsInput?parseFloat(hrsInput.value)||0:0;
+    return{travelMode:'time',travelHrs:hrs,travelHrRate:S().travelHrRate||30};
+  }
+  return{travelMode:'none'};
+}
+
+function updateTravelKmPreview(prefix){
+  const preview=document.getElementById('travel-'+prefix+'-km-preview');
+  if(!preview) return;
+  const kmInput=document.getElementById('travel-'+prefix+'-km');
+  const km=kmInput?parseFloat(kmInput.value)||0:0;
+  const rate=S().travelKmRate||0.88;
+  if(km>0){
+    preview.textContent=km+' km × $'+rate.toFixed(2)+'/km = $'+(km*rate).toFixed(2);
+  } else {
+    preview.textContent='';
+  }
+}
+
+function setTravelModeBtn(mode){
+  ['none','km','time'].forEach(m=>{
+    const btn=document.getElementById('tm-btn-'+m);
+    if(btn) btn.classList.toggle('active',m===mode);
+  });
+  const kmField=document.getElementById('travel-km-rate-field');
+  const hrField=document.getElementById('travel-hr-rate-field');
+  if(kmField) kmField.style.display=(mode==='km')?'block':'none';
+  if(hrField) hrField.style.display=(mode==='time')?'block':'none';
+}
+
+function loadTravelSettings(){
+  const s=S();
+  const mode=s.travelMode||'none';
+  setTravelModeBtn(mode);
+  const tkr=document.getElementById('s-travelKmRate');
+  const thr=document.getElementById('s-travelHrRate');
+  if(tkr) tkr.value=s.travelKmRate||0.88;
+  if(thr) thr.value=s.travelHrRate||30;
 }
 
 // --- Sites ---
@@ -2971,6 +3181,7 @@ window.initApp = function() {
     const s=DB.get('settings');
     if(s.sonrate===undefined){s.sonrate=30;DB.set('settings',s);}
     if(!s.tradeType){s.tradeType='earthmoving';DB.set('settings',s);}
+    if(!s.travelMode){s.travelMode='none';DB.set('settings',s);}
     if(!s.machineRates){s.machineRates=defaultMachineRates();DB.set('settings',s);}
     if(s.incpct===undefined||s.incpct===null){s.incpct=DEFAULTS.incpct;DB.set('settings',s);}
     if(!DB.get('clients')){
@@ -3201,6 +3412,7 @@ function initManualEntry(){
   // Update son rate label
   const s = S();
   document.getElementById('me-son-rate-label').textContent = '$'+(s.sonrate||30)+'/hr';
+  initTravelSection('me',null);
   mePreview();
 }
 
@@ -3218,7 +3430,26 @@ function mePreview(){
   const sonrate = s.sonrate||30;
   const sonH = sonOn ? (sonHoursVal ? parseFloat(sonHoursVal) : h) : 0;
   const sonE = sonOn ? sonH * sonrate : 0;
-  const total = myE + sonE;
+  // Travel preview
+  const tmode = s.travelMode||'none';
+  let travelTotal = 0;
+  const travelRow = document.getElementById('me-prev-travel-row');
+  if(tmode==='km'){
+    const kmEl=document.getElementById('travel-me-km');
+    const km=kmEl?parseFloat(kmEl.value)||0:0;
+    travelTotal=km*(s.travelKmRate||0.88);
+    if(travelRow){travelRow.style.display=km>0?'':'none';}
+    const tel=document.getElementById('me-prev-travel');
+    if(tel&&km>0) tel.textContent=fmtMoney(travelTotal)+' ('+km+'km × $'+(s.travelKmRate||0.88).toFixed(2)+'/km)';
+  } else if(tmode==='time'){
+    const hrsEl=document.getElementById('travel-me-hrs');
+    const hrs=hrsEl?parseFloat(hrsEl.value)||0:0;
+    travelTotal=hrs*(s.travelHrRate||30);
+    if(travelRow){travelRow.style.display=hrs>0?'':'none';}
+    const tel=document.getElementById('me-prev-travel');
+    if(tel&&hrs>0) tel.textContent=fmtMoney(travelTotal)+' ('+hrs+'h × $'+(s.travelHrRate||30)+'/hr)';
+  } else { if(travelRow) travelRow.style.display='none'; }
+  const total = myE + sonE + travelTotal;
   preview.style.display = 'block';
   document.getElementById('me-prev-hours').textContent = formatHours(h) + (lunchMins ? ' (after '+lunchMins+'min lunch)' : '');
   document.getElementById('me-prev-my').textContent = fmtMoney(myE) + ' × $'+s.rate+'/hr';
@@ -3253,7 +3484,8 @@ function saveManualEntry(){
     rate: s.rate, sonWorking, sonHours,
     sonrate: s.sonrate||30, machines: [],
     invoiced: false, manual: true,
-    notes: notes||undefined
+    notes: notes||undefined,
+    ...readTravelFromUI('me')
   };
   existing.push(entry);
   DB.set('days', existing);
@@ -3281,6 +3513,13 @@ function resetManualEntry(){
   document.getElementById('me-son-hours').value = '';
   document.getElementById('me-notes').value = '';
   document.getElementById('me-preview').style.display = 'none';
+  // Clear travel inputs
+  const kmEl=document.getElementById('travel-me-km');
+  const hrsEl=document.getElementById('travel-me-hrs');
+  if(kmEl) kmEl.value='';
+  if(hrsEl) hrsEl.value='';
+  const prev=document.getElementById('travel-me-km-preview');
+  if(prev) prev.textContent='';
 }
 // ─────────────────────────────────────────────────────────────────────────────
 </script>
