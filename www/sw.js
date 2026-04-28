@@ -1,5 +1,5 @@
 
-const CACHE = 'invoice-pdf-v25';
+const CACHE = 'invoice-pdf-v26';
 const ASSETS = [
   './index.html',
   './manifest.json',

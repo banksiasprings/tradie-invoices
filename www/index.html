@@ -542,23 +542,28 @@ window.firebaseSignOut = async function() {
       <div class="rate-box" style="margin-bottom:14px">
         <div class="rate-label">My Rate</div>
         <div class="rate-amount" id="owner-rate-label">$55/hr</div>
-        <div class="toggle-row" style="padding:10px 0 0;border-top:1px solid rgba(255,255,255,.1);margin-top:10px">
-          <span style="font-size:14px;color:rgba(255,255,255,.8)" data-extra-label="on site today?">Extra labourer on site today?</span>
-          <label class="toggle"><input type="checkbox" id="toggle-son" onchange="toggleSonSection('son-section','toggle-son')"><span class="toggle-slider"></span></label>
-        </div>
-        <div id="son-section" class="son-box" style="display:none">
-          <label>Extra labourer hours (blank = same as mine)</label>
-          <input type="number" id="son-hours-input" placeholder="Same as mine" step="0.25" min="0">
-          <div style="font-size:12px;color:var(--text2);margin-top:6px">Extra labourer rate: <strong id="son-rate-label">$30/hr</strong></div>
+        <!-- Extra worker — only shown if enabled in Settings -->
+        <div id="idle-extra-worker-row" style="display:none;padding:10px 0 0;border-top:1px solid rgba(255,255,255,.1);margin-top:10px">
+          <div class="toggle-row" style="padding:0">
+            <span style="font-size:14px;color:rgba(255,255,255,.8)" data-extra-label="on site today?">Extra labourer on site today?</span>
+            <label class="toggle"><input type="checkbox" id="toggle-son" onchange="toggleSonSection('son-section','toggle-son')"><span class="toggle-slider"></span></label>
+          </div>
+          <div id="son-section" class="son-box" style="display:none">
+            <label>Extra labourer hours (blank = same as mine)</label>
+            <input type="number" id="son-hours-input" placeholder="Same as mine" step="0.25" min="0">
+            <div style="font-size:12px;color:var(--text2);margin-top:6px">Extra labourer rate: <strong id="son-rate-label">$30/hr</strong></div>
+          </div>
         </div>
       </div>
-      <!-- Machine hire -->
-      <div class="toggle-row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
-        <span style="font-size:14px;font-weight:600">Machine hire?</span>
-        <label class="toggle"><input type="checkbox" id="toggle-machine" onchange="document.getElementById('machine-section').style.display=this.checked?'block':'none'"><span class="toggle-slider"></span></label>
-      </div>
-      <div id="machine-section" style="display:none;margin-top:8px">
-        <div id="machine-idle-list"></div>
+      <!-- Machine hire — only shown if trade has equipment -->
+      <div id="idle-machine-row" style="display:none">
+        <div class="toggle-row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+          <span style="font-size:14px;font-weight:600">Machine hire?</span>
+          <label class="toggle"><input type="checkbox" id="toggle-machine" onchange="document.getElementById('machine-section').style.display=this.checked?'block':'none'"><span class="toggle-slider"></span></label>
+        </div>
+        <div id="machine-section" style="display:none;margin-top:8px">
+          <div id="machine-idle-list"></div>
+        </div>
       </div>
       <!-- Travel billing (idle) -->
       <div id="travel-idle-section" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
@@ -581,10 +586,12 @@ window.firebaseSignOut = async function() {
       <div id="materials-idle-section" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
           <div style="font-size:14px;font-weight:600">🧱 Materials / Parts</div>
-          <button onclick="addMaterialLineUI('idle',null,null)" style="background:var(--amber);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Add</button>
+          <div style="display:flex;gap:6px">
+            <button onclick="openMaterialsStore('idle')" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">📦 Store</button>
+            <button onclick="toggleMatCustom('idle')" style="background:var(--surface2);color:var(--text);border:1.5px solid var(--border);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Custom</button>
+          </div>
         </div>
         <div id="materials-idle-lines"></div>
-        <div id="materials-idle-quickadd" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
         <div id="materials-idle-custom" style="display:none;margin-top:8px">
           <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center">
             <input type="text" id="materials-idle-custom-name" placeholder="Item name" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
@@ -620,22 +627,27 @@ window.firebaseSignOut = async function() {
     </div>
     <div class="card">
       <div style="font-size:13px;color:var(--text2);margin-bottom:2px">My rate: <strong style="color:var(--amber)" id="active-owner-rate">$55/hr</strong></div>
-      <div class="toggle-row" style="padding:8px 0 0">
-        <span style="font-size:14px" data-extra-label="on site today?">Extra labourer on site today?</span>
-        <label class="toggle"><input type="checkbox" id="toggle-son2" onchange="updateSon()"><span class="toggle-slider"></span></label>
+      <!-- Extra worker (active) — only shown if enabled in Settings -->
+      <div id="active-extra-worker-row" style="display:none">
+        <div class="toggle-row" style="padding:8px 0 0">
+          <span style="font-size:14px" data-extra-label="on site today?">Extra labourer on site today?</span>
+          <label class="toggle"><input type="checkbox" id="toggle-son2" onchange="updateSon()"><span class="toggle-slider"></span></label>
+        </div>
+        <div id="son-section2" class="son-box" style="display:none">
+          <label>Extra labourer hours override (blank = same as mine)</label>
+          <input type="number" id="son-hours-input2" placeholder="Same as mine" step="0.25" min="0" onchange="updateSon()">
+          <div style="font-size:12px;color:var(--text2);margin-top:6px">Extra labourer rate: <strong id="active-son-rate">$30/hr</strong></div>
+        </div>
       </div>
-      <div id="son-section2" class="son-box" style="display:none">
-        <label>Extra labourer hours override (blank = same as mine)</label>
-        <input type="number" id="son-hours-input2" placeholder="Same as mine" step="0.25" min="0" onchange="updateSon()">
-        <div style="font-size:12px;color:var(--text2);margin-top:6px">Extra labourer rate: <strong id="active-son-rate">$30/hr</strong></div>
-      </div>
-      <!-- Machine hire active -->
-      <div class="toggle-row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
-        <span style="font-size:14px;font-weight:600">Machine hire?</span>
-        <label class="toggle"><input type="checkbox" id="toggle-machine2" onchange="document.getElementById('machine-section2').style.display=this.checked?'block':'none';if(this.checked)renderMachineCheckboxes('machine-active-list',activeDay()&&activeDay().machines||[],'active')"><span class="toggle-slider"></span></label>
-      </div>
-      <div id="machine-section2" style="display:none;margin-top:8px">
-        <div id="machine-active-list"></div>
+      <!-- Machine hire active — only shown if trade has equipment -->
+      <div id="active-machine-row" style="display:none">
+        <div class="toggle-row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+          <span style="font-size:14px;font-weight:600">Machine hire?</span>
+          <label class="toggle"><input type="checkbox" id="toggle-machine2" onchange="document.getElementById('machine-section2').style.display=this.checked?'block':'none';if(this.checked)renderMachineCheckboxes('machine-active-list',activeDay()&&activeDay().machines||[],'active')"><span class="toggle-slider"></span></label>
+        </div>
+        <div id="machine-section2" style="display:none;margin-top:8px">
+          <div id="machine-active-list"></div>
+        </div>
       </div>
       <!-- Travel billing (active) -->
       <div id="travel-active-section" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
@@ -658,10 +670,12 @@ window.firebaseSignOut = async function() {
       <div id="materials-active-section" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
           <div style="font-size:14px;font-weight:600">🧱 Materials / Parts</div>
-          <button onclick="addMaterialLineUI('active',null,null)" style="background:var(--amber);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Add</button>
+          <div style="display:flex;gap:6px">
+            <button onclick="openMaterialsStore('active')" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">📦 Store</button>
+            <button onclick="toggleMatCustom('active')" style="background:var(--surface2);color:var(--text);border:1.5px solid var(--border);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Custom</button>
+          </div>
         </div>
         <div id="materials-active-lines"></div>
-        <div id="materials-active-quickadd" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
         <div id="materials-active-custom" style="display:none;margin-top:8px">
           <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center">
             <input type="text" id="materials-active-custom-name" placeholder="Item name" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
@@ -741,7 +755,7 @@ window.firebaseSignOut = async function() {
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="me-extra-worker-card" style="display:none">
       <div class="toggle-row">
         <span style="font-size:14px" data-extra-label="on site?">Extra labourer on site?</span>
         <label class="toggle"><input type="checkbox" id="me-son-toggle" onchange="document.getElementById('me-son-section').style.display=this.checked?'block':'none';mePreview()"><span class="toggle-slider"></span></label>
@@ -775,15 +789,17 @@ window.firebaseSignOut = async function() {
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div class="section-heading" style="margin:0">🧱 Materials / Parts</div>
-        <button onclick="addMaterialLineUI('me',null,null);mePreview()" style="background:var(--amber);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Add</button>
+        <div style="display:flex;gap:6px">
+          <button onclick="openMaterialsStore('me')" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">📦 Store</button>
+          <button onclick="toggleMatCustom('me')" style="background:var(--surface2);color:var(--text);border:1.5px solid var(--border);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Custom</button>
+        </div>
       </div>
       <div id="materials-me-lines"></div>
-      <div id="materials-me-quickadd" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
       <div id="materials-me-custom" style="display:none;margin-top:8px">
         <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center">
           <input type="text" id="materials-me-custom-name" placeholder="Item name" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
           <input type="number" id="materials-me-custom-price" placeholder="$ each" min="0" step="0.01" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;width:90px">
-          <button onclick="addCustomMaterial('me')" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer">Add</button>
+          <button onclick="addCustomMaterial('me');mePreview()" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer">Add</button>
         </div>
       </div>
     </div>
@@ -942,11 +958,20 @@ window.firebaseSignOut = async function() {
     </div>
     <div class="card">
       <div class="card-title">Standard Rate</div>
-      <div class="field-row">
-        <div class="field"><label>My rate ($/hr)</label><input type="number" id="s-rate" step="0.05"></div>
-        <div class="field"><label id="s-extra-label">Extra labourer rate ($/hr)</label><input type="number" id="s-sonrate" step="0.05"></div>
+      <div class="field">
+        <label>My rate ($/hr)</label><input type="number" id="s-rate" step="0.05">
       </div>
-      <div style="font-size:11px;color:var(--text2)">These rates appear as labels on invoices and can be updated here.</div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:14px">This rate appears on invoices and can be updated here.</div>
+      <div class="toggle-row" style="padding:10px 0;border-top:1px solid var(--border)">
+        <div>
+          <div style="font-size:14px;font-weight:600">Extra worker billing</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">Show extra labourer option on Today screen</div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="s-show-extra-worker" onchange="saveExtraWorkerPref()"><span class="toggle-slider"></span></label>
+      </div>
+      <div id="s-extra-worker-rate" style="display:none;margin-top:10px">
+        <div class="field" style="margin:0"><label id="s-extra-label">Extra labourer rate ($/hr)</label><input type="number" id="s-sonrate" step="0.05"></div>
+      </div>
     </div>
     <div class="card card-collapsible">
       <div class="card-title">Travel billing</div>
@@ -1019,7 +1044,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v25';
+const APP_VERSION = 'v26';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1216,10 +1241,12 @@ async function forceAppUpdate() {
     <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div style="font-size:14px;font-weight:600">🧱 Materials / Parts</div>
-        <button onclick="addMaterialLineUI('edit',null,null)" style="background:var(--amber);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Add</button>
+        <div style="display:flex;gap:6px">
+          <button onclick="openMaterialsStore('edit')" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">📦 Store</button>
+          <button onclick="toggleMatCustom('edit')" style="background:var(--surface2);color:var(--text);border:1.5px solid var(--border);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Custom</button>
+        </div>
       </div>
       <div id="materials-edit-lines"></div>
-      <div id="materials-edit-quickadd" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
       <div id="materials-edit-custom" style="display:none;margin-top:8px">
         <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center">
           <input type="text" id="materials-edit-custom-name" placeholder="Item name" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
@@ -1280,10 +1307,12 @@ async function forceAppUpdate() {
     <div style="margin-bottom:14px;padding-top:10px;border-top:1px solid var(--border)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div style="font-size:14px;font-weight:600">🧱 Materials / Parts</div>
-        <button onclick="addMaterialLineUI('le',null,null)" style="background:var(--amber);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Add</button>
+        <div style="display:flex;gap:6px">
+          <button onclick="openMaterialsStore('le')" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">📦 Store</button>
+          <button onclick="toggleMatCustom('le')" style="background:var(--surface2);color:var(--text);border:1.5px solid var(--border);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Custom</button>
+        </div>
       </div>
       <div id="materials-le-lines"></div>
-      <div id="materials-le-quickadd" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
       <div id="materials-le-custom" style="display:none;margin-top:8px">
         <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center">
           <input type="text" id="materials-le-custom-name" placeholder="Item name" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
@@ -1295,6 +1324,20 @@ async function forceAppUpdate() {
     <input type="hidden" id="le-date">
     <button class="btn btn-primary" style="margin-top:8px" onclick="saveLogEdit()">Save Changes ✓</button>
     <button class="btn btn-danger" style="margin-top:8px" onclick="promptDeleteLogEntry()">Delete Entry</button>
+  </div>
+</div>
+
+<!-- MATERIALS STORE MODAL -->
+<div class="modal-bg" id="materials-store-modal">
+  <div class="modal">
+    <div class="modal-title">Materials Store <button class="modal-close" onclick="closeMaterialsStore()">✕</button></div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Tap items to add them to your day. Adjust quantities before confirming.</div>
+    <div id="materials-store-list" style="max-height:55vh;overflow-y:auto"></div>
+    <div id="materials-store-empty" style="display:none;font-size:13px;color:var(--text2);padding:16px 0;text-align:center">
+      No items in catalogue yet — add them in Settings → Materials catalogue.
+    </div>
+    <button class="btn btn-primary" style="margin-top:14px" onclick="confirmMaterialsStore()">Add to Day ✓</button>
+    <button class="btn btn-secondary" style="margin-top:8px" onclick="closeMaterialsStore()">Cancel</button>
   </div>
 </div>
 
@@ -1400,7 +1443,8 @@ const DEFAULTS={
   rate:55, sonrate:30, incpct:7.8, invnum:45,
   travelMode:'none', travelKmRate:0.88, travelHrRate:30,
   machineRates:{Excavator:150,Grader:180,Bobcat:120,Dozer:200,Tractor:110},
-  materialsLib:[]
+  materialsLib:[],
+  showExtraWorker:false
 };
 
 function S(){return DB.def('settings',DEFAULTS)}
@@ -1536,6 +1580,32 @@ function getMaterialsLib(){
   // If user's lib is empty, seed with current trade's defaults
   if(!lib.length) return currentTradeProfile().defaultMaterials||[];
   return lib;
+}
+
+// Helper: show/hide trade-specific and setting-specific sections on Today screens
+function applyTradeVisibility(){
+  const hasMachines = getMachines().length > 0;
+  const showExtra = S().showExtraWorker || false;
+  // Idle screen
+  ['idle-machine-row'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=hasMachines?'block':'none';});
+  ['idle-extra-worker-row'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=showExtra?'block':'none';});
+  // Active screen
+  ['active-machine-row'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=hasMachines?'block':'none';});
+  ['active-extra-worker-row'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=showExtra?'block':'none';});
+  // Manual entry
+  const meCard=document.getElementById('me-extra-worker-card');
+  if(meCard) meCard.style.display=showExtra?'block':'none';
+}
+
+function saveExtraWorkerPref(){
+  const s=S();
+  const cb=document.getElementById('s-show-extra-worker');
+  s.showExtraWorker=cb?cb.checked:false;
+  DB.set('settings',s);
+  const rateRow=document.getElementById('s-extra-worker-rate');
+  if(rateRow) rateRow.style.display=s.showExtraWorker?'block':'none';
+  applyTradeVisibility();
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
 }
 function currentTradeProfile(){return TRADE_PROFILES[S().tradeType||'earthmoving']||TRADE_PROFILES.earthmoving;}
 function getMachines(){return currentTradeProfile().machines;}
@@ -1835,6 +1905,7 @@ function initCheckinScreen(){
   initTravelSection('idle',null);
   initMaterialsSection('idle',null);
   document.getElementById('checkin-start').value=nowTime();
+  applyTradeVisibility();
   const ad=activeDay();
   if(ad) showActiveTimer(ad);
   startGPS();
@@ -1877,6 +1948,7 @@ function showActiveTimer(ad){
   document.getElementById('machine-section2').style.display=(ad.machines&&ad.machines.length)?'block':'none';
   initTravelSection('active',ad);
   initMaterialsSection('active',ad);
+  applyTradeVisibility();
   updateLunchDisplay(ad);
   clearInterval(timerInterval);timerInterval=setInterval(tickTimer,1000);tickTimer();
   // Start backup GPS polling and set initial status bar state
@@ -2703,6 +2775,12 @@ function loadSettings(){
   updateExtraLabels();
   initCollapsibleCards();
   renderSitesList();renderClientsList();
+  // Extra worker toggle
+  const ewCb=document.getElementById('s-show-extra-worker');
+  if(ewCb) ewCb.checked=!!(s.showExtraWorker);
+  const ewRate=document.getElementById('s-extra-worker-rate');
+  if(ewRate) ewRate.style.display=s.showExtraWorker?'block':'none';
+  applyTradeVisibility();
 }
 
 function saveSettings(){
@@ -2952,6 +3030,86 @@ function seedMaterialsLib(){
   DB.set('settings',s);
   renderMaterialsLib();
   toast('Materials reset to '+currentTradeProfile().label+' defaults ✓');
+}
+
+// --- Materials store modal ---
+let _storePrefix = null;
+const _storeQtys = {};
+
+function openMaterialsStore(prefix){
+  _storePrefix = prefix;
+  const lib = getMaterialsLib();
+  const list = document.getElementById('materials-store-list');
+  const empty = document.getElementById('materials-store-empty');
+  // Reset qtys
+  lib.forEach((_,i)=>{ _storeQtys[i] = 0; });
+  if(!lib.length){
+    list.innerHTML='';
+    if(empty) empty.style.display='block';
+  } else {
+    if(empty) empty.style.display='none';
+    list.innerHTML = lib.map((m,i)=>`
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)" id="store-row-${i}">
+        <div>
+          <div style="font-size:14px;font-weight:600">${m.name}</div>
+          <div style="font-size:12px;color:var(--text2)">$${(m.defaultPrice||0).toFixed(2)} ea</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button onclick="_storeDecr(${i})" style="width:28px;height:28px;border-radius:50%;border:1.5px solid var(--border);background:var(--surface2);font-size:16px;font-weight:700;cursor:pointer;line-height:1">−</button>
+          <span id="store-qty-${i}" style="font-size:15px;font-weight:700;min-width:20px;text-align:center">0</span>
+          <button onclick="_storeIncr(${i})" style="width:28px;height:28px;border-radius:50%;background:var(--navy);color:#fff;border:none;font-size:16px;font-weight:700;cursor:pointer;line-height:1">+</button>
+        </div>
+      </div>`).join('');
+  }
+  document.getElementById('materials-store-modal').classList.add('open');
+}
+
+function _storeIncr(i){
+  _storeQtys[i] = (_storeQtys[i]||0) + 1;
+  const el = document.getElementById('store-qty-'+i);
+  if(el) el.textContent = _storeQtys[i];
+  const row = document.getElementById('store-row-'+i);
+  if(row) row.style.background = _storeQtys[i]>0 ? 'rgba(193,88,58,0.07)' : '';
+}
+
+function _storeDecr(i){
+  _storeQtys[i] = Math.max(0, (_storeQtys[i]||0) - 1);
+  const el = document.getElementById('store-qty-'+i);
+  if(el) el.textContent = _storeQtys[i];
+  const row = document.getElementById('store-row-'+i);
+  if(row) row.style.background = _storeQtys[i]>0 ? 'rgba(193,88,58,0.07)' : '';
+}
+
+function confirmMaterialsStore(){
+  const lib = getMaterialsLib();
+  lib.forEach((m,i)=>{
+    const qty = _storeQtys[i]||0;
+    if(qty > 0){
+      // Check if already in _matLines for this prefix
+      const lines = _matLines[_storePrefix]||[];
+      const existing = lines.findIndex(l=>l.name===m.name && l.unitPrice===(m.defaultPrice||0));
+      if(existing>=0){
+        lines[existing].qty = (lines[existing].qty||0) + qty;
+      } else {
+        lines.push({name:m.name, qty, unitPrice:m.defaultPrice||0});
+      }
+      _matLines[_storePrefix] = lines;
+    }
+  });
+  _renderMatLines(_storePrefix);
+  closeMaterialsStore();
+  toast('Materials added ✓');
+}
+
+function closeMaterialsStore(){
+  document.getElementById('materials-store-modal').classList.remove('open');
+}
+
+function toggleMatCustom(prefix){
+  const div = document.getElementById('materials-'+prefix+'-custom');
+  if(!div) return;
+  const isHidden = div.style.display==='none'||div.style.display==='';
+  div.style.display = isHidden ? 'block' : 'none';
 }
 
 // --- Travel UI helpers ---
