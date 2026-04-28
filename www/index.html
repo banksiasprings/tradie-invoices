@@ -53,6 +53,8 @@
   .card-title{font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px;padding-left:10px;border-left:3px solid var(--amber)}
 
   .field{margin-bottom:14px}
+  .mcn-input{width:100%;padding:9px 12px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:14px;background:var(--surface);color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s;box-sizing:border-box}
+  .mcn-input:focus{border-color:var(--amber);box-shadow:0 0 0 3px rgba(193,88,58,.12)}
   .field label{display:block;font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px;letter-spacing:.6px;text-transform:uppercase}
   .field input,.field select,.field textarea{width:100%;padding:11px 14px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s}
   .field textarea{height:auto;min-height:44px}
@@ -1226,7 +1228,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v29';
+const APP_VERSION = 'v30';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1658,6 +1660,7 @@ const DEFAULTS={
   rate:55, sonrate:30, incpct:7.8, invnum:45,
   travelMode:'none', travelKmRate:0.88, travelHrRate:30,
   machineRates:{Excavator:150,Grader:180,Bobcat:120,Dozer:200,Tractor:110},
+  customMachines:null,
   materialsLib:[],
   showExtraWorker:false,
   employeeName:'',
@@ -1859,9 +1862,23 @@ function saveExtraWorkerPref(){
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
 }
 function currentTradeProfile(){return TRADE_PROFILES[S().tradeType||'earthmoving']||TRADE_PROFILES.earthmoving;}
-function getMachines(){return currentTradeProfile().machines;}
+function getMachines(){
+  const cm=S().customMachines;
+  if(cm&&cm.length) return cm.map(m=>m.name);
+  return currentTradeProfile().machines;
+}
 function getExtraLabel(){return currentTradeProfile().extraLabel;}
-function defaultMachineRates(){return Object.assign({},currentTradeProfile().defaultRates);}
+function defaultMachineRates(){
+  const cm=S().customMachines;
+  if(cm&&cm.length){const r={};cm.forEach(m=>r[m.name]=m.rate);return r;}
+  return Object.assign({},currentTradeProfile().defaultRates);
+}
+function getMachineRate(name){
+  const cm=S().customMachines;
+  if(cm&&cm.length){const m=cm.find(m=>m.name===name);return m?m.rate:0;}
+  const mr=S().machineRates||{};
+  return mr[name]!==undefined?mr[name]:(currentTradeProfile().defaultRates[name]||0);
+}
 // Sanitise machine name to a valid HTML id suffix
 function mId(name){return name.replace(/[^a-zA-Z0-9]/g,'_');}
 
@@ -1901,17 +1918,15 @@ function toggleSonSection(sectionId, toggleId){
 
 // --- Machine hire helpers ---
 function renderMachineCheckboxes(containerId,selectedMachines,prefix){
-  const s=S(),mr=s.machineRates||{};
   const machines=getMachines();
-  const prof=currentTradeProfile();
   const el=document.getElementById(containerId);if(!el)return;
-  if(!machines.length){el.innerHTML='<div style="font-size:13px;color:var(--text2)">No equipment configured for this trade.</div>';return;}
+  if(!machines.length){el.innerHTML='<div style="font-size:13px;color:var(--text2)">No equipment configured. Add machines in Settings.</div>';return;}
   el.innerHTML=machines.map(name=>{
     const sid=mId(name);
     const sel=(selectedMachines||[]).find(m=>m.name===name);
     const checked=!!sel;
     const hv=sel&&sel.hours!==null&&sel.hours!==undefined?sel.hours:'';
-    const rate=mr[name]!==undefined?mr[name]:(prof.defaultRates[name]||0);
+    const rate=getMachineRate(name);
     const nameEsc=name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     return`<div style="padding:8px 0;border-bottom:1px solid var(--border)">
       <div style="display:flex;align-items:center;gap:10px">
@@ -2514,11 +2529,10 @@ function dayTotals(d){
   const sonH=d.sonWorking?(d.sonHours!==null&&d.sonHours!==undefined?d.sonHours:h):0;
   const sonE=d.sonWorking?sonH*sonrate:0;
   const s=S();
-  const mr=s.machineRates||defaultMachineRates();
   let machineTotal=0;const machineLines=[];
   (d.machines||[]).forEach(m=>{
     const mh=m.hours!==null&&m.hours!==undefined?m.hours:h;
-    const mrate=mr[m.name]||0;
+    const mrate=getMachineRate(m.name);
     const me=mh*mrate;
     machineTotal+=me;
     machineLines.push({name:m.name,hours:mh,rate:mrate,total:me});
@@ -3073,10 +3087,10 @@ function saveSettings(){
   const thr=document.getElementById('s-travelHrRate');
   if(tkr&&tkr.value) s.travelKmRate=parseFloat(tkr.value)||0.88;
   if(thr&&thr.value) s.travelHrRate=parseFloat(thr.value)||30;
-  // Machine rates
-  const mr=s.machineRates||{};
-  getMachines().forEach(name=>{const el=document.getElementById('s-mr-'+mId(name));if(el&&el.value!=='') mr[name]=parseFloat(el.value)||0;});
-  s.machineRates=mr;
+  // Custom machines (name + rate from the card editor)
+  const customMachines=readCustomMachinesFromCard();
+  s.customMachines=customMachines.length?customMachines:null;
+  s.machineRates={}; // no longer needed when customMachines is set
   // Employee fields
   const _en=document.getElementById('s-employee-name');if(_en) s.employeeName=_en.value;
   const _er=document.getElementById('s-employer-name');if(_er) s.employerName=_er.value;
@@ -3108,6 +3122,9 @@ function renderTradeSelector(){
 function selectTrade(key){
   const s=S();
   s.tradeType=key;
+  // Reset machines to new trade's defaults when trade changes
+  s.customMachines=null;
+  s.machineRates={};
   DB.set('settings',s);
   renderTradeSelector();
   renderMachineRatesCard();
@@ -3119,23 +3136,69 @@ function selectTrade(key){
 
 function renderMachineRatesCard(){
   const card=document.getElementById('machine-rates-card');if(!card)return;
-  const s=S(),mr=s.machineRates||{};
-  const prof=currentTradeProfile(),machines=getMachines();
-  if(!machines.length){
-    card.innerHTML=`<div class="card-title">${prof.equipLabel} rates</div>
-      <div style="font-size:13px;color:var(--text2)">No equipment for this trade. Switch trade to configure.</div>`;
-    return;
-  }
-  let fields='<div style="display:grid;grid-template-columns:1fr 1fr;gap:0">';
-  machines.forEach((name,i)=>{
-    const fullRow=machines.length%2!==0&&i===machines.length-1;
-    fields+=`<div class="field"${fullRow?' style="grid-column:1/-1"':''}>
-      <label>${name}</label>
-      <input type="number" id="s-mr-${mId(name)}" value="${mr[name]!==undefined?mr[name]:(prof.defaultRates[name]||0)}" step="1" min="0">
+  const s=S();
+  const prof=currentTradeProfile();
+  // Build working list: customMachines if set, else trade defaults
+  const list=s.customMachines&&s.customMachines.length
+    ? s.customMachines
+    : prof.machines.map(name=>({name,rate:s.machineRates&&s.machineRates[name]!==undefined?s.machineRates[name]:(prof.defaultRates[name]||0)}));
+  const rows=list.map((m,i)=>`
+    <div class="machine-edit-row" style="display:grid;grid-template-columns:1fr 100px 36px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+      <input type="text" class="mcn-input" placeholder="Machine / equipment name" value="${escHtml(m.name)}" style="font-size:14px" oninput="this.closest('.machine-edit-row').dataset.changed='1'">
+      <div style="display:flex;align-items:center;gap:4px">
+        <span style="font-size:13px;color:var(--text2)">$</span>
+        <input type="number" class="mcn-input" placeholder="0" value="${m.rate}" step="1" min="0" style="font-size:14px;text-align:right">
+        <span style="font-size:11px;color:var(--text3)">/hr</span>
+      </div>
+      <button onclick="removeCustomMachineRow(this)" style="background:none;border:none;font-size:18px;color:var(--text3);cursor:pointer;padding:0;line-height:1;display:flex;align-items:center;justify-content:center">×</button>
+    </div>`).join('');
+  card.innerHTML=`
+    <div class="card-title">${prof.equipLabel||'Plant & Equipment'}</div>
+    <div style="font-size:12px;color:var(--text3);margin:-4px 0 10px">Add, rename or remove equipment for your invoices.</div>
+    <div id="machine-rows-list">${rows}</div>
+    <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+      <button onclick="addCustomMachineRow()" style="flex:1;min-width:120px;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">+ Add machine</button>
+      <button onclick="resetMachinesToTradeDefaults()" style="flex:1;min-width:120px;padding:10px;background:none;border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text2);cursor:pointer">Reset to trade defaults</button>
     </div>`;
+}
+function addCustomMachineRow(){
+  const list=document.getElementById('machine-rows-list');if(!list)return;
+  const row=document.createElement('div');
+  row.className='machine-edit-row';
+  row.style.cssText='display:grid;grid-template-columns:1fr 100px 36px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)';
+  row.innerHTML=`
+    <input type="text" class="mcn-input" placeholder="Machine name" style="font-size:14px">
+    <div style="display:flex;align-items:center;gap:4px">
+      <span style="font-size:13px;color:var(--text2)">$</span>
+      <input type="number" class="mcn-input" placeholder="0" step="1" min="0" style="font-size:14px;text-align:right">
+      <span style="font-size:11px;color:var(--text3)">/hr</span>
+    </div>
+    <button onclick="removeCustomMachineRow(this)" style="background:none;border:none;font-size:18px;color:var(--text3);cursor:pointer;padding:0;line-height:1;display:flex;align-items:center;justify-content:center">×</button>`;
+  list.appendChild(row);
+  row.querySelector('input').focus();
+}
+function removeCustomMachineRow(btn){
+  btn.closest('.machine-edit-row').remove();
+}
+function resetMachinesToTradeDefaults(){
+  const s=S(),prof=currentTradeProfile();
+  s.customMachines=null;
+  s.machineRates={};
+  DB.set('settings',s);
+  renderMachineRatesCard();
+  applyTradeVisibility();
+  toast('Reset to '+prof.label+' defaults ✓');
+}
+function readCustomMachinesFromCard(){
+  const rows=document.querySelectorAll('#machine-rows-list .machine-edit-row');
+  const result=[];
+  rows.forEach(row=>{
+    const inputs=row.querySelectorAll('input');
+    const name=(inputs[0].value||'').trim();
+    const rate=parseFloat(inputs[1].value)||0;
+    if(name) result.push({name,rate});
   });
-  fields+='</div>';
-  card.innerHTML=`<div class="card-title">${prof.equipLabel} rates ($/hr)</div>${fields}`;
+  return result;
 }
 
 function updateExtraLabels(){
