@@ -847,7 +847,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v20';
+const APP_VERSION = 'v21';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1817,7 +1817,7 @@ function renderLog(){
 // --- Invoice ---
 function renderInvoice(){
   const s=S(),ui=days().filter(d=>!d.invoiced).sort((a,b)=>a.date.localeCompare(b.date));
-  const ap=parseFloat(s.incpct)||7.8,pi=(parseFloat(s.rate)*ap/100)/26,nr=Math.round((parseFloat(s.rate)+pi)*20)/20;
+  const ap=parseFloat(s.incpct??7.8),pi=(parseFloat(s.rate)*ap/100)/26,nr=Math.round((parseFloat(s.rate)+pi)*20)/20;
   document.getElementById('inv-num-display').textContent=String(s.invnum).padStart(4,'0');
   document.getElementById('inv-rate-display').textContent='$'+parseFloat(s.rate).toFixed(2)+'/hr';
   document.getElementById('inv-rate-increase').textContent='After generating: rate becomes $'+nr.toFixed(2)+'/hr (+$'+pi.toFixed(2)+')';
@@ -2120,7 +2120,7 @@ function generateInvoice(){
   const it=ui.reduce((sum,d)=>{const{total}=dayTotals(d);return sum+total;},0);
   ad.forEach(d=>{if(!d.invoiced)d.invoiced=true;});DB.set('days',ad);
   const il=invoices();il.push({num:s.invnum,date:todayStr(),total:it,days:ui.length});DB.set('invoices',il);
-  const ap=parseFloat(s.incpct)||7.8,pi=(parseFloat(s.rate)*ap/100)/26,nr=Math.round((parseFloat(s.rate)+pi)*20)/20;
+  const ap=parseFloat(s.incpct??7.8),pi=(parseFloat(s.rate)*ap/100)/26,nr=Math.round((parseFloat(s.rate)+pi)*20)/20;
   // Save to IndexedDB
   const savedNum=String(s.invnum).padStart(4,'0');
   const savedFilename='Invoice #'+savedNum+' \u2014 '+(ic.company||'Client')+' \u2014 '+todayStr()+'.html';
@@ -2145,7 +2145,7 @@ function renderAnalytics(){
   const mh=Math.max(...wh,1);
   document.getElementById('hours-chart').innerHTML=weeks.map((w,i)=>{const h=wh[i],p=Math.max(4,Math.round(h/mh*100));return`<div class="bar-col"><div class="bar-val">${h>0?h.toFixed(1):''}</div><div class="bar ${i===7?'current':''}" style="height:${p}%"></div><div class="bar-label">${w.label}</div></div>`;}).join('');
   document.getElementById('ana-rate-now').textContent='$'+parseFloat(s.rate).toFixed(2);
-  const yr=parseFloat(s.rate)/(1+parseFloat(s.incpct||7.8)/100);
+  const yr=parseFloat(s.rate)/(1+parseFloat(s.incpct??7.8)/100);
   document.getElementById('ana-rate-year').textContent='$'+yr.toFixed(2);
   document.getElementById('ana-rate-change').textContent='+$'+(parseFloat(s.rate)-yr).toFixed(2)+' over 12 months ('+s.incpct+'% annual increase)';
   const il=document.getElementById('ana-invoice-list');
