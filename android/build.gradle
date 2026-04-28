@@ -22,6 +22,9 @@ allprojects {
         google()
         mavenCentral()
     }
+    // Redirect build output for all subprojects to the writable root build dir.
+    // Needed because capacitor-cordova-android-plugins dir has root ownership.
+    buildDir = new File(rootProject.buildDir, project.name)
 }
 
 task clean(type: Delete) {
