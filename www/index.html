@@ -1256,7 +1256,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v43';
+const APP_VERSION = 'v44';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1502,7 +1502,7 @@ async function forceAppUpdate() {
       <button onclick="quickLunch(45)" class="btn btn-secondary btn-sm">45 min</button>
       <button onclick="quickLunch(60)" class="btn btn-secondary btn-sm">60 min</button>
     </div>
-    <button class="btn btn-primary" onclick="saveLunchManually()">Set Lunch ✓</button>
+    <button class="btn btn-primary" onclick="saveLunchManually()" style="position:sticky;bottom:0;background:var(--surface);padding-bottom:max(4px,env(safe-area-inset-bottom))">Set Lunch ✓</button>
   </div>
 </div>
 
@@ -2593,6 +2593,9 @@ window.saveLunchManually = function(){
   ad.lunchMins=mins;
   DB.set('activeDay',ad);
   updateLunchDisplay(ad);
+  // Keep review screen in sync if it's already showing (auto-stop + manual lunch edge case)
+  const revEl=document.getElementById('rev-lunch');
+  if(revEl)revEl.textContent=mins?mins+' min':'None';
   closeLunchModal();
   toast('Lunch set to '+mins+' min ✓');
 };
