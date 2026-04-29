@@ -1196,6 +1196,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       <div class="card-title">Clients &amp; Sites</div>
       <div id="clients-sites-list"></div>
       <button class="btn btn-secondary" style="margin-top:8px" onclick="addClient()">+ Add client</button>
+      <button class="btn btn-secondary" style="margin-top:8px" onclick="copyInquiryLink()">📤 Send inquiry link</button>
     </div>
     <!-- Plant & Equipment library -->
     <div class="card card-collapsible" id="machines-lib-card" style="display:none">
@@ -4624,7 +4625,6 @@ function renderTeamCodeSection(code){
       <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Share this with your employees — they enter it in their app to start syncing hours.</div>
       <div style="display:flex;gap:8px;justify-content:center">
         <button class="btn btn-primary btn-sm" onclick="copyBusinessCode('${code}')">📋 Copy code</button>
-        <button class="btn btn-secondary btn-sm" onclick="copyQuoteLink('${code}')">📤 Quote link</button>
         <button class="btn btn-secondary btn-sm" onclick="generateAndShowCode()">↺ New code</button>
       </div>
     </div>`;
@@ -4641,11 +4641,17 @@ function copyBusinessCode(code){
 
 function copyQuoteLink(code){
   const url=`https://banksiasprings.github.io/tradie-invoices/quote.html?code=${code}`;
-  navigator.clipboard.writeText(url).then(()=>toast('Quote link copied ✓')).catch(()=>{
+  navigator.clipboard.writeText(url).then(()=>toast('Inquiry link copied ✓')).catch(()=>{
     const el=document.createElement('textarea');
     el.value=url;document.body.appendChild(el);el.select();document.execCommand('copy');el.remove();
-    toast('Quote link copied ✓');
+    toast('Inquiry link copied ✓');
   });
+}
+
+function copyInquiryLink(){
+  const code=S().businessCode;
+  if(!code){toast('Generate a Business Code first in the Team section');return;}
+  copyQuoteLink(code);
 }
 
 // BOSS: load and render team members in Settings

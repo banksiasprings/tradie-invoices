@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Client Details</title>
+<title>Request a Quote</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
@@ -136,8 +136,8 @@ body{background:var(--cream);color:var(--text);min-height:100vh;overflow-x:hidde
     <circle cx="40" cy="40" r="40" fill="#D4EDE0"/>
     <path d="M24 40l12 12 20-20" stroke="#2D7D54" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
-  <div class="success-title">You're all set!</div>
-  <div class="success-body"><span id="success-biz-name">Your tradie</span> will have your details ready before the job starts.</div>
+  <div class="success-title">Inquiry received!</div>
+  <div class="success-body"><span id="success-biz-name">Your tradie</span> will review your request and be in touch to discuss the job.</div>
 </div>
 
 <!-- FORM -->
@@ -145,7 +145,7 @@ body{background:var(--cream);color:var(--text);min-height:100vh;overflow-x:hidde
   <div class="q-header">
     <div class="q-logo-circle" id="biz-initials">?</div>
     <div class="q-biz-name" id="biz-name">Loading…</div>
-    <div class="q-subtitle">Fill in your details and we'll be ready when we arrive.</div>
+    <div class="q-subtitle">Request a quote — fill in your details and tell us about the job and we'll be in touch.</div>
   </div>
 
   <div class="q-body">
@@ -155,9 +155,8 @@ body{background:var(--cream);color:var(--text);min-height:100vh;overflow-x:hidde
       <div class="q-section-title">Your details</div>
 
       <div class="q-field" id="field-company">
-        <label>Company / trading name <span class="required-star">*</span></label>
+        <label>Company / trading name <span style="font-size:11px;font-weight:400;color:var(--text3)">(optional)</span></label>
         <input type="text" id="f-company" placeholder="e.g. Smith Building Pty Ltd" autocomplete="organization">
-        <div class="field-error">Please enter your company or trading name</div>
       </div>
 
       <div class="q-field" id="field-contact">
@@ -220,22 +219,28 @@ body{background:var(--cream);color:var(--text);min-height:100vh;overflow-x:hidde
       <div class="loc-skipped-msg" id="loc-skipped-msg" style="display:none">Location skipped — your tradie can set this up when they arrive.</div>
     </div>
 
-    <!-- Section 3 — Quoted details -->
+    <!-- Section 3 — About the job -->
     <div class="q-section">
-      <div class="q-section-title">Quoted details</div>
+      <div class="q-section-title">About the job</div>
 
-      <div class="q-field">
-        <label>Quoted rate $/hr <span style="font-size:11px;font-weight:400;color:var(--text3)">(optional)</span></label>
-        <input type="number" id="f-rate" placeholder="e.g. 85" inputmode="decimal" min="0" step="1">
+      <div class="q-field" id="field-notes-wrap">
+        <label>What are you looking to get done? <span class="required-star">*</span></label>
+        <textarea id="f-notes" placeholder="Describe the work you need — earthmoving, excavation, clearing, levelling, etc. The more detail the better." style="height:120px"></textarea>
+        <div class="field-error">Please describe the work you need done</div>
       </div>
 
       <div class="q-field">
-        <label>Notes / scope of work <span style="font-size:11px;font-weight:400;color:var(--text3)">(optional)</span></label>
-        <textarea id="f-notes" placeholder="Describe the job, access info, any special requirements…"></textarea>
+        <label>Access & site information <span style="font-size:11px;font-weight:400;color:var(--text3)">(optional)</span></label>
+        <textarea id="f-access" placeholder="e.g. Gate code, rough terrain, overhead power lines, nearby hazards, best time to access…" style="height:90px"></textarea>
+      </div>
+
+      <div class="q-field">
+        <label>When do you need it done? <span style="font-size:11px;font-weight:400;color:var(--text3)">(optional)</span></label>
+        <input type="text" id="f-timing" placeholder="e.g. ASAP, within 2 weeks, by end of April…">
       </div>
     </div>
 
-    <button class="btn-submit" id="btn-submit" type="button">Send my details →</button>
+    <button class="btn-submit" id="btn-submit" type="button">Send inquiry →</button>
 
     <div class="q-footer" id="q-footer">Your details will only be shared with <span id="footer-biz-name">your tradie</span>.</div>
   </div>
@@ -297,7 +302,7 @@ function initials(name){
 
 function applyBrand(doc){
   _bizName = doc.businessName || 'Your tradie';
-  document.title = _bizName + ' — Client Details';
+  document.title = _bizName + ' — Request a Quote';
 
   const el=document.getElementById('biz-name');
   if(el) el.textContent=_bizName;
@@ -481,7 +486,8 @@ function skipLocation(){
 
 // ── Validate & Submit ──
 function validateField(fieldId, inputId){
-  const val = document.getElementById(inputId).value.trim();
+  const input = document.getElementById(inputId);
+  const val = input ? input.value.trim() : '';
   const field = document.getElementById(fieldId);
   if(!val){
     field.classList.add('invalid');
@@ -493,11 +499,11 @@ function validateField(fieldId, inputId){
 
 async function submitForm(){
   // Validate required fields
-  const ok1 = validateField('field-company','f-company');
-  const ok2 = validateField('field-contact','f-contact');
-  const ok3 = validateField('field-phone','f-phone');
+  const ok1 = validateField('field-contact','f-contact');
+  const ok2 = validateField('field-phone','f-phone');
+  const ok3 = validateField('field-notes-wrap','f-notes');
   if(!ok1||!ok2||!ok3){
-    document.querySelector('.q-field.invalid input').focus();
+    (document.querySelector('.q-field.invalid textarea')||document.querySelector('.q-field.invalid input')).focus();
     return;
   }
 
@@ -506,17 +512,18 @@ async function submitForm(){
   btn.textContent = 'Sending…';
 
   const payload = {
-    company:    document.getElementById('f-company').value.trim(),
+    company:    document.getElementById('f-company').value.trim()||null,
     contact:    document.getElementById('f-contact').value.trim(),
     phone:      document.getElementById('f-phone').value.trim(),
     email:      document.getElementById('f-email').value.trim(),
-    abn:        document.getElementById('f-abn').value.trim(),
+    abn:        document.getElementById('f-abn').value.trim()||null,
     lat:        _lat,
     lng:        _lng,
     radius:     (_lat||_lng) ? _radius : null,
     siteAddress:_addrText||document.getElementById('f-address').value.trim(),
-    rate:       document.getElementById('f-rate').value.trim()||null,
     notes:      document.getElementById('f-notes').value.trim(),
+    accessInfo: document.getElementById('f-access').value.trim()||null,
+    timing:     document.getElementById('f-timing').value.trim()||null,
     code:       _code,
     submittedAt:serverTimestamp(),
     expiresAt:  Date.now() + 30*24*60*60*1000
