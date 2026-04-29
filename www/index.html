@@ -1287,7 +1287,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v35';
+const APP_VERSION = 'v36';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1517,6 +1517,15 @@ async function forceAppUpdate() {
     </div>
     <div class="field"><label id="cm-rate-label">Rate ($/hr)</label><input id="cm-rate" type="number" class="mcn-input" placeholder="0" min="0" step="1"></div>
     <button class="btn btn-primary" style="margin-top:4px" onclick="confirmCustomMachineModal()">Add Machine</button>
+  </div>
+</div>
+
+<!-- MACHINE PICKER MODAL -->
+<div class="modal-bg" id="machine-picker-modal">
+  <div class="modal" style="max-width:340px">
+    <div class="modal-title">Add Machine <button class="modal-close" onclick="closeMachinePicker()">✕</button></div>
+    <div id="machine-picker-list" style="margin-bottom:10px"></div>
+    <button onclick="closeMachinePicker();addCustomMachineUI(_machinePickerPrefix)" style="background:none;border:1.5px dashed var(--border);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;font-weight:600;color:var(--text2);cursor:pointer;width:100%;text-align:left">+ Add one-off (not in library)</button>
   </div>
 </div>
 
@@ -2008,16 +2017,7 @@ const _machineLines={};
 
 function renderMachineUI(containerId,machines,prefix){
   const el=document.getElementById(containerId);if(!el)return;
-  const lib=getMachinesLib();
-  // Pills for quick-add from library
-  const pills=lib.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${lib.map(m=>{
-    const ne=m.name.replace(/'/g,"\\'");
-    const ht=m.hireType||'wet';
-    const rStr=ht==='day'?'$'+m.dayRate+'/day':'$'+m.rate+'/hr';
-    return`<button onclick="addMachineFromLib('${prefix}','${ne}')" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:999px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;color:var(--text)">${m.name} <span style="color:var(--amber)">${rStr}</span></button>`;
-  }).join('')}<button onclick="addCustomMachineUI('${prefix}')" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer">+ Custom</button></div>`
-  :`<div style="font-size:13px;color:var(--text2);margin-bottom:8px">No machines in library — add them in Settings first.</div><button onclick="addCustomMachineUI('${prefix}')" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px">+ Add one-off machine</button>`;
-  el.innerHTML=pills+`<div id="mch-lines-${prefix}"></div>`;
+  el.innerHTML=`<button onclick="openMachinePicker('${prefix}')" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 16px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:8px">+ Add Machine</button><div id="mch-lines-${prefix}"></div>`;
   _machineLines[prefix]=machines?JSON.parse(JSON.stringify(machines)):[];
   _renderMachineLines(prefix);
 }
@@ -2090,6 +2090,34 @@ function addMachineFromLib(prefix,name){
   _machineLines[prefix].push({...m,startHrs,finishHrs:null});
   _renderMachineLines(prefix);
   if(startHrs!=null)toast(name+': start hrs pre-filled ('+startHrs+') from last use — please confirm');
+}
+
+let _machinePickerPrefix=null;
+function openMachinePicker(prefix){
+  _machinePickerPrefix=prefix;
+  const lib=getMachinesLib();
+  if(!lib.length){addCustomMachineUI(prefix);return;}
+  const el=document.getElementById('machine-picker-list');
+  if(!el)return;
+  el.innerHTML=lib.map(m=>{
+    const ht=m.hireType||'wet';
+    const rStr=ht==='day'?'$'+(m.dayRate||0)+'/day':'$'+(m.rate||0)+'/hr';
+    const badge=ht==='wet'?'WET':ht==='dry'?'DRY':'DAY';
+    const badgeSty=ht==='wet'?'color:#1E40AF;background:#DBEAFE':ht==='dry'?'color:#2D6B4A;background:#D4EDE0':'color:var(--amber);background:var(--amber-light)';
+    const ne=m.name.replace(/'/g,"\\'");
+    const alreadyAdded=(_machineLines[prefix]||[]).find(ml=>ml.name===m.name);
+    return`<div onclick="${alreadyAdded?'':'addMachineFromLib(\''+prefix+'\',\''+ne+'\');closeMachinePicker()'}" style="display:flex;justify-content:space-between;align-items:center;padding:11px 12px;border-radius:var(--radius-sm);border:1.5px solid var(--border);margin-bottom:7px;cursor:${alreadyAdded?'default':'pointer'};opacity:${alreadyAdded?0.5:1}${alreadyAdded?'':';background:var(--surface2)'}">
+      <div>
+        <div style="font-size:14px;font-weight:600">${m.name}${m.plantNum?' <span style="font-weight:400;color:var(--text2)">#'+m.plantNum+'</span>':''}</div>
+        <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;${badgeSty}">${badge}</span>
+      </div>
+      <div style="font-size:13px;font-weight:600;color:var(--text2)">${alreadyAdded?'Added':rStr}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('machine-picker-modal').classList.add('open');
+}
+function closeMachinePicker(){
+  const m=document.getElementById('machine-picker-modal');if(m)m.classList.remove('open');
 }
 
 let _customMachinePrefix=null;
@@ -3382,8 +3410,9 @@ function addToMachinesLib(){
   const hireType=document.getElementById('s-mach-hire').value;
   const rateVal=parseFloat(document.getElementById('s-mach-rate').value)||0;
   if(!name){toast('Enter a machine name');return;}
-  const s=S();
+  const s=JSON.parse(JSON.stringify(S())); // deep copy — never mutate DEFAULTS
   if(!s.machinesLib) s.machinesLib=[];
+  if(s.machinesLib.find(m=>m.name===name)){toast(name+' already in library');return;}
   s.machinesLib.push({name,plantNum,hireType,rate:hireType!=='day'?rateVal:0,dayRate:hireType==='day'?rateVal:0});
   DB.set('settings',s);
   renderMachinesLibList();
@@ -3397,7 +3426,7 @@ function addToMachinesLib(){
 }
 
 function deleteMachineFromLib(i){
-  const s=S();
+  const s=JSON.parse(JSON.stringify(S())); // deep copy
   const lib=s.machinesLib||getMachinesLib().slice();
   lib.splice(i,1);
   s.machinesLib=lib;
@@ -3412,7 +3441,7 @@ function removeCustomMachineRow(btn){
   btn.closest('.machine-edit-row').remove();
 }
 function resetMachinesToTradeDefaults(){
-  const s=S(),prof=currentTradeProfile();
+  const s=JSON.parse(JSON.stringify(S())),prof=currentTradeProfile();
   s.machinesLib=[];
   s.customMachines=null;
   s.machineRates={};
