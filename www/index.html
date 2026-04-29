@@ -2736,7 +2736,7 @@ function saveDay(){
   const ad=activeDay();if(!ad)return;
   // Filter by unique id so a second entry on the same day doesn't wipe the first
   const dl=days(),filtered=ad.id?dl.filter(d=>d.id!==ad.id):dl;
-  const _newDay={...ad,invoiced:false});filtered.push(_newDay);
+  const _newDay={...ad,invoiced:false};filtered.push(_newDay);
   ArchivedSync.ensureEntry(_newDay.id||_newDay.date).catch(()=>{});
   DB.set('days',filtered);DB.set('activeDay',null);clearInterval(timerInterval);
   if(window.CloudSync) window.CloudSync.pushAll().then(()=>toast('☁ Synced to cloud ✓')).catch(()=>{});
