@@ -1181,7 +1181,7 @@ window.firebaseSignOut = async function() {
     <div class="card card-collapsible" id="machines-lib-card" style="display:none">
       <div class="card-title">🚜 Plant &amp; Equipment</div>
       <div class="card-body">
-        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Edit your machines below — name, plant number, hire type and rate. Changes save immediately. Tap <strong>+ Add Machine</strong> when logging a day to pick from this list.</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Your machine library. Tap <strong>+ Add Machine</strong> when logging a day to pick from this list.</div>
         <div id="machines-lib-list"></div>
         <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px">
           <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px">Add machine</div>
@@ -1201,7 +1201,6 @@ window.firebaseSignOut = async function() {
           </div>
           <button onclick="addToMachinesLib()" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:9px 16px;font-size:14px;font-weight:600;cursor:pointer">+ Add to library</button>
         </div>
-        <button onclick="resetMachinesToTradeDefaults()" style="margin-top:12px;background:none;border:none;color:var(--amber);font-size:12px;font-weight:600;cursor:pointer;padding:0">↺ Reset to trade defaults</button>
       </div>
     </div>
     <!-- Materials catalogue -->
@@ -1215,7 +1214,6 @@ window.firebaseSignOut = async function() {
           <input type="number" id="s-mat-price" placeholder="$ each" min="0" step="0.01" style="padding:9px 11px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:14px;width:95px">
           <button onclick="addToMaterialsLib()" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:9px 14px;font-size:14px;font-weight:600;cursor:pointer">+ Add</button>
         </div>
-        <button onclick="seedMaterialsLib()" style="margin-top:10px;background:none;border:none;color:var(--amber);font-size:12px;font-weight:600;cursor:pointer;padding:0">↺ Reset to trade defaults</button>
       </div>
     </div>
     <div class="card card-collapsible">
@@ -1258,7 +1256,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v38';
+const APP_VERSION = 'v39';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -3362,50 +3360,26 @@ function renderMachinesLibList(){
   ensureMachinesLibSeeded();
   const lib=getMachinesLib();
   if(!lib.length){
-    el.innerHTML='<div style="font-size:13px;color:var(--text2);padding:8px 0 4px">No machines yet — add your first one below.</div>';return;
+    el.innerHTML='<div style="font-size:13px;color:var(--text2);padding:4px 0">No machines yet — add your first one below.</div>';
+    return;
   }
+  const htLabel={wet:'Wet hire',dry:'Dry hire',day:'Day rate'};
+  const htColor={wet:'color:#1E40AF;background:#DBEAFE',dry:'color:#2D6B4A;background:#D4EDE0',day:'color:var(--amber);background:var(--amber-light)'};
   el.innerHTML=lib.map((m,i)=>{
     const ht=m.hireType||'wet';
-    const rateVal=ht==='day'?(m.dayRate||0):(m.rate||0);
-    const rateLabel=ht==='day'?'Day rate ($)':'Rate ($/hr)';
-    return`<div style="background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:8px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-        <input value="${escHtml(m.name)}" placeholder="Machine name" class="mcn-input" style="font-size:14px;font-weight:600;flex:1" onchange="updateMachineInLib(${i},'name',this.value)" onblur="updateMachineInLib(${i},'name',this.value)">
-        <button onclick="deleteMachineFromLib(${i})" style="background:var(--red-light);color:var(--red);border:none;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0">✕</button>
+    const rateStr=ht==='day'?`$${(m.dayRate||0).toFixed(2)}/day`:`$${(m.rate||0).toFixed(2)}/hr`;
+    const plantStr=m.plantNum?` <span style="font-weight:400;color:var(--text2)">#${escHtml(m.plantNum)}</span>`:'';
+    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-size:14px;font-weight:600">${escHtml(m.name)}${plantStr}</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:3px">
+          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;${htColor[ht]}">${htLabel[ht]}</span>
+          <span style="font-size:12px;color:var(--text2)">${rateStr}</span>
+        </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">
-        <div><div style="font-size:10px;font-weight:700;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.4px">Plant #</div>
-          <input value="${escHtml(m.plantNum||'')}" placeholder="e.g. EX001" class="mcn-input" style="font-size:13px;width:100%" onchange="updateMachineInLib(${i},'plantNum',this.value)" onblur="updateMachineInLib(${i},'plantNum',this.value)"></div>
-        <div><div style="font-size:10px;font-weight:700;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.4px">Hire type</div>
-          <select class="mcn-input" style="font-size:13px;width:100%" onchange="updateMachineInLib(${i},'hireType',this.value)">
-            <option value="wet"${ht==='wet'?' selected':''}>Wet hire</option>
-            <option value="dry"${ht==='dry'?' selected':''}>Dry hire</option>
-            <option value="day"${ht==='day'?' selected':''}>Day rate</option>
-          </select></div>
-      </div>
-      <div><div id="mlib-ratelabel-${i}" style="font-size:10px;font-weight:700;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.4px">${rateLabel}</div>
-        <input type="number" value="${rateVal}" min="0" step="1" class="mcn-input" style="font-size:14px;width:100%" onchange="updateMachineInLib(${i},'rate',this.value)" onblur="updateMachineInLib(${i},'rate',this.value)"></div>
+      <button onclick="deleteMachineFromLib(${i})" style="background:var(--red-light);color:var(--red);border:none;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer">Remove</button>
     </div>`;
   }).join('');
-}
-
-function updateMachineInLib(i,field,val){
-  const s=JSON.parse(JSON.stringify(S()));
-  if(!s.machinesLib||i>=s.machinesLib.length)return;
-  const m=s.machinesLib[i];
-  if(field==='name'){if(!val.trim())return;m.name=val.trim();}
-  else if(field==='plantNum'){m.plantNum=val.trim();}
-  else if(field==='hireType'){
-    m.hireType=val;
-    const lbl=document.getElementById('mlib-ratelabel-'+i);
-    if(lbl)lbl.textContent=val==='day'?'Day rate ($)':'Rate ($/hr)';
-  }
-  else if(field==='rate'){
-    const v=parseFloat(val)||0;
-    if(m.hireType==='day'){m.dayRate=v;m.rate=m.rate||0;}else{m.rate=v;m.dayRate=m.dayRate||0;}
-  }
-  DB.set('settings',s);
-  if(window.CloudSync)window.CloudSync.pushAll().catch(()=>{});
 }
 
 function addToMachinesLib(){
