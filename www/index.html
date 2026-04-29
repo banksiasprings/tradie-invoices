@@ -1717,6 +1717,22 @@ async function forceAppUpdate() {
   </div>
 </div>
 
+<!-- INVOICE VIEWER MODAL -->
+<div class="modal-bg" id="invoice-viewer-modal" style="align-items:stretch">
+  <div style="background:var(--surface);width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden">
+    <div style="padding:14px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);flex-shrink:0;padding-top:calc(14px + env(safe-area-inset-top))">
+      <div style="flex:1;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="inv-viewer-title"></div>
+      <button class="modal-close" onclick="closeInvoiceViewer()" style="flex-shrink:0">✕</button>
+    </div>
+    <iframe id="inv-viewer-frame" style="flex:1;border:none;width:100%;min-height:0" srcdoc=""></iframe>
+    <div style="padding:12px 16px;padding-bottom:calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0">
+      <button class="btn btn-secondary" style="flex:1;font-size:13px" onclick="exportFromViewer()">⬇ Export PDF</button>
+      <button class="btn btn-secondary" style="flex:1;font-size:13px" id="inv-restore-btn" onclick="restoreInvoice()">↩ Restore &amp; Edit</button>
+      <button class="btn btn-danger" style="flex:1;font-size:13px" onclick="deleteFromViewer()">🗑 Delete</button>
+    </div>
+  </div>
+</div>
+
 <!-- CLIENT MODAL -->
 <div class="modal-bg" id="client-modal">
   <div class="modal">
@@ -3299,7 +3315,8 @@ function generateInvoice(){
   // Save to IndexedDB
   const savedNum=String(invNumOverride).padStart(4,'0');
   const savedFilename='Invoice #'+savedNum+' \u2014 '+(ic.company||'Client')+' \u2014 '+todayStr()+'.html';
-  InvoiceDB.save({filename:savedFilename,date:todayStr(),clientName:ic.company||'',html:html})
+  const rawData={days:ui,client:ic,invoiceNum:invNumOverride,rate:s.rate};
+  InvoiceDB.save({filename:savedFilename,date:todayStr(),clientName:ic.company||'',html:html,rawData:rawData})
     .then(()=>setTimeout(()=>toast('Saved to Saved Invoices \u2713'),800))
     .catch(()=>{});
   s.invnum=invNumOverride+1;s.rate=nr;DB.set('settings',s);
@@ -4832,13 +4849,14 @@ function renderSavedInvoices(location){
       return;
     }
     el.innerHTML=records.map(r=>`
-      <div style="margin-bottom:10px">
-        <div style="font-size:14px;font-weight:700;margin-bottom:3px">${r.filename}</div>
-        <div style="font-size:12px;color:var(--text2);margin-bottom:12px">${fmtDate(r.date)}${r.clientName?' · '+r.clientName:''}</div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-secondary btn-sm" onclick="viewSavedInvoice(${r.id})">👁 View</button>
-          <button class="btn btn-secondary btn-sm" onclick="exportSavedInvoice(${r.id},this)">⬇ Export</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteSavedInvoice(${r.id})">🗑 Delete</button>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="flex:1;min-width:0;cursor:pointer" onclick="viewSavedInvoice(${r.id})">
+          <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.filename}</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px">${fmtDate(r.date)}${r.clientName?' · '+r.clientName:''}${r.rawData?' · <span style="color:var(--amber)">✎ restorable</span>':''}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;margin-left:10px">
+          <button class="btn btn-secondary btn-sm" onclick="viewSavedInvoice(${r.id})">Open</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteSavedInvoice(${r.id})">✕</button>
         </div>
       </div>`).join('');
   }).catch(()=>{
@@ -4846,12 +4864,55 @@ function renderSavedInvoices(location){
   });
 }
 
+let _viewerCurrentId=null;
+
 function viewSavedInvoice(id){
   InvoiceDB.list().then(records=>{
     const r=records.find(x=>x.id===id);if(!r)return;
-    const blob=new Blob([r.html],{type:'text/html'});
-    const url=URL.createObjectURL(blob);
-    window.open(url,'_blank');
+    _viewerCurrentId=id;
+    document.getElementById('inv-viewer-title').textContent=r.filename;
+    document.getElementById('inv-viewer-frame').srcdoc=r.html;
+    const restoreBtn=document.getElementById('inv-restore-btn');
+    if(restoreBtn) restoreBtn.style.display=r.rawData?'':'none';
+    document.getElementById('invoice-viewer-modal').classList.add('open');
+  });
+}
+
+function closeInvoiceViewer(){
+  document.getElementById('invoice-viewer-modal').classList.remove('open');
+  document.getElementById('inv-viewer-frame').srcdoc='';
+  _viewerCurrentId=null;
+}
+
+function deleteFromViewer(){
+  if(!_viewerCurrentId) return;
+  const id=_viewerCurrentId;
+  if(!confirm('Delete this invoice? This cannot be undone.')) return;
+  closeInvoiceViewer();
+  deleteSavedInvoice(id);
+}
+
+function exportFromViewer(){
+  if(!_viewerCurrentId) return;
+  exportSavedInvoice(_viewerCurrentId, null);
+}
+
+function restoreInvoice(){
+  if(!_viewerCurrentId) return;
+  InvoiceDB.list().then(records=>{
+    const r=records.find(x=>x.id===_viewerCurrentId);
+    if(!r||!r.rawData) return;
+    const rd=r.rawData;
+    // Un-mark those days as invoiced so they reappear in invoice tab
+    const allDays=days();
+    const restoreIds=new Set((rd.days||[]).map(d=>d.id||d.date));
+    allDays.forEach(d=>{ if(restoreIds.has(d.id||d.date)) d.invoiced=false; });
+    DB.set('days',allDays);
+    closeInvoiceViewer();
+    // Switch to invoice tab and re-render
+    const invoiceBtn=document.querySelector('.nav-btn[onclick*="invoice"]');
+    showScreen('invoice', invoiceBtn);
+    toast('Days restored — review and regenerate your invoice');
   });
 }
 
