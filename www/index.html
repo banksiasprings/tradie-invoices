@@ -293,7 +293,9 @@ const ArchivedSync = {
   async restoreArchivedFlags() {
     if (!CloudSync.uid) return;
     try {
-      const snap = await getDocs(this._col(CloudSync.uid));
+      // 8-second timeout so a slow/offline Firestore never hangs the caller.
+      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000));
+      const snap = await Promise.race([getDocs(this._col(CloudSync.uid)), timeout]);
       const raw = localStorage.getItem('mcn_days');
       const dl = raw ? JSON.parse(raw) : [];
 
@@ -570,7 +572,10 @@ onAuthStateChanged(auth, async (user) => {
       _sessionInit = true;
       await registerUserInAdmin(user);
       await CloudSync.restore();
-      await ArchivedSync.restoreArchivedFlags();
+      // Run ArchivedSync in the background — don't block startup on a Firestore
+      // round-trip. The blob restore above already gives us the correct invoiced
+      // flags; this is a promotion-only safety net that can settle after the UI loads.
+      ArchivedSync.restoreArchivedFlags().catch(e => console.warn('ArchivedSync:', e));
       if (loadingScreen) loadingScreen.style.display = 'none';
       if (loginScreen)   loginScreen.style.display   = 'none';
       if (appWrapper)    appWrapper.style.display     = 'block';
