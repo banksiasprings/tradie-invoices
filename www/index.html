@@ -5111,6 +5111,9 @@ window.initApp = function() {
   populateClientDropdown();
   updateExtraLabels();
   initCheckinScreen();
+  // Init native geo AFTER the app is visible — delay so the permission dialog
+  // appears to the user as a deliberate prompt, not a startup-blocking freeze.
+  if (window.initNativeGeo) setTimeout(window.initNativeGeo, 1500);
 };
 </script>
 
@@ -5196,11 +5199,13 @@ window.initApp = function() {
     }
 
     if (!bgGranted) {
-      // Nudge the user — they need "Allow all the time" for geofence exits to fire in background.
-      nativeNotify(
-        'Background location needed',
-        'Open Settings → Invoice & PDF → Location and select “Allow all the time” for auto-timer to work when the app is closed.'
-      );
+      // Show an in-app toast instead of triggering a second system dialog (notification permission).
+      // Firing nativeNotify() here used to call LocalNotifications.requestPermissions() immediately
+      // after the location dialog — double-prompting at startup and freezing the WebView.
+      console.warn('[NativeGeo] Background location not granted — geofence exits won\'t fire when app is closed');
+      setTimeout(() => {
+        if (typeof toast === 'function') toast('Tip: set Location to “All the time” in Settings for auto-timer');
+      }, 2000);
     }
 
     // Step 2: Register geofences regardless of background permission state.
@@ -5324,8 +5329,10 @@ window.initApp = function() {
   }
 
   // ── Wire up ─────────────────────────────────────────────────────────────────
-  // Run on DOMContentLoaded (app start) and on resume (foreground after background)
-  document.addEventListener('DOMContentLoaded', initNativeGeo);
+  // initNativeGeo is called by initApp() after the UI is visible (with a 1.5s delay)
+  // rather than on DOMContentLoaded — this prevents the permission dialog from
+  // appearing while the loading screen is up and potentially locking the WebView.
+  window.initNativeGeo = initNativeGeo;
   document.addEventListener('resume', function() {
     // Reset double-fire guards so a new day's events can fire
     geoAutoStartTriggered = false;
