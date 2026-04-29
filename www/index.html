@@ -247,7 +247,7 @@ import { getAuth, onAuthStateChanged, signInWithEmailAndPassword,
          createUserWithEmailAndPassword, signOut }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-         doc, setDoc, getDoc, getDocs, deleteDoc, collection, serverTimestamp }
+         doc, setDoc, getDoc, getDocs, deleteDoc, updateDoc, collection, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -267,6 +267,56 @@ const firestoreDb = initializeFirestore(fbApp, {
 
 // Keys to sync (without the mcn_ prefix used by DB)
 const SYNC_KEYS = ['settings', 'clients', 'days', 'sites', 'activeDay', 'invoices', 'gst_on'];
+// == ArchivedSync: per-entry archived flags in Firestore worklog subcollection ==
+// Each entry has its own doc at users/{uid}/worklog/{entryId} with {archived:bool}.
+// This survives Android storage clears independently of the days blob.
+const ArchivedSync = {
+  _ref(uid, id) { return doc(firestoreDb, 'users', uid, 'worklog', id); },
+  _col(uid) { return collection(firestoreDb, 'users', uid, 'worklog'); },
+  // Write archived status for a single entry to its Firestore worklog doc
+  async setArchived(entryId, archived) {
+    if (!CloudSync.uid || !entryId) return;
+    try {
+      await setDoc(this._ref(CloudSync.uid, entryId),
+        { archived: !!archived, updatedAt: serverTimestamp() }, { merge: true });
+    } catch(e) { console.warn('ArchivedSync.setArchived failed:', e); }
+  },
+  // Create/update a worklog doc for a new entry (archived: false)
+  async ensureEntry(entryId) {
+    if (!CloudSync.uid || !entryId) return;
+    try {
+      await setDoc(this._ref(CloudSync.uid, entryId),
+        { archived: false, updatedAt: serverTimestamp() }, { merge: true });
+    } catch(e) { console.warn('ArchivedSync.ensureEntry failed:', e); }
+  },
+  // On sign-in: fetch all archived flags and merge into local days array
+  async restoreArchivedFlags() {
+    if (!CloudSync.uid) return;
+    try {
+      const snap = await getDocs(this._col(CloudSync.uid));
+      if (snap.empty) return;
+      const archivedMap = {};
+      snap.forEach(d => { archivedMap[d.id] = !!d.data().archived; });
+      const raw = localStorage.getItem('mcn_days');
+      const dl = raw ? JSON.parse(raw) : [];
+      let changed = false;
+      dl.forEach(d => {
+        const id = d.id || d.date;
+        if (id && id in archivedMap && d.invoiced !== archivedMap[id]) {
+          d.invoiced = archivedMap[id];
+          changed = true;
+        }
+      });
+      if (changed) {
+        localStorage.setItem('mcn_days', JSON.stringify(dl));
+        const mt = JSON.parse(localStorage.getItem('mcn_modTimes') || '{}');
+        mt['days'] = Date.now();
+        localStorage.setItem('mcn_modTimes', JSON.stringify(mt));
+      }
+    } catch(e) { console.warn('ArchivedSync.restoreArchivedFlags failed:', e); }
+  }
+};
+
 
 const CloudSync = {
   uid: null,
@@ -497,6 +547,7 @@ onAuthStateChanged(auth, async (user) => {
       _sessionInit = true;
       await registerUserInAdmin(user);
       await CloudSync.restore();
+      await ArchivedSync.restoreArchivedFlags();
       if (loadingScreen) loadingScreen.style.display = 'none';
       if (loginScreen)   loginScreen.style.display   = 'none';
       if (appWrapper)    appWrapper.style.display     = 'block';
@@ -553,6 +604,7 @@ window.deleteUserData = async function(uid, email) {
       await deleteDoc(doc(firestoreDb, 'users', uid, 'data', key));
     }
     // Remove from admin registry
+    try { const wlSnap = await getDocs(collection(firestoreDb, 'users', uid, 'worklog')); for (const wlDoc of wlSnap.docs) { await deleteDoc(wlDoc.ref); } } catch(_) {}
     await deleteDoc(doc(firestoreDb, 'admin', 'users', 'accounts', uid));
     window.loadAdminUsers();
     alert(`Data deleted for ${email}.`);
@@ -2656,7 +2708,8 @@ function saveDay(){
   const ad=activeDay();if(!ad)return;
   // Filter by unique id so a second entry on the same day doesn't wipe the first
   const dl=days(),filtered=ad.id?dl.filter(d=>d.id!==ad.id):dl;
-  filtered.push({...ad,invoiced:false});
+  const _newDay={...ad,invoiced:false});filtered.push(_newDay);
+  ArchivedSync.ensureEntry(_newDay.id||_newDay.date).catch(()=>{});
   DB.set('days',filtered);DB.set('activeDay',null);clearInterval(timerInterval);
   if(window.CloudSync) window.CloudSync.pushAll().then(()=>toast('☁ Synced to cloud ✓')).catch(()=>{});
   geoAutoStartTriggered=false;geoAutoStopTriggered=false;
@@ -2732,6 +2785,7 @@ window.unarchiveLogEntry = function(){
   const dl=days(),idx=dl.findIndex(x=>(x.id&&x.id===_logEditDate)||(!x.id&&x.date===_logEditDate));
   if(idx===-1){toast('Day not found');return;}
   dl[idx].invoiced=false;
+  ArchivedSync.setArchived(dl[idx].id||dl[idx].date,false).catch(()=>{});
   DB.set('days',dl);
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
   closeLogEditModal();
@@ -3323,7 +3377,7 @@ function generateInvoice(){
   const selectedIds=new Set(ui.map(d=>d.id||d.date));
   const ad=days();
   const it=ui.reduce((sum,d)=>{const{total}=dayTotals(d);return sum+total;},0);
-  ad.forEach(d=>{if(selectedIds.has(d.id||d.date))d.invoiced=true;});DB.set('days',ad);
+  ad.forEach(d=>{if(selectedIds.has(d.id||d.date)){d.invoiced=true;ArchivedSync.setArchived(d.id||d.date,true).catch(()=>{});}});DB.set('days',ad);
   const il=invoices();il.push({num:invNumOverride,date:todayStr(),total:it,days:ui.length});DB.set('invoices',il);
   const ap=parseFloat(s.incpct??7.8),pi=(parseFloat(s.rate)*ap/100)/26,nr=Math.round((parseFloat(s.rate)+pi)*20)/20;
   // Save to IndexedDB
@@ -4934,7 +4988,7 @@ function restoreInvoice(){
     // Un-mark those days as invoiced so they reappear in invoice tab
     const allDays=days();
     const restoreIds=new Set((rd.days||[]).map(d=>d.id||d.date));
-    allDays.forEach(d=>{ if(restoreIds.has(d.id||d.date)) d.invoiced=false; });
+    allDays.forEach(d=>{ if(restoreIds.has(d.id||d.date)){ d.invoiced=false; ArchivedSync.setArchived(d.id||d.date,false).catch(()=>{}); } });
     DB.set('days',allDays);
     closeInvoiceViewer();
     // Switch to invoice tab and re-render
@@ -5366,6 +5420,7 @@ function saveManualEntry(){
   };
   existing.push(entry);
   DB.set('days', existing);
+  ArchivedSync.ensureEntry(entry.id).catch(()=>{});
   toast('Manual entry saved! ✓');
   if(window.CloudSync) window.CloudSync.pushAll().then(()=>toast('☁ Synced to cloud ✓')).catch(()=>{});
   // Reset for next entry — keep site/date in case they're logging multiple days
