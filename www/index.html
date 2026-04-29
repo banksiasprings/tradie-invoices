@@ -1192,76 +1192,10 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       </div>
       <div id="team-member-list" style="margin-top:14px"></div>
     </div>
-    <div class="card" id="business-settings-card">
-      <div class="card-title">Business details</div>
-      <div class="field"><label>Name</label><input type="text" id="s-name"></div>
-      <div class="field"><label>ABN</label><input type="text" id="s-abn"></div>
-      <div class="field"><label>Address</label><input type="text" id="s-address"></div>
-      <div class="field-row">
-        <div class="field"><label>Phone</label><input type="tel" id="s-phone"></div>
-        <div class="field"><label>Email</label><input type="email" id="s-email"></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label>BSB</label><input type="text" id="s-bsb"></div>
-        <div class="field"><label>Account #</label><input type="text" id="s-account"></div>
-      </div>
-    </div>
-    <div class="card card-collapsible">
-      <div class="card-title">Invoice details</div>
-      <div class="field"><label>Service description</label><input type="text" id="s-service"></div>
-      <div class="field-row">
-        <div class="field"><label>Next invoice #</label><input type="number" id="s-invnum"></div>
-        <div class="field"><label>Annual increase (%)</label><input type="number" id="s-incpct" step="0.1"></div>
-      </div>
-    </div>
-    <div class="card card-collapsible" data-collapse-default="collapsed">
-      <div class="card-title">Rate increase benchmarks (AU)</div>
-      <div class="benchmark">
-        <div class="bench-item"><div class="bench-val">3.8%</div><div class="bench-label">CPI</div></div>
-        <div class="bench-item"><div class="bench-val">8.8%</div><div class="bench-label">House prices</div></div>
-        <div class="bench-item"><div class="bench-val">10.9%</div><div class="bench-label">Gold 20yr avg</div></div>
-      </div>
-      <div style="font-size:11px;color:var(--text2);margin-top:10px">Suggested: avg of above = ~7.8%/yr over 26 invoices</div>
-    </div>
     <div class="card">
       <div class="card-title">Clients &amp; Sites</div>
       <div id="clients-sites-list"></div>
       <button class="btn btn-secondary" style="margin-top:8px" onclick="addClient()">+ Add client</button>
-    </div>
-    <div class="card">
-      <div class="card-title">Standard Rate</div>
-      <div class="field">
-        <label>My rate ($/hr)</label><input type="number" id="s-rate" step="0.05">
-      </div>
-      <div style="font-size:11px;color:var(--text2);margin-bottom:14px">This rate appears on invoices and can be updated here.</div>
-      <div class="toggle-row" style="padding:10px 0;border-top:1px solid var(--border)">
-        <div>
-          <div style="font-size:14px;font-weight:600">Extra worker billing</div>
-          <div style="font-size:12px;color:var(--text2);margin-top:2px">Show extra labourer option on Today screen</div>
-        </div>
-        <label class="toggle"><input type="checkbox" id="s-show-extra-worker" onchange="saveExtraWorkerPref()"><span class="toggle-slider"></span></label>
-      </div>
-      <div id="s-extra-worker-rate" style="display:none;margin-top:10px">
-        <div class="field" style="margin:0"><label id="s-extra-label">Extra labourer rate ($/hr)</label><input type="number" id="s-sonrate" step="0.05"></div>
-      </div>
-    </div>
-    <div class="card card-collapsible">
-      <div class="card-title">Travel billing</div>
-      <div class="card-body">
-        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Bill for travel to and from the job site.</div>
-        <div class="trade-grid" style="margin-top:0;margin-bottom:14px">
-          <button class="trade-btn" id="tm-btn-none" onclick="setTravelModeBtn('none')"><span class="trade-btn-icon">🚫</span><span class="trade-btn-label">Disabled</span></button>
-          <button class="trade-btn" id="tm-btn-km" onclick="setTravelModeBtn('km')"><span class="trade-btn-icon">🗺️</span><span class="trade-btn-label">Per km</span></button>
-          <button class="trade-btn" id="tm-btn-time" onclick="setTravelModeBtn('time')"><span class="trade-btn-icon">⏱️</span><span class="trade-btn-label">Per hour</span></button>
-        </div>
-        <div id="travel-km-rate-field" style="display:none">
-          <div class="field"><label>Rate ($/km)</label><input type="number" id="s-travelKmRate" step="0.01" min="0" placeholder="0.88"></div>
-          <div style="font-size:11px;color:var(--text2);margin-top:-4px">ATO cents-per-km rate for 2025–26: $0.88/km</div>
-        </div>
-        <div id="travel-hr-rate-field" style="display:none">
-          <div class="field"><label>Travel rate ($/hr)</label><input type="number" id="s-travelHrRate" step="1" min="0"></div>
-        </div>
-      </div>
     </div>
     <!-- Plant & Equipment library -->
     <div class="card card-collapsible" id="machines-lib-card" style="display:none">
@@ -1302,7 +1236,73 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         </div>
       </div>
     </div>
-    <!-- Work sites (GPS) — now merged into Clients & Sites card above -->
+    <div class="card" id="business-settings-card">
+      <div class="card-title">Business details</div>
+      <div class="field"><label>Name</label><input type="text" id="s-name"></div>
+      <div class="field"><label>ABN</label><input type="text" id="s-abn"></div>
+      <div class="field"><label>Address</label><input type="text" id="s-address"></div>
+      <div class="field-row">
+        <div class="field"><label>Phone</label><input type="tel" id="s-phone"></div>
+        <div class="field"><label>Email</label><input type="email" id="s-email"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>BSB</label><input type="text" id="s-bsb"></div>
+        <div class="field"><label>Account #</label><input type="text" id="s-account"></div>
+      </div>
+    </div>
+    <div class="card card-collapsible">
+      <div class="card-title">Invoice details</div>
+      <div class="field"><label>Service description</label><input type="text" id="s-service"></div>
+      <div class="field-row">
+        <div class="field"><label>Next invoice #</label><input type="number" id="s-invnum"></div>
+        <div class="field"><label>Annual increase (%)</label><input type="number" id="s-incpct" step="0.1"></div>
+      </div>
+    </div>
+    <div class="card card-collapsible" data-collapse-default="collapsed">
+      <div class="card-title">Rate increase benchmarks (AU)</div>
+      <div class="benchmark">
+        <div class="bench-item"><div class="bench-val">3.8%</div><div class="bench-label">CPI</div></div>
+        <div class="bench-item"><div class="bench-val">8.8%</div><div class="bench-label">House prices</div></div>
+        <div class="bench-item"><div class="bench-val">10.9%</div><div class="bench-label">Gold 20yr avg</div></div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:10px">Suggested: avg of above = ~7.8%/yr over 26 invoices</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Standard Rate</div>
+      <div class="field">
+        <label>My rate ($/hr)</label><input type="number" id="s-rate" step="0.05">
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:14px">This rate appears on invoices and can be updated here.</div>
+      <div class="toggle-row" style="padding:10px 0;border-top:1px solid var(--border)">
+        <div>
+          <div style="font-size:14px;font-weight:600">Extra worker billing</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">Show extra labourer option on Today screen</div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="s-show-extra-worker" onchange="saveExtraWorkerPref()"><span class="toggle-slider"></span></label>
+      </div>
+      <div id="s-extra-worker-rate" style="display:none;margin-top:10px">
+        <div class="field" style="margin:0"><label id="s-extra-label">Extra labourer rate ($/hr)</label><input type="number" id="s-sonrate" step="0.05"></div>
+      </div>
+    </div>
+    <div class="card card-collapsible">
+      <div class="card-title">Travel billing</div>
+      <div class="card-body">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Bill for travel to and from the job site.</div>
+        <div class="trade-grid" style="margin-top:0;margin-bottom:14px">
+          <button class="trade-btn" id="tm-btn-none" onclick="setTravelModeBtn('none')"><span class="trade-btn-icon">🚫</span><span class="trade-btn-label">Disabled</span></button>
+          <button class="trade-btn" id="tm-btn-km" onclick="setTravelModeBtn('km')"><span class="trade-btn-icon">🗺️</span><span class="trade-btn-label">Per km</span></button>
+          <button class="trade-btn" id="tm-btn-time" onclick="setTravelModeBtn('time')"><span class="trade-btn-icon">⏱️</span><span class="trade-btn-label">Per hour</span></button>
+        </div>
+        <div id="travel-km-rate-field" style="display:none">
+          <div class="field"><label>Rate ($/km)</label><input type="number" id="s-travelKmRate" step="0.01" min="0" placeholder="0.88"></div>
+          <div style="font-size:11px;color:var(--text2);margin-top:-4px">ATO cents-per-km rate for 2025–26: $0.88/km</div>
+        </div>
+        <div id="travel-hr-rate-field" style="display:none">
+          <div class="field"><label>Travel rate ($/hr)</label><input type="number" id="s-travelHrRate" step="1" min="0"></div>
+        </div>
+      </div>
+    </div>
+    <!-- Work sites (GPS) and Plant/Materials now appear near top of settings -->
     <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
     <div style="height:12px"></div>
     <button class="btn btn-secondary" onclick="clearCacheAndRefresh()" style="background:var(--amber-light);color:var(--amber);border-color:var(--amber)">🔄 Clear cache &amp; refresh app</button>
