@@ -489,8 +489,9 @@ onAuthStateChanged(auth, async (user) => {
   if (user) {
     CloudSync.uid = user.uid;
     if (accountEl) accountEl.textContent = user.email;
-    if (adminTab) adminTab.style.display = user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase() ? 'flex' : 'none';
-    if (adminSection) adminSection.style.display = user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase() ? 'block' : 'none';
+    const isAdmin = user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    if (adminTab) adminTab.style.display = isAdmin ? 'flex' : 'none';
+    if (adminSection) adminSection.style.display = isAdmin ? 'block' : 'none';
     if (!_sessionInit) {
       // First sign-in this session — restore from cloud and init app
       _sessionInit = true;
