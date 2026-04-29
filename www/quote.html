@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Client Details</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --navy:#1E2D4A;
+  --navy-light:#2A3D5E;
+  --amber:#B8622A;
+  --amber-light:#FAE6D8;
+  --cream:#F9F6F1;
+  --surface:#FFFFFF;
+  --border:#E5E0D8;
+  --text:#1A2330;
+  --text2:#5C6977;
+  --text3:#9AAAB5;
+  --green:#2D7D54;
+  --green-light:#D4EDE0;
+  --red:#DC2626;
+  --radius:16px;
+  --radius-sm:12px;
+  --shadow:0 2px 8px rgba(0,0,0,.08),0 1px 3px rgba(0,0,0,.05);
+  --shadow-lg:0 4px 16px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.07);
+  font-family:'DM Sans',system-ui,-apple-system,Arial,sans-serif;
+}
+body{background:var(--cream);color:var(--text);min-height:100vh;overflow-x:hidden;font-family:'DM Sans',system-ui,-apple-system,Arial,sans-serif}
+
+/* ── Screens ── */
+.screen{display:none}
+.screen.active{display:block}
+
+/* ── Loading ── */
+#s-loading{position:fixed;inset:0;background:var(--navy);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100}
+#s-loading .load-icon{font-size:72px;margin-bottom:24px;filter:drop-shadow(0 4px 16px rgba(184,98,42,.5))}
+#s-loading .load-text{font-size:18px;font-weight:600;color:rgba(255,255,255,.7);letter-spacing:.3px}
+
+/* ── Error ── */
+#s-error{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;text-align:center;background:var(--cream)}
+.error-icon{font-size:56px;margin-bottom:20px}
+.error-title{font-size:22px;font-weight:700;color:var(--text);margin-bottom:10px}
+.error-body{font-size:15px;color:var(--text2);line-height:1.6;max-width:320px}
+
+/* ── Success ── */
+#s-success{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;text-align:center;background:var(--cream)}
+.success-check{width:80px;height:80px;margin:0 auto 24px}
+.success-title{font-size:26px;font-weight:700;color:var(--text);margin-bottom:10px}
+.success-body{font-size:16px;color:var(--text2);line-height:1.6;max-width:320px}
+
+/* ── Form header ── */
+.q-header{background:var(--navy);padding:28px 20px 24px;text-align:center}
+.q-logo-circle{width:64px;height:64px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:24px;font-weight:700;color:#fff;letter-spacing:1px;font-family:'DM Sans',system-ui,sans-serif}
+.q-biz-name{font-size:22px;font-weight:700;color:#fff;margin-bottom:6px;letter-spacing:-.3px}
+.q-subtitle{font-size:14px;color:rgba(255,255,255,.65);line-height:1.5;max-width:300px;margin:0 auto}
+
+/* ── Form body ── */
+.q-body{padding:20px 16px 40px}
+
+.q-section{background:var(--surface);border-radius:var(--radius);padding:20px;margin-bottom:14px;box-shadow:var(--shadow-lg)}
+.q-section-title{font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:16px;padding-left:10px;border-left:3px solid var(--amber)}
+
+.q-field{margin-bottom:14px}
+.q-field:last-child{margin-bottom:0}
+.q-field label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px;letter-spacing:.4px}
+.q-field input,.q-field textarea{width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:'DM Sans',system-ui,sans-serif;font-size:16px;background:var(--surface);color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s;-webkit-appearance:none}
+.q-field input:focus,.q-field textarea:focus{border-color:var(--amber);box-shadow:0 0 0 3px rgba(184,98,42,.12)}
+.q-field textarea{height:100px;resize:vertical;line-height:1.5}
+.q-field .required-star{color:var(--amber);margin-left:2px}
+
+/* ── GPS section ── */
+.loc-intro{font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:14px}
+.btn-detect{width:100%;padding:14px 16px;border:2px solid var(--navy);border-radius:var(--radius-sm);background:var(--navy);color:#fff;font-family:'DM Sans',system-ui,sans-serif;font-size:15px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:background .15s,transform .1s;-webkit-appearance:none}
+.btn-detect:active{transform:scale(.97);background:var(--navy-light)}
+.btn-detect:disabled{opacity:.6;cursor:default}
+.loc-status{font-size:13px;margin-top:10px;min-height:20px;display:flex;align-items:center;gap:6px}
+.loc-status.success{color:var(--green);font-weight:600}
+.loc-status.error{color:var(--red)}
+.loc-divider{display:flex;align-items:center;gap:10px;margin:14px 0;color:var(--text3);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.6px}
+.loc-divider::before,.loc-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* ── Radius chips ── */
+.radius-wrap{margin-top:16px}
+.radius-label{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px;display:block}
+.radius-chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{padding:8px 14px;border-radius:999px;border:2px solid var(--border);background:var(--surface);font-family:'DM Sans',system-ui,sans-serif;font-size:13px;font-weight:600;color:var(--text2);cursor:pointer;transition:all .15s;-webkit-appearance:none}
+.chip.active{background:var(--amber);border-color:var(--amber);color:#fff}
+
+/* ── Skip link ── */
+.loc-skip-link{display:block;text-align:center;font-size:13px;color:var(--text3);margin-top:14px;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;background:none;border:none;font-family:inherit;width:100%}
+.loc-skip-link:hover{color:var(--text2)}
+.loc-skipped-msg{font-size:13px;color:var(--text2);text-align:center;padding:10px 0;font-style:italic}
+
+/* ── Submit button ── */
+.btn-submit{width:100%;padding:17px 16px;border:none;border-radius:var(--radius-sm);background:var(--amber);color:#fff;font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:700;cursor:pointer;letter-spacing:.2px;transition:filter .15s,transform .1s,box-shadow .15s;box-shadow:0 4px 14px rgba(184,98,42,.35);-webkit-appearance:none;margin-top:6px}
+.btn-submit:active{filter:brightness(.92);transform:scale(.98);box-shadow:0 2px 6px rgba(184,98,42,.25)}
+.btn-submit:disabled{background:var(--border);color:var(--text3);cursor:default;box-shadow:none;filter:none;transform:none}
+
+/* ── Footer ── */
+.q-footer{text-align:center;font-size:12px;color:var(--text3);padding:4px 16px 32px;line-height:1.5}
+
+/* ── Spinner ── */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+
+/* ── Validation ── */
+.field-error{font-size:12px;color:var(--red);margin-top:4px;display:none}
+.q-field.invalid input,.q-field.invalid textarea{border-color:var(--red)}
+.q-field.invalid .field-error{display:block}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="s-loading">
+  <div class="load-icon">🚜</div>
+  <div class="load-text">Setting up…</div>
+</div>
+
+<!-- ERROR -->
+<div id="s-error" class="screen">
+  <div class="error-icon">⚠️</div>
+  <div class="error-title">Link not found</div>
+  <div class="error-body" id="error-msg">This link is invalid or has expired. Please ask your tradie to send you a new one.</div>
+</div>
+
+<!-- SUCCESS -->
+<div id="s-success" class="screen">
+  <svg class="success-check" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="40" cy="40" r="40" fill="#D4EDE0"/>
+    <path d="M24 40l12 12 20-20" stroke="#2D7D54" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <div class="success-title">You're all set!</div>
+  <div class="success-body"><span id="success-biz-name">Your tradie</span> will have your details ready before the job starts.</div>
+</div>
+
+<!-- FORM -->
+<div id="s-form" class="screen">
+  <div class="q-header">
+    <div class="q-logo-circle" id="biz-initials">?</div>
+    <div class="q-biz-name" id="biz-name">Loading…</div>
+    <div class="q-subtitle">Fill in your details and we'll be ready when we arrive.</div>
+  </div>
+
+  <div class="q-body">
+
+    <!-- Section 1 — Your details -->
+    <div class="q-section">
+      <div class="q-section-title">Your details</div>
+
+      <div class="q-field" id="field-company">
+        <label>Company / trading name <span class="required-star">*</span></label>
+        <input type="text" id="f-company" placeholder="e.g. Smith Building Pty Ltd" autocomplete="organization">
+        <div class="field-error">Please enter your company or trading name</div>
+      </div>
+
+      <div class="q-field" id="field-contact">
+        <label>Your name <span class="required-star">*</span></label>
+        <input type="text" id="f-contact" placeholder="e.g. John Smith" autocomplete="name">
+        <div class="field-error">Please enter your name</div>
+      </div>
+
+      <div class="q-field" id="field-phone">
+        <label>Phone number <span class="required-star">*</span></label>
+        <input type="tel" id="f-phone" placeholder="e.g. 0412 345 678" autocomplete="tel">
+        <div class="field-error">Please enter your phone number</div>
+      </div>
+
+      <div class="q-field">
+        <label>Email <span style="font-size:11px;font-weight:400;color:var(--text3)">(optional)</span></label>
+        <input type="email" id="f-email" placeholder="you@example.com" autocomplete="email">
+      </div>
+
+      <div class="q-field">
+        <label>ABN <span style="font-size:11px;font-weight:400;color:var(--text3)">(optional)</span></label>
+        <input type="text" id="f-abn" placeholder="e.g. 12 345 678 901" inputmode="numeric">
+      </div>
+    </div>
+
+    <!-- Section 2 — Work site -->
+    <div class="q-section">
+      <div class="q-section-title">Work site location</div>
+      <div id="loc-main-content">
+        <p class="loc-intro">If you're standing on site right now, tap Detect to pinpoint it exactly. Otherwise type the address, or skip this step.</p>
+
+        <button class="btn-detect" id="btn-detect" type="button">
+          <span id="detect-icon">📍</span>
+          <span id="detect-label">I'm on site – detect my location</span>
+        </button>
+        <div class="loc-status" id="loc-status"></div>
+
+        <div class="loc-divider">or</div>
+
+        <div class="q-field" style="margin-bottom:0">
+          <label>Street address or property name</label>
+          <input type="text" id="f-address" placeholder="e.g. 123 Farm Road, Goomalling WA" autocomplete="street-address">
+        </div>
+        <div class="loc-status" id="addr-status"></div>
+
+        <!-- Radius — shown after GPS or address succeeds -->
+        <div class="radius-wrap" id="radius-wrap" style="display:none">
+          <span class="radius-label">Auto-timer radius — how close do you need to be to trigger the timer?</span>
+          <div class="radius-chips">
+            <button class="chip" type="button" data-radius="100">100m</button>
+            <button class="chip active" type="button" data-radius="500">500m</button>
+            <button class="chip" type="button" data-radius="1000">1 km</button>
+            <button class="chip" type="button" data-radius="2000">2 km</button>
+            <button class="chip" type="button" data-radius="5000">5 km</button>
+          </div>
+        </div>
+
+        <button class="loc-skip-link" type="button" id="btn-skip-loc">Skip location — we'll set this up later</button>
+      </div>
+      <div class="loc-skipped-msg" id="loc-skipped-msg" style="display:none">Location skipped — your tradie can set this up when they arrive.</div>
+    </div>
+
+    <!-- Section 3 — Quoted details -->
+    <div class="q-section">
+      <div class="q-section-title">Quoted details</div>
+
+      <div class="q-field">
+        <label>Quoted rate $/hr <span style="font-size:11px;font-weight:400;color:var(--text3)">(optional)</span></label>
+        <input type="number" id="f-rate" placeholder="e.g. 85" inputmode="decimal" min="0" step="1">
+      </div>
+
+      <div class="q-field">
+        <label>Notes / scope of work <span style="font-size:11px;font-weight:400;color:var(--text3)">(optional)</span></label>
+        <textarea id="f-notes" placeholder="Describe the job, access info, any special requirements…"></textarea>
+      </div>
+    </div>
+
+    <button class="btn-submit" id="btn-submit" type="button">Send my details →</button>
+
+    <div class="q-footer" id="q-footer">Your details will only be shared with <span id="footer-biz-name">your tradie</span>.</div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getFirestore, doc, getDoc, collection, addDoc, serverTimestamp }
+  from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDuwEH9Vp__h1POczgW3Sw_Oc0tpVVfk1s",
+  authDomain: "mcnichol-invoices.firebaseapp.com",
+  projectId: "mcnichol-invoices",
+  storageBucket: "mcnichol-invoices.firebasestorage.app",
+  messagingSenderId: "869367788629",
+  appId: "1:869367788629:web:36492a88964408727ed0dc"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const auth  = getAuth(fbApp);
+const db    = getFirestore(fbApp);
+
+// ── State ──
+let _code       = null;
+let _ownerUID   = null;
+let _bizName    = 'Your tradie';
+let _lat        = null;
+let _lng        = null;
+let _radius     = 500;
+let _locSource  = null; // 'gps' | 'address' | null
+let _addrText   = '';
+
+// ── Helpers ──
+function showScreen(id){
+  document.querySelectorAll('.screen,[id^="s-"]').forEach(el=>{
+    if(el.classList.contains('screen')||el.id.startsWith('s-')){
+      el.style.display='none';
+      el.classList.remove('active');
+    }
+  });
+  const el=document.getElementById(id);
+  if(el){el.style.display='block';el.classList.add('active');}
+}
+
+function showError(msg){
+  if(msg) document.getElementById('error-msg').textContent=msg;
+  document.getElementById('s-loading').style.display='none';
+  showScreen('s-error');
+}
+
+function initials(name){
+  if(!name) return '?';
+  const words=name.trim().split(/\s+/);
+  if(words.length===1) return words[0].substring(0,2).toUpperCase();
+  return (words[0][0]+(words[words.length-1][0])).toUpperCase();
+}
+
+function applyBrand(doc){
+  _bizName = doc.businessName || 'Your tradie';
+  document.title = _bizName + ' — Client Details';
+
+  const el=document.getElementById('biz-name');
+  if(el) el.textContent=_bizName;
+
+  const ini=document.getElementById('biz-initials');
+  if(ini) ini.textContent=initials(_bizName);
+
+  const footerEl=document.getElementById('footer-biz-name');
+  if(footerEl) footerEl.textContent=_bizName;
+
+  const succEl=document.getElementById('success-biz-name');
+  if(succEl) succEl.textContent=_bizName;
+
+  if(doc.brandColor){
+    document.documentElement.style.setProperty('--navy', doc.brandColor);
+    document.documentElement.style.setProperty('--navy-light', doc.brandColor);
+  }
+  if(doc.brandAccent){
+    document.documentElement.style.setProperty('--amber', doc.brandAccent);
+    document.documentElement.style.setProperty('--amber-light', doc.brandAccent+'22');
+  }
+}
+
+// ── Init ──
+async function init(){
+  const params = new URLSearchParams(window.location.search);
+  _code = params.get('code');
+  if(!_code){
+    showError('No business code found in this link. Please ask your tradie to send you the correct link.');
+    return;
+  }
+
+  try {
+    // Anon auth
+    await signInAnonymously(auth);
+
+    // Fetch business code doc
+    const codeRef  = doc(db, 'businessCodes', _code);
+    const codeSnap = await getDoc(codeRef);
+    if(!codeSnap.exists()){
+      showError('This link is not recognised. Please ask your tradie to send you a new one.');
+      return;
+    }
+
+    const data = codeSnap.data();
+    _ownerUID = data.ownerUID;
+    applyBrand(data);
+
+    // Show form
+    document.getElementById('s-loading').style.display='none';
+    showScreen('s-form');
+    setupForm();
+
+  } catch(e){
+    console.error('Init error:', e);
+    showError('Something went wrong loading this page. Please try again in a moment.');
+  }
+}
+
+// ── Form setup ──
+function setupForm(){
+  // GPS detect
+  document.getElementById('btn-detect').addEventListener('click', detectGPS);
+
+  // Address blur geocode
+  document.getElementById('f-address').addEventListener('blur', geocodeAddress);
+
+  // Radius chips
+  document.querySelectorAll('.chip[data-radius]').forEach(chip=>{
+    chip.addEventListener('click', ()=>{
+      document.querySelectorAll('.chip[data-radius]').forEach(c=>c.classList.remove('active'));
+      chip.classList.add('active');
+      _radius = parseInt(chip.dataset.radius);
+    });
+  });
+
+  // Skip
+  document.getElementById('btn-skip-loc').addEventListener('click', skipLocation);
+
+  // Submit
+  document.getElementById('btn-submit').addEventListener('click', submitForm);
+}
+
+// ── GPS ──
+async function detectGPS(){
+  if(!navigator.geolocation){
+    setLocStatus('GPS not available on this device', 'error');
+    return;
+  }
+  const btn = document.getElementById('btn-detect');
+  const iconEl = document.getElementById('detect-icon');
+  const labelEl = document.getElementById('detect-label');
+
+  btn.disabled = true;
+  iconEl.className = 'spinner';
+  labelEl.textContent = 'Detecting…';
+  setLocStatus('', '');
+
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      _lat = pos.coords.latitude;
+      _lng = pos.coords.longitude;
+      _locSource = 'gps';
+      btn.disabled = false;
+      iconEl.className = '';
+      iconEl.textContent = '📍';
+      labelEl.textContent = 'I'm on site – detect my location';
+      setLocStatus(`✓ Location saved (${_lat.toFixed(5)}, ${_lng.toFixed(5)})`, 'success');
+      showRadiusChips();
+    },
+    err=>{
+      btn.disabled = false;
+      iconEl.className = '';
+      iconEl.textContent = '📍';
+      labelEl.textContent = 'I'm on site – detect my location';
+      const msg = err.code===1 ? 'Location permission denied — please allow access or type the address below.'
+                : err.code===2 ? 'Could not get location — please type the address below.'
+                : 'Location timed out — please try again or type the address below.';
+      setLocStatus(msg, 'error');
+    },
+    {timeout:15000, enableHighAccuracy:true}
+  );
+}
+
+function setLocStatus(msg, type){
+  const el = document.getElementById('loc-status');
+  el.textContent = msg;
+  el.className = 'loc-status' + (type?' '+type:'');
+}
+
+function setAddrStatus(msg, type){
+  const el = document.getElementById('addr-status');
+  el.textContent = msg;
+  el.className = 'loc-status' + (type?' '+type:'');
+}
+
+// ── Geocode address ──
+async function geocodeAddress(){
+  const val = document.getElementById('f-address').value.trim();
+  if(!val) return;
+  _addrText = val;
+
+  // Don't overwrite a GPS fix
+  if(_locSource==='gps') return;
+
+  setAddrStatus('Finding address…', '');
+  try {
+    const q = encodeURIComponent(val);
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=au`);
+    const data = await res.json();
+    if(data&&data.length){
+      _lat = parseFloat(data[0].lat);
+      _lng = parseFloat(data[0].lon);
+      _locSource = 'address';
+      // Shorten display name to suburb + state
+      const parts = data[0].display_name.split(',');
+      const shortName = parts.slice(0, Math.min(3, parts.length)).join(',').trim();
+      setAddrStatus('✓ Found: ' + shortName, 'success');
+      showRadiusChips();
+    } else {
+      setAddrStatus('Address not found — that\'s okay, we\'ll sort it on the day.', '');
+    }
+  } catch(e){
+    setAddrStatus('Could not look up address — no worries, we\'ll sort it on the day.', '');
+  }
+}
+
+function showRadiusChips(){
+  document.getElementById('radius-wrap').style.display = 'block';
+}
+
+// ── Skip location ──
+function skipLocation(){
+  _lat = null;
+  _lng = null;
+  _locSource = null;
+  _addrText = '';
+  document.getElementById('loc-main-content').style.display = 'none';
+  document.getElementById('loc-skipped-msg').style.display = 'block';
+}
+
+// ── Validate & Submit ──
+function validateField(fieldId, inputId){
+  const val = document.getElementById(inputId).value.trim();
+  const field = document.getElementById(fieldId);
+  if(!val){
+    field.classList.add('invalid');
+    return false;
+  }
+  field.classList.remove('invalid');
+  return true;
+}
+
+async function submitForm(){
+  // Validate required fields
+  const ok1 = validateField('field-company','f-company');
+  const ok2 = validateField('field-contact','f-contact');
+  const ok3 = validateField('field-phone','f-phone');
+  if(!ok1||!ok2||!ok3){
+    document.querySelector('.q-field.invalid input').focus();
+    return;
+  }
+
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+
+  const payload = {
+    company:    document.getElementById('f-company').value.trim(),
+    contact:    document.getElementById('f-contact').value.trim(),
+    phone:      document.getElementById('f-phone').value.trim(),
+    email:      document.getElementById('f-email').value.trim(),
+    abn:        document.getElementById('f-abn').value.trim(),
+    lat:        _lat,
+    lng:        _lng,
+    radius:     (_lat||_lng) ? _radius : null,
+    siteAddress:_addrText||document.getElementById('f-address').value.trim(),
+    rate:       document.getElementById('f-rate').value.trim()||null,
+    notes:      document.getElementById('f-notes').value.trim(),
+    code:       _code,
+    submittedAt:serverTimestamp(),
+    expiresAt:  Date.now() + 30*24*60*60*1000
+  };
+
+  try {
+    const colRef = collection(db, 'users', _ownerUID, 'pendingClients');
+    await addDoc(colRef, payload);
+    showScreen('s-success');
+  } catch(e){
+    console.error('Submit error:', e);
+    btn.disabled = false;
+    btn.textContent = 'Send my details →';
+    alert('Something went wrong. Please check your connection and try again.');
+  }
+}
+
+// ── Start ──
+init();
+</script>
+</body>
+</html>

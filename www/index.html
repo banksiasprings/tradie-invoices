@@ -354,6 +354,8 @@ const CloudSync = {
       await setDoc(ref, {
         ownerUID: this.uid,
         businessName: s.name || 'My Business',
+        brandColor: '#1E2D4A',
+        brandAccent: '#B8622A',
         createdAt: serverTimestamp()
       });
       return code;
@@ -498,6 +500,7 @@ onAuthStateChanged(auth, async (user) => {
       if (loginScreen)   loginScreen.style.display   = 'none';
       if (appWrapper)    appWrapper.style.display     = 'block';
       if (window.initApp) window.initApp();
+      checkPendingClients().catch(()=>{});
     }
     // Subsequent firings (token refresh etc.) — uid/display already set above, skip restore
   } else {
@@ -601,6 +604,88 @@ window.firebaseRegister = async function() {
 window.firebaseSignOut = async function() {
   await signOut(auth);
 };
+
+// --- Pending client intake ---
+let _pendingItems = [];
+
+async function checkPendingClients(){
+  if(!window.CloudSync||!window.CloudSync.uid) return;
+  try {
+    const snap = await getDocs(collection(firestoreDb,'users',CloudSync.uid,'pendingClients'));
+    const pending = [];
+    snap.forEach(d=>{ const dd=d.data(); if(!dd.expiresAt||dd.expiresAt>Date.now()) pending.push({id:d.id,...dd}); });
+    if(!pending.length) return;
+    _pendingItems = pending;
+    showPendingClientModal(pending);
+  } catch(e){ console.warn('checkPendingClients failed:',e); }
+}
+
+function showPendingClientModal(pending){
+  const item = pending[0];
+  const remaining = pending.length;
+  const el = document.getElementById('pending-client-content');
+  if(!el) return;
+  const radiusLabel = item.radius>=1000 ? (item.radius/1000)+'km' : (item.radius||500)+'m';
+  const hasLocation = item.lat && item.lng;
+  const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  el.innerHTML = `
+    <div style="font-size:12px;color:var(--text2);margin-bottom:12px">${remaining} new client request${remaining>1?'s':''} received</div>
+    <div style="background:var(--surface2);border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="font-size:17px;font-weight:700;color:var(--navy);margin-bottom:4px">${esc(item.company||'Unknown')}</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:8px">${esc(item.contact||'')}${item.phone?' · '+esc(item.phone):''}</div>
+      ${item.email?`<div style="font-size:12px;color:var(--text2)">${esc(item.email)}</div>`:''}
+      ${item.abn?`<div style="font-size:12px;color:var(--text2)">ABN: ${esc(item.abn)}</div>`:''}
+      ${hasLocation?`<div style="font-size:12px;color:var(--amber);margin-top:6px">📍 GPS site · ${radiusLabel} radius</div>`:''}
+      ${item.siteAddress&&!hasLocation?`<div style="font-size:12px;color:var(--text2);margin-top:6px">📍 ${esc(item.siteAddress)}</div>`:''}
+      ${item.rate?`<div style="font-size:12px;color:var(--amber);margin-top:6px">Rate: $${esc(item.rate)}/hr</div>`:''}
+      ${item.notes?`<div style="font-size:12px;color:var(--text2);margin-top:6px;font-style:italic">"${esc(item.notes).substring(0,120)}"</div>`:''}
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:10px">
+      <button class="btn btn-primary" style="flex:2" onclick="acceptPendingClient('${esc(item.id)}')">✓ Add to app</button>
+      <button class="btn btn-secondary" style="flex:1" onclick="dismissPendingClient('${esc(item.id)}')">Dismiss</button>
+    </div>
+    ${remaining>1?`<div style="text-align:center;font-size:12px;color:var(--text2)">${remaining-1} more request${remaining-1>1?'s':''} waiting — accept or dismiss to see them</div>`:''}
+  `;
+  document.getElementById('pending-client-modal').classList.add('open');
+}
+
+window.acceptPendingClient = async function(id){
+  const item = _pendingItems.find(p=>p.id===id);
+  if(!item) return;
+  // Add as client
+  const clients = JSON.parse(localStorage.getItem('mcn_clients')||'[]');
+  const exists = clients.some(c=>c.company&&item.company&&c.company.toLowerCase()===item.company.toLowerCase());
+  if(!exists){
+    clients.push({ company:item.company||'', contact:item.contact||'', phone:item.phone||'', email:item.email||'', abn:item.abn||'', address:item.billingAddress||'' });
+    if(window.DB) window.DB.set('clients', clients);
+  }
+  // Add GPS site if location provided
+  if(item.lat && item.lng){
+    const sites = JSON.parse(localStorage.getItem('mcn_sites')||'[]');
+    const siteExists = sites.some(s=>Math.abs(s.lat-item.lat)<0.001&&Math.abs(s.lng-item.lng)<0.001);
+    if(!siteExists){
+      const siteName = item.company || item.siteAddress || 'New Site';
+      sites.push({ name:siteName, lat:parseFloat(item.lat), lng:parseFloat(item.lng), radius:item.radius||500 });
+      if(window.DB) window.DB.set('sites', sites);
+    }
+  }
+  // Delete from Firebase then recheck
+  await dismissPendingClient(id);
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+  if(window.toast) window.toast('Client added ✓'+(item.lat?' + GPS site':''));
+  else alert('Client added ✓'+(item.lat?' + GPS site':''));
+};
+
+window.dismissPendingClient = async function(id){
+  try {
+    await deleteDoc(doc(firestoreDb,'users',CloudSync.uid,'pendingClients',id));
+  } catch(e){ console.warn('dismissPendingClient:',e); }
+  _pendingItems = _pendingItems.filter(p=>p.id!==id);
+  document.getElementById('pending-client-modal').classList.remove('open');
+  setTimeout(checkPendingClients, 300);
+};
+
+window.closePendingModal = function(){ document.getElementById('pending-client-modal').classList.remove('open'); };
 </script>
 </head>
 <body>
@@ -1256,7 +1341,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v44';
+const APP_VERSION = 'v45';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1624,6 +1709,14 @@ async function forceAppUpdate() {
     </div>
 
     <button class="btn btn-primary" style="width:100%" onclick="saveNewJob()">Save &amp; Start Here ✓</button>
+  </div>
+</div>
+
+<!-- PENDING CLIENT MODAL -->
+<div class="modal-bg" id="pending-client-modal">
+  <div class="modal">
+    <div class="modal-title">📥 New Client Request <button class="modal-close" onclick="closePendingModal()">✕</button></div>
+    <div id="pending-client-content"></div>
   </div>
 </div>
 
@@ -4439,6 +4532,7 @@ function renderTeamCodeSection(code){
       <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Share this with your employees — they enter it in their app to start syncing hours.</div>
       <div style="display:flex;gap:8px;justify-content:center">
         <button class="btn btn-primary btn-sm" onclick="copyBusinessCode('${code}')">📋 Copy code</button>
+        <button class="btn btn-secondary btn-sm" onclick="copyQuoteLink('${code}')">📤 Quote link</button>
         <button class="btn btn-secondary btn-sm" onclick="generateAndShowCode()">↺ New code</button>
       </div>
     </div>`;
@@ -4450,6 +4544,15 @@ function copyBusinessCode(code){
     const el=document.createElement('textarea');
     el.value=code;document.body.appendChild(el);el.select();document.execCommand('copy');el.remove();
     toast('Code copied ✓');
+  });
+}
+
+function copyQuoteLink(code){
+  const url=`https://banksiasprings.github.io/tradie-invoices/quote.html?code=${code}`;
+  navigator.clipboard.writeText(url).then(()=>toast('Quote link copied ✓')).catch(()=>{
+    const el=document.createElement('textarea');
+    el.value=url;document.body.appendChild(el);el.select();document.execCommand('copy');el.remove();
+    toast('Quote link copied ✓');
   });
 }
 
