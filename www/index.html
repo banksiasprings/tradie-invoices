@@ -1256,7 +1256,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v41';
+const APP_VERSION = 'v42';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -2603,8 +2603,8 @@ window.editLogDay = function(entryKey){
   // entryKey is preferably the unique id, falls back to date for old entries
   const dl=days(),d=dl.find(x=>(x.id&&x.id===entryKey)||(!x.id&&x.date===entryKey));if(!d)return;
   _logEditDate=d.id||d.date;
-  document.getElementById('le-date').value=date;
-  document.getElementById('log-edit-date-label').textContent='— '+fmtDate(date);
+  document.getElementById('le-date').value=d.date;
+  document.getElementById('log-edit-date-label').textContent='— '+fmtDate(d.date);
   document.getElementById('le-start').value=d.start||'';
   document.getElementById('le-finish').value=d.finish||'';
   document.getElementById('le-lunch').value=d.lunchMins||0;
