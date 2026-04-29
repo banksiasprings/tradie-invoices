@@ -313,14 +313,20 @@ const ArchivedSync = {
         return; // local days already have correct invoiced flags from blob restore
       }
 
-      // Normal path: subcollection exists — use it as source of truth
+      // Normal path: subcollection exists — use as source of truth for promotions only.
+      // The worklog can mark an entry as archived (true→true or false→true) but never
+      // unarchive it — that only happens via the explicit un-archive button which updates
+      // both the blob and the worklog atomically. This prevents a stale worklog entry
+      // (e.g. from a failed setArchived write) from clobbering a correctly-archived blob.
       const archivedMap = {};
       snap.forEach(d => { archivedMap[d.id] = !!d.data().archived; });
       let changed = false;
       dl.forEach(d => {
         const id = d.id || d.date;
-        if (id && id in archivedMap && d.invoiced !== archivedMap[id]) {
-          d.invoiced = archivedMap[id];
+        // Only promote: if worklog says archived AND blob says not archived, trust worklog.
+        // Never demote: if worklog says not archived, keep whatever the blob says.
+        if (id && archivedMap[id] === true && !d.invoiced) {
+          d.invoiced = true;
           changed = true;
         }
       });
