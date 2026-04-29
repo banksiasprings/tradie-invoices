@@ -721,19 +721,9 @@ window.firebaseSignOut = async function() {
       <div id="materials-idle-section" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
           <div style="font-size:14px;font-weight:600">🧱 Materials / Parts</div>
-          <div style="display:flex;gap:6px">
-            <button onclick="openMaterialsStore('idle')" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">📦 Store</button>
-            <button onclick="toggleMatCustom('idle')" style="background:var(--surface2);color:var(--text);border:1.5px solid var(--border);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Custom</button>
-          </div>
+          <button onclick="openMaterialsStore('idle')" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">📦 Store</button>
         </div>
         <div id="materials-idle-lines"></div>
-        <div id="materials-idle-custom" style="display:none;margin-top:8px">
-          <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center">
-            <input type="text" id="materials-idle-custom-name" placeholder="Item name" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
-            <input type="number" id="materials-idle-custom-price" placeholder="$ each" min="0" step="0.01" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;width:90px">
-            <button onclick="addCustomMaterial('idle')" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer">Add</button>
-          </div>
-        </div>
       </div>
       <button class="btn btn-primary btn-hero" onclick="startDay()">🚜  Start Day</button>
       <button class="btn btn-secondary" style="width:100%;margin-top:10px" onclick="showScreen('manual',window.event.target);initManualEntry()">+ Manual Entry</button>
@@ -807,19 +797,9 @@ window.firebaseSignOut = async function() {
       <div id="materials-active-section" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
           <div style="font-size:14px;font-weight:600">🧱 Materials / Parts</div>
-          <div style="display:flex;gap:6px">
-            <button onclick="openMaterialsStore('active')" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">📦 Store</button>
-            <button onclick="toggleMatCustom('active')" style="background:var(--surface2);color:var(--text);border:1.5px solid var(--border);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Custom</button>
-          </div>
+          <button onclick="openMaterialsStore('active')" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">📦 Store</button>
         </div>
         <div id="materials-active-lines"></div>
-        <div id="materials-active-custom" style="display:none;margin-top:8px">
-          <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center">
-            <input type="text" id="materials-active-custom-name" placeholder="Item name" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
-            <input type="number" id="materials-active-custom-price" placeholder="$ each" min="0" step="0.01" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;width:90px">
-            <button onclick="addCustomMaterial('active')" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer">Add</button>
-          </div>
-        </div>
       </div>
     </div>
   </div>
@@ -926,19 +906,10 @@ window.firebaseSignOut = async function() {
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div class="section-heading" style="margin:0">🧱 Materials / Parts</div>
-        <div style="display:flex;gap:6px">
           <button onclick="openMaterialsStore('me')" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">📦 Store</button>
-          <button onclick="toggleMatCustom('me')" style="background:var(--surface2);color:var(--text);border:1.5px solid var(--border);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Custom</button>
         </div>
       </div>
       <div id="materials-me-lines"></div>
-      <div id="materials-me-custom" style="display:none;margin-top:8px">
-        <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center">
-          <input type="text" id="materials-me-custom-name" placeholder="Item name" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
-          <input type="number" id="materials-me-custom-price" placeholder="$ each" min="0" step="0.01" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;width:90px">
-          <button onclick="addCustomMaterial('me');mePreview()" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer">Add</button>
-        </div>
-      </div>
     </div>
 
     <div class="card">
@@ -1210,7 +1181,7 @@ window.firebaseSignOut = async function() {
     <div class="card card-collapsible" id="machines-lib-card" style="display:none">
       <div class="card-title">🚜 Plant &amp; Equipment</div>
       <div class="card-body">
-        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Your machine library. Tap <strong>+ Add Machine</strong> when logging a day to pick from this list.</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Edit your machines below — name, plant number, hire type and rate. Changes save immediately. Tap <strong>+ Add Machine</strong> when logging a day to pick from this list.</div>
         <div id="machines-lib-list"></div>
         <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px">
           <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px">Add machine</div>
@@ -1287,7 +1258,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v37';
+const APP_VERSION = 'v38';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1484,19 +1455,10 @@ async function forceAppUpdate() {
     <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div style="font-size:14px;font-weight:600">🧱 Materials / Parts</div>
-        <div style="display:flex;gap:6px">
           <button onclick="openMaterialsStore('edit')" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">📦 Store</button>
-          <button onclick="toggleMatCustom('edit')" style="background:var(--surface2);color:var(--text);border:1.5px solid var(--border);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Custom</button>
         </div>
       </div>
       <div id="materials-edit-lines"></div>
-      <div id="materials-edit-custom" style="display:none;margin-top:8px">
-        <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center">
-          <input type="text" id="materials-edit-custom-name" placeholder="Item name" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
-          <input type="number" id="materials-edit-custom-price" placeholder="$ each" min="0" step="0.01" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;width:90px">
-          <button onclick="addCustomMaterial('edit')" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer">Add</button>
-        </div>
-      </div>
     </div>
     <button class="btn btn-primary" style="margin-top:8px" onclick="saveEdit()">Update Day</button>
   </div>
@@ -1577,19 +1539,10 @@ async function forceAppUpdate() {
     <div style="margin-bottom:14px;padding-top:10px;border-top:1px solid var(--border)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div style="font-size:14px;font-weight:600">🧱 Materials / Parts</div>
-        <div style="display:flex;gap:6px">
           <button onclick="openMaterialsStore('le')" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">📦 Store</button>
-          <button onclick="toggleMatCustom('le')" style="background:var(--surface2);color:var(--text);border:1.5px solid var(--border);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Custom</button>
         </div>
       </div>
       <div id="materials-le-lines"></div>
-      <div id="materials-le-custom" style="display:none;margin-top:8px">
-        <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center">
-          <input type="text" id="materials-le-custom-name" placeholder="Item name" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
-          <input type="number" id="materials-le-custom-price" placeholder="$ each" min="0" step="0.01" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;width:90px">
-          <button onclick="addCustomMaterial('le')" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer">Add</button>
-        </div>
-      </div>
     </div>
     <input type="hidden" id="le-date">
     <button class="btn btn-primary" style="margin-top:8px" onclick="saveLogEdit()">Save Changes ✓</button>
@@ -1603,11 +1556,19 @@ async function forceAppUpdate() {
     <div class="modal-title">Materials Store <button class="modal-close" onclick="closeMaterialsStore()">✕</button></div>
     <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Tap items to add them to your day. Adjust quantities before confirming.</div>
     <div id="materials-store-list" style="max-height:55vh;overflow-y:auto"></div>
-    <div id="materials-store-empty" style="display:none;font-size:13px;color:var(--text2);padding:16px 0;text-align:center">
-      No items in catalogue yet — add them in Settings → Materials catalogue.
+    <div id="materials-store-empty" style="display:none;font-size:13px;color:var(--text2);padding:12px 0 4px;text-align:center">
+      No items in catalogue yet — add them in Settings → Materials.
     </div>
-    <button class="btn btn-primary" style="margin-top:14px" onclick="confirmMaterialsStore()">Add to Day ✓</button>
-    <button class="btn btn-secondary" style="margin-top:8px" onclick="closeMaterialsStore()">Cancel</button>
+    <button class="btn btn-primary" style="margin-top:12px" onclick="confirmMaterialsStore()">Add to Day ✓</button>
+    <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">One-off item (not in catalogue)</div>
+      <div style="display:grid;grid-template-columns:1fr 90px auto;gap:6px;align-items:center">
+        <input type="text" id="mat-store-custom-name" placeholder="Item name" class="mcn-input" style="font-size:13px">
+        <input type="number" id="mat-store-custom-price" placeholder="$ each" min="0" step="0.01" class="mcn-input" style="font-size:13px">
+        <button onclick="addCustomToStore()" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:9px 14px;font-size:13px;font-weight:700;cursor:pointer">Add</button>
+      </div>
+    </div>
+    <button class="btn btn-secondary" style="margin-top:10px" onclick="closeMaterialsStore()">Done</button>
   </div>
 </div>
 
@@ -3276,7 +3237,24 @@ function renderAnalytics(){
 }
 
 // --- Settings ---
+function ensureMachinesLibSeeded(){
+  const s=JSON.parse(JSON.stringify(S()));
+  if(s.machinesLib&&s.machinesLib.length) return; // already has machines
+  const prof=currentTradeProfile();
+  if(!prof.machines||!prof.machines.length) return; // trade has no machines (employee etc.)
+  const mr=s.machineRates||{};
+  s.machinesLib=prof.machines.map(name=>({
+    name,
+    plantNum:'',
+    hireType:'wet',
+    rate:mr[name]!==undefined?mr[name]:(prof.defaultRates&&prof.defaultRates[name])||0,
+    dayRate:0
+  }));
+  DB.set('settings',s);
+}
+
 function loadSettings(){
+  ensureMachinesLibSeeded();
   const s=S();
   ['name','abn','address','phone','email','bsb','account','service','rate','sonrate','incpct','invnum'].forEach(k=>{
     const el=document.getElementById('s-'+k);if(el) el.value=s[k]!==undefined?s[k]:'';
@@ -3381,6 +3359,7 @@ function renderMachineRatesCard(){renderMachinesLibList();}
 
 function renderMachinesLibList(){
   const el=document.getElementById('machines-lib-list');if(!el)return;
+  ensureMachinesLibSeeded();
   const lib=getMachinesLib();
   if(!lib.length){
     el.innerHTML='<div style="font-size:13px;color:var(--text2);padding:8px 0 4px">No machines yet — add your first one below.</div>';return;
@@ -3730,14 +3709,29 @@ function confirmMaterialsStore(){
 
 function closeMaterialsStore(){
   document.getElementById('materials-store-modal').classList.remove('open');
+  // Clear one-off fields
+  const n=document.getElementById('mat-store-custom-name');if(n)n.value='';
+  const p=document.getElementById('mat-store-custom-price');if(p)p.value='';
 }
 
-function toggleMatCustom(prefix){
-  const div = document.getElementById('materials-'+prefix+'-custom');
-  if(!div) return;
-  const isHidden = div.style.display==='none'||div.style.display==='';
-  div.style.display = isHidden ? 'block' : 'none';
+function addCustomToStore(){
+  const nameEl=document.getElementById('mat-store-custom-name');
+  const priceEl=document.getElementById('mat-store-custom-price');
+  const name=(nameEl?nameEl.value:'').trim();
+  const price=priceEl?parseFloat(priceEl.value)||0:0;
+  if(!name){toast('Enter item name');return;}
+  const lines=_matLines[_storePrefix]||[];
+  const ex=lines.findIndex(l=>l.name===name&&l.unitPrice===price);
+  if(ex>=0){lines[ex].qty=(lines[ex].qty||0)+1;}
+  else{lines.push({name,qty:1,unitPrice:price});}
+  _matLines[_storePrefix]=lines;
+  _renderMatLines(_storePrefix);
+  if(nameEl)nameEl.value='';if(priceEl)priceEl.value='';
+  toast(name+' added ✓');
+  // keep modal open so user can add more
 }
+
+function toggleMatCustom(prefix){/* legacy no-op — custom is now in the Store modal */}
 
 // --- Travel UI helpers ---
 function initTravelSection(prefix, data){
