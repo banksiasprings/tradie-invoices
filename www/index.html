@@ -5099,13 +5099,36 @@ window.initApp = function() {
       return;
     }
 
+    // Step 1: Request permissions — foreground first, then background ("Allow all the time").
+    // Android 10+ requires ACCESS_BACKGROUND_LOCATION as a separate, explicit request.
+    // We handle rejection gracefully: if background location is denied, log a warning and
+    // show a nudge notification, but still proceed to register geofences with foreground
+    // location so the app works as well as possible. Without background permission, geofence
+    // exits will not fire when the app process is dead — the user must be told to fix this.
+    let bgGranted = false;
     try {
-      // Request location permissions (foreground first, then background "Allow all the time").
-      // This must happen before registerSites — Android won't pop the dialog otherwise.
       const perms = await NativeGeo.requestNativePermissions();
       console.log('[NativeGeo] Permissions:', perms);
+      bgGranted = (perms && perms.backgroundLocation === 'granted');
+    } catch(e) {
+      // requestNativePermissions() rejects when background location is denied.
+      // This is expected when the user taps "Allow only while using the app" instead of
+      // "Allow all the time". Do not abort — fall through to geofence registration.
+      console.warn('[NativeGeo] Background location not granted:', e.message || e);
+      bgGranted = false;
+    }
 
-      // Register all configured sites as Android geofences
+    if (!bgGranted) {
+      // Nudge the user — they need "Allow all the time" for geofence exits to fire in background.
+      nativeNotify(
+        'Background location needed',
+        'Open Settings → Invoice & PDF → Location and select “Allow all the time” for auto-timer to work when the app is closed.'
+      );
+    }
+
+    // Step 2: Register geofences regardless of background permission state.
+    // Foreground-only location still lets geofences fire while the app is visible.
+    try {
       const sitesArr = (typeof sites === 'function') ? sites() : [];
       if (sitesArr.length === 0) {
         console.warn('[NativeGeo] No sites configured yet — will register when sites are saved');
@@ -5118,7 +5141,7 @@ window.initApp = function() {
       await processPendingGeoEvents();
 
     } catch(e) {
-      console.warn('[NativeGeo] Init error:', e);
+      console.warn('[NativeGeo] Geofence registration error:', e);
     }
   }
 
