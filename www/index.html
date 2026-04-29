@@ -1206,7 +1206,33 @@ window.firebaseSignOut = async function() {
         </div>
       </div>
     </div>
-    <div id="machine-rates-card" class="card"></div>
+    <!-- Plant & Equipment library -->
+    <div class="card card-collapsible" id="machines-lib-card" style="display:none">
+      <div class="card-title">🚜 Plant &amp; Equipment</div>
+      <div class="card-body">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Your machine library. These appear as quick-add buttons when logging a day.</div>
+        <div id="machines-lib-list"></div>
+        <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px">
+          <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px">Add machine</div>
+          <div class="field-row">
+            <div class="field"><label>Machine name</label><input id="s-mach-name" class="mcn-input" placeholder="e.g. CAT 320 Excavator"></div>
+            <div class="field"><label>Plant #</label><input id="s-mach-plant" class="mcn-input" placeholder="EX001"></div>
+          </div>
+          <div class="field-row">
+            <div class="field" style="flex:2"><label>Hire type</label>
+              <select id="s-mach-hire" class="mcn-input" onchange="document.getElementById('s-mach-rate-label').textContent=this.value==='day'?'Day rate ($)':'Rate ($/hr)'">
+                <option value="wet">Wet hire — hourly, meter tracked</option>
+                <option value="dry">Dry hire — hourly, independent</option>
+                <option value="day">Day rate — flat daily charge</option>
+              </select>
+            </div>
+            <div class="field"><label id="s-mach-rate-label">Rate ($/hr)</label><input id="s-mach-rate" type="number" class="mcn-input" placeholder="0" min="0" step="1"></div>
+          </div>
+          <button onclick="addToMachinesLib()" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:9px 16px;font-size:14px;font-weight:600;cursor:pointer">+ Add to library</button>
+        </div>
+        <button onclick="resetMachinesToTradeDefaults()" style="margin-top:12px;background:none;border:none;color:var(--amber);font-size:12px;font-weight:600;cursor:pointer;padding:0">↺ Reset to trade defaults</button>
+      </div>
+    </div>
     <!-- Materials catalogue -->
     <div class="card card-collapsible">
       <div class="card-title">Materials &amp; Parts catalogue</div>
@@ -1261,7 +1287,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v34';
+const APP_VERSION = 'v35';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1884,6 +1910,9 @@ function applyTradeVisibility(){
   if(navLabel) navLabel.textContent=emp?'Timesheet':'Invoice';
   const invTitle=document.getElementById('inv-screen-title');
   if(invTitle) invTitle.textContent=emp?'My Timesheet':'Invoice Generator';
+  // Machine library card in settings — always show for non-employee trades
+  const machCard=document.getElementById('machines-lib-card');
+  if(machCard){machCard.style.display=emp?'none':'block';if(!emp)renderMachinesLibList();}
   // Settings cards
   const empCard=document.getElementById('employee-settings-card');
   const bizCard=document.getElementById('business-settings-card');
@@ -3272,9 +3301,8 @@ function saveSettings(){
   const thr=document.getElementById('s-travelHrRate');
   if(tkr&&tkr.value) s.travelKmRate=parseFloat(tkr.value)||0.88;
   if(thr&&thr.value) s.travelHrRate=parseFloat(thr.value)||30;
-  // Machine library (name, plantNum, hireType, rate/dayRate)
-  const machinesLib=readCustomMachinesFromCard();
-  s.machinesLib=machinesLib;
+  // Machine library saved directly via addToMachinesLib/deleteMachineFromLib — no read needed here
+  const machinesLib=s.machinesLib||[];
   s.customMachines=machinesLib.length?machinesLib.map(m=>({name:m.name,rate:m.rate})):null;
   s.machineRates={};
   // Employee fields
@@ -3321,69 +3349,65 @@ function selectTrade(key){
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
 }
 
-function renderMachineRatesCard(){
-  const card=document.getElementById('machine-rates-card');if(!card)return;
+function renderMachineRatesCard(){renderMachinesLibList();}
+
+function renderMachinesLibList(){
+  const el=document.getElementById('machines-lib-list');if(!el)return;
   const lib=getMachinesLib();
-  const rows=lib.map((m,i)=>{
+  if(!lib.length){
+    el.innerHTML='<div style="font-size:13px;color:var(--text2);padding:4px 0">No machines yet — add your first one below.</div>';return;
+  }
+  const htLabel={wet:'Wet hire',dry:'Dry hire',day:'Day rate'};
+  const htColor={wet:'#1E40AF;background:#DBEAFE',dry:'#2D6B4A;background:#D4EDE0',day:'var(--amber);background:var(--amber-light)'};
+  el.innerHTML=lib.map((m,i)=>{
     const ht=m.hireType||'wet';
-    const rateVal=ht==='day'?(m.dayRate||0):(m.rate||0);
-    const rateLabel=ht==='day'?'/day':'/hr';
-    return`<div class="machine-edit-row" style="padding:10px 0;border-bottom:1px solid var(--border)">
-      <div style="display:grid;grid-template-columns:1fr 90px 36px;gap:6px;align-items:center;margin-bottom:6px">
-        <input type="text" class="mcn-input" placeholder="Machine name" value="${escHtml(m.name)}" style="font-size:14px">
-        <input type="text" class="mcn-input" placeholder="Plant #" value="${escHtml(m.plantNum||'')}" style="font-size:13px;text-align:center">
-        <button onclick="removeCustomMachineRow(this)" style="background:var(--red-light);color:var(--red);border:none;border-radius:6px;width:32px;height:32px;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">×</button>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center">
-        <select class="mcn-input" style="font-size:13px" onchange="this.closest('.machine-edit-row').querySelector('.rate-lbl').textContent=this.value==='day'?'/day':'/hr'">
-          <option value="wet" ${ht==='wet'?'selected':''}>Wet hire (hourly, meter tracked)</option>
-          <option value="dry" ${ht==='dry'?'selected':''}>Dry hire (hourly, independent)</option>
-          <option value="day" ${ht==='day'?'selected':''}>Day rate (flat)</option>
-        </select>
-        <div style="display:flex;align-items:center;gap:4px">
-          <span style="font-size:13px;color:var(--text2)">$</span>
-          <input type="number" class="mcn-input" value="${rateVal}" min="0" step="1" style="width:70px;text-align:right;font-size:14px">
-          <span class="rate-lbl" style="font-size:11px;color:var(--text3)">${rateLabel}</span>
+    const rateStr=ht==='day'?`$${(m.dayRate||0).toFixed(2)}/day`:`$${(m.rate||0).toFixed(2)}/hr`;
+    const pn=m.plantNum?` · #${m.plantNum}`:'';
+    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-size:14px;font-weight:600">${escHtml(m.name)}${escHtml(pn)}</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:3px">
+          <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;color:${htColor[ht]}">${htLabel[ht]}</span>
+          <span style="font-size:12px;color:var(--text2)">${rateStr}</span>
         </div>
       </div>
+      <button onclick="deleteMachineFromLib(${i})" style="background:var(--red-light);color:var(--red);border:none;border-radius:999px;padding:3px 12px;font-size:12px;font-weight:600;cursor:pointer">Remove</button>
     </div>`;
   }).join('');
-  const prof=currentTradeProfile();
-  card.innerHTML=`
-    <div class="card-title">${prof.equipLabel||'Plant & Equipment'} Library</div>
-    <div style="font-size:12px;color:var(--text3);margin:-4px 0 10px">Machines here appear as quick-add options when logging days. Each day can also have one-off machines.</div>
-    <div id="machine-rows-list">${rows}</div>
-    <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
-      <button onclick="addCustomMachineRow()" style="flex:1;min-width:120px;padding:10px;background:var(--amber);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">+ Add machine</button>
-      <button onclick="resetMachinesToTradeDefaults()" style="flex:1;min-width:120px;padding:10px;background:none;border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text2);cursor:pointer">Reset to defaults</button>
-    </div>`;
 }
-function addCustomMachineRow(){
-  const list=document.getElementById('machine-rows-list');if(!list)return;
-  const row=document.createElement('div');
-  row.className='machine-edit-row';
-  row.style.cssText='padding:10px 0;border-bottom:1px solid var(--border)';
-  row.innerHTML=`
-    <div style="display:grid;grid-template-columns:1fr 90px 36px;gap:6px;align-items:center;margin-bottom:6px">
-      <input type="text" class="mcn-input" placeholder="Machine name" style="font-size:14px">
-      <input type="text" class="mcn-input" placeholder="Plant #" style="font-size:13px;text-align:center">
-      <button onclick="removeCustomMachineRow(this)" style="background:var(--red-light);color:var(--red);border:none;border-radius:6px;width:32px;height:32px;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">×</button>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center">
-      <select class="mcn-input" style="font-size:13px" onchange="this.closest('.machine-edit-row').querySelector('.rate-lbl').textContent=this.value==='day'?'/day':'/hr'">
-        <option value="wet">Wet hire (hourly, meter tracked)</option>
-        <option value="dry">Dry hire (hourly, independent)</option>
-        <option value="day">Day rate (flat)</option>
-      </select>
-      <div style="display:flex;align-items:center;gap:4px">
-        <span style="font-size:13px;color:var(--text2)">$</span>
-        <input type="number" class="mcn-input" placeholder="0" min="0" step="1" style="width:70px;text-align:right;font-size:14px">
-        <span class="rate-lbl" style="font-size:11px;color:var(--text3)">/hr</span>
-      </div>
-    </div>`;
-  list.appendChild(row);
-  row.querySelector('input').focus();
+
+function addToMachinesLib(){
+  const name=(document.getElementById('s-mach-name').value||'').trim();
+  const plantNum=(document.getElementById('s-mach-plant').value||'').trim();
+  const hireType=document.getElementById('s-mach-hire').value;
+  const rateVal=parseFloat(document.getElementById('s-mach-rate').value)||0;
+  if(!name){toast('Enter a machine name');return;}
+  const s=S();
+  if(!s.machinesLib) s.machinesLib=[];
+  s.machinesLib.push({name,plantNum,hireType,rate:hireType!=='day'?rateVal:0,dayRate:hireType==='day'?rateVal:0});
+  DB.set('settings',s);
+  renderMachinesLibList();
+  document.getElementById('s-mach-name').value='';
+  document.getElementById('s-mach-plant').value='';
+  document.getElementById('s-mach-rate').value='';
+  document.getElementById('s-mach-hire').value='wet';
+  document.getElementById('s-mach-rate-label').textContent='Rate ($/hr)';
+  toast(name+' added to library ✓');
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
 }
+
+function deleteMachineFromLib(i){
+  const s=S();
+  const lib=s.machinesLib||getMachinesLib().slice();
+  lib.splice(i,1);
+  s.machinesLib=lib;
+  DB.set('settings',s);
+  renderMachinesLibList();
+  toast('Removed ✓');
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+}
+
+function addCustomMachineRow(){/* legacy - no-op, replaced by addToMachinesLib */}
 function removeCustomMachineRow(btn){
   btn.closest('.machine-edit-row').remove();
 }
