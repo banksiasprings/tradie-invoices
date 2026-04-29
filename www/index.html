@@ -1228,6 +1228,8 @@ window.firebaseSignOut = async function() {
     </div>
     <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
     <div style="height:12px"></div>
+    <button class="btn btn-secondary" onclick="clearCacheAndRefresh()" style="background:var(--amber-light);color:var(--amber);border-color:var(--amber)">🔄 Clear cache &amp; refresh app</button>
+    <div style="height:12px"></div>
     <button class="btn btn-secondary" onclick="exportData()">⬇ Export all data (JSON backup)</button>
     <label class="btn btn-secondary" style="display:block;text-align:center;margin-top:8px;cursor:pointer">
       ⬆ Import data from JSON
@@ -1259,7 +1261,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v33';
+const APP_VERSION = 'v34';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -4473,6 +4475,18 @@ function getSelectedClient(){
 }
 
 // --- Export ---
+function clearCacheAndRefresh(){
+  toast('Clearing cache…');
+  const doReload=()=>window.location.reload(true);
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.getRegistrations().then(regs=>{
+      return Promise.all(regs.map(r=>r.unregister()));
+    }).then(()=>{
+      return caches.keys().then(keys=>Promise.all(keys.map(k=>caches.delete(k))));
+    }).then(()=>doReload()).catch(()=>doReload());
+  } else { doReload(); }
+}
+
 function exportData(){
   const d={settings:S(),days:days(),invoices:invoices(),sites:sites()},
         b=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}),
