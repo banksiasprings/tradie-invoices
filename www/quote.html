@@ -404,7 +404,7 @@ async function detectGPS(){
       btn.disabled = false;
       iconEl.className = '';
       iconEl.textContent = '📍';
-      labelEl.textContent = 'I'm on site – detect my location';
+      labelEl.textContent = "I'm on site – detect my location";
       setLocStatus(`✓ Location saved (${_lat.toFixed(5)}, ${_lng.toFixed(5)})`, 'success');
       showRadiusChips();
     },
@@ -412,7 +412,7 @@ async function detectGPS(){
       btn.disabled = false;
       iconEl.className = '';
       iconEl.textContent = '📍';
-      labelEl.textContent = 'I'm on site – detect my location';
+      labelEl.textContent = "I'm on site – detect my location";
       const msg = err.code===1 ? 'Location permission denied — please allow access or type the address below.'
                 : err.code===2 ? 'Could not get location — please type the address below.'
                 : 'Location timed out — please try again or type the address below.';
