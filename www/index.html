@@ -294,11 +294,28 @@ const ArchivedSync = {
     if (!CloudSync.uid) return;
     try {
       const snap = await getDocs(this._col(CloudSync.uid));
-      if (snap.empty) return;
-      const archivedMap = {};
-      snap.forEach(d => { archivedMap[d.id] = !!d.data().archived; });
       const raw = localStorage.getItem('mcn_days');
       const dl = raw ? JSON.parse(raw) : [];
+
+      if (snap.empty) {
+        // Migration: subcollection doesn't exist yet. Read invoiced flags from
+        // the blob that CloudSync.restore() already loaded into localStorage,
+        // then write them to the subcollection so future restores use this path.
+        const writes = [];
+        dl.forEach(d => {
+          const id = d.id || d.date;
+          if (id) {
+            writes.push(setDoc(this._ref(CloudSync.uid, id),
+              { archived: !!d.invoiced, updatedAt: serverTimestamp() }, { merge: true }));
+          }
+        });
+        if (writes.length) await Promise.all(writes);
+        return; // local days already have correct invoiced flags from blob restore
+      }
+
+      // Normal path: subcollection exists — use it as source of truth
+      const archivedMap = {};
+      snap.forEach(d => { archivedMap[d.id] = !!d.data().archived; });
       let changed = false;
       dl.forEach(d => {
         const id = d.id || d.date;
