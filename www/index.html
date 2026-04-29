@@ -1256,7 +1256,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v39';
+const APP_VERSION = 'v40';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -3369,7 +3369,7 @@ function renderMachinesLibList(){
     const ht=m.hireType||'wet';
     const rateStr=ht==='day'?`$${(m.dayRate||0).toFixed(2)}/day`:`$${(m.rate||0).toFixed(2)}/hr`;
     const plantStr=m.plantNum?` <span style="font-weight:400;color:var(--text2)">#${escHtml(m.plantNum)}</span>`:'';
-    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border)">
+    return`<div id="mlib-row-${i}" style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border)">
       <div>
         <div style="font-size:14px;font-weight:600">${escHtml(m.name)}${plantStr}</div>
         <div style="display:flex;align-items:center;gap:8px;margin-top:3px">
@@ -3377,9 +3377,59 @@ function renderMachinesLibList(){
           <span style="font-size:12px;color:var(--text2)">${rateStr}</span>
         </div>
       </div>
-      <button onclick="deleteMachineFromLib(${i})" style="background:var(--red-light);color:var(--red);border:none;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer">Remove</button>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button onclick="startEditMachine(${i})" style="background:var(--surface2);color:var(--text);border:1.5px solid var(--border);border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer">Edit</button>
+        <button onclick="deleteMachineFromLib(${i})" style="background:var(--red-light);color:var(--red);border:none;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer">Remove</button>
+      </div>
     </div>`;
   }).join('');
+}
+
+function startEditMachine(i){
+  const lib=getMachinesLib();const m=lib[i];
+  const row=document.getElementById('mlib-row-'+i);if(!row||!m)return;
+  const ht=m.hireType||'wet';
+  const rateVal=ht==='day'?(m.dayRate||0):(m.rate||0);
+  row.innerHTML=`<div style="padding:10px 0 12px;border-bottom:1px solid var(--border);width:100%">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+      <div><div style="font-size:10px;font-weight:700;color:var(--text3);margin-bottom:2px">NAME</div>
+        <input id="mle-name-${i}" class="mcn-input" value="${escHtml(m.name)}" style="font-size:13px;width:100%" placeholder="Machine name"></div>
+      <div><div style="font-size:10px;font-weight:700;color:var(--text3);margin-bottom:2px">PLANT #</div>
+        <input id="mle-plant-${i}" class="mcn-input" value="${escHtml(m.plantNum||'')}" style="font-size:13px;width:100%" placeholder="e.g. EX001"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
+      <div><div style="font-size:10px;font-weight:700;color:var(--text3);margin-bottom:2px">HIRE TYPE</div>
+        <select id="mle-hire-${i}" class="mcn-input" style="font-size:13px;width:100%" onchange="document.getElementById('mle-ratelbl-${i}').textContent=this.value==='day'?'DAY RATE ($)':'RATE ($/HR)'">
+          <option value="wet"${ht==='wet'?' selected':''}>Wet hire</option>
+          <option value="dry"${ht==='dry'?' selected':''}>Dry hire</option>
+          <option value="day"${ht==='day'?' selected':''}>Day rate</option>
+        </select></div>
+      <div><div id="mle-ratelbl-${i}" style="font-size:10px;font-weight:700;color:var(--text3);margin-bottom:2px">${ht==='day'?'DAY RATE ($)':'RATE ($/HR)'}</div>
+        <input id="mle-rate-${i}" type="number" class="mcn-input" value="${rateVal}" min="0" step="1" style="font-size:13px;width:100%"></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button onclick="saveEditMachine(${i})" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">Save</button>
+      <button onclick="renderMachinesLibList()" style="background:none;border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;color:var(--text2)">Cancel</button>
+    </div>
+  </div>`;
+}
+
+function saveEditMachine(i){
+  const s=JSON.parse(JSON.stringify(S()));
+  if(!s.machinesLib||i>=s.machinesLib.length){toast('Error: machine not found');return;}
+  const name=(document.getElementById('mle-name-'+i)?.value||'').trim();
+  if(!name){toast('Enter a machine name');return;}
+  const plantNum=(document.getElementById('mle-plant-'+i)?.value||'').trim();
+  const hireType=document.getElementById('mle-hire-'+i)?.value||'wet';
+  const rateVal=parseFloat(document.getElementById('mle-rate-'+i)?.value)||0;
+  const prev=s.machinesLib[i];
+  s.machinesLib[i]={name,plantNum,hireType,
+    rate:hireType!=='day'?rateVal:(prev.rate||0),
+    dayRate:hireType==='day'?rateVal:(prev.dayRate||0)};
+  DB.set('settings',s);
+  renderMachinesLibList();
+  if(window.CloudSync)window.CloudSync.pushAll().catch(()=>{});
+  toast('Saved ✓');
 }
 
 function addToMachinesLib(){
@@ -3571,22 +3621,57 @@ function renderMaterialsLib(){
   const lib = getMaterialsLib();
   const el = document.getElementById('materials-lib-list');
   if(!el) return;
-  if(!lib.length){ el.innerHTML='<div style="font-size:13px;color:var(--text2);padding:4px 0">No items yet — add your first item below, or reset to trade defaults.</div>'; return; }
+  if(!lib.length){ el.innerHTML='<div style="font-size:13px;color:var(--text2);padding:4px 0">No items yet — add your first one below.</div>'; return; }
   el.innerHTML = lib.map((item,i)=>`
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+    <div id="matlib-row-${i}" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
       <div>
-        <div style="font-size:14px;font-weight:600">${item.name}</div>
-        <div style="font-size:12px;color:var(--text2)">Default: $${(item.defaultPrice||0).toFixed(2)} each</div>
+        <div style="font-size:14px;font-weight:600">${escHtml(item.name)}</div>
+        <div style="font-size:12px;color:var(--text2)">$${(item.defaultPrice||0).toFixed(2)} each</div>
       </div>
-      <button onclick="deleteFromMaterialsLib(${i})" style="background:var(--red-light);color:var(--red);border:none;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer">Remove</button>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button onclick="startEditMaterial(${i})" style="background:var(--surface2);color:var(--text);border:1.5px solid var(--border);border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer">Edit</button>
+        <button onclick="deleteFromMaterialsLib(${i})" style="background:var(--red-light);color:var(--red);border:none;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer">Remove</button>
+      </div>
     </div>`).join('');
+}
+
+function startEditMaterial(i){
+  const lib=getMaterialsLib();const m=lib[i];
+  const row=document.getElementById('matlib-row-'+i);if(!row||!m)return;
+  row.innerHTML=`<div style="padding:8px 0 12px;border-bottom:1px solid var(--border);width:100%">
+    <div style="display:grid;grid-template-columns:1fr auto;gap:6px;margin-bottom:8px;align-items:end">
+      <div><div style="font-size:10px;font-weight:700;color:var(--text3);margin-bottom:2px">ITEM NAME</div>
+        <input id="matle-name-${i}" class="mcn-input" value="${escHtml(m.name)}" style="font-size:14px;width:100%"></div>
+      <div><div style="font-size:10px;font-weight:700;color:var(--text3);margin-bottom:2px">$ EACH</div>
+        <input id="matle-price-${i}" type="number" class="mcn-input" value="${m.defaultPrice||0}" min="0" step="0.01" style="font-size:14px;width:80px"></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button onclick="saveEditMaterial(${i})" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">Save</button>
+      <button onclick="renderMaterialsLib()" style="background:none;border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;color:var(--text2)">Cancel</button>
+    </div>
+  </div>`;
+}
+
+function saveEditMaterial(i){
+  const s=JSON.parse(JSON.stringify(S()));
+  const lib=s.materialsLib||getMaterialsLib().slice();
+  if(i>=lib.length){toast('Error: item not found');return;}
+  const name=(document.getElementById('matle-name-'+i)?.value||'').trim();
+  if(!name){toast('Enter an item name');return;}
+  const price=parseFloat(document.getElementById('matle-price-'+i)?.value)||0;
+  lib[i]={name,defaultPrice:price};
+  s.materialsLib=lib;
+  DB.set('settings',s);
+  renderMaterialsLib();
+  if(window.CloudSync)window.CloudSync.pushAll().catch(()=>{});
+  toast('Saved ✓');
 }
 
 function addToMaterialsLib(){
   const nameEl=document.getElementById('s-mat-name'),priceEl=document.getElementById('s-mat-price');
   const name=nameEl?nameEl.value.trim():'',price=priceEl?parseFloat(priceEl.value)||0:0;
   if(!name){toast('Enter an item name');return;}
-  const s=S(),lib=s.materialsLib||getMaterialsLib().slice();
+  const s=JSON.parse(JSON.stringify(S())),lib=s.materialsLib||getMaterialsLib().slice();
   lib.push({name,defaultPrice:price});
   s.materialsLib=lib;
   DB.set('settings',s);
@@ -3597,7 +3682,7 @@ function addToMaterialsLib(){
 }
 
 function deleteFromMaterialsLib(idx){
-  const s=S(),lib=(s.materialsLib||getMaterialsLib().slice()).slice();
+  const s=JSON.parse(JSON.stringify(S())),lib=(s.materialsLib||getMaterialsLib().slice()).slice();
   lib.splice(idx,1);
   s.materialsLib=lib;
   DB.set('settings',s);
