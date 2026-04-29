@@ -1224,8 +1224,8 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       <div style="font-size:11px;color:var(--text2);margin-top:10px">Suggested: avg of above = ~7.8%/yr over 26 invoices</div>
     </div>
     <div class="card">
-      <div class="card-title">Clients</div>
-      <div id="clients-list"></div>
+      <div class="card-title">Clients &amp; Sites</div>
+      <div id="clients-sites-list"></div>
       <button class="btn btn-secondary" style="margin-top:8px" onclick="addClient()">+ Add client</button>
     </div>
     <div class="card">
@@ -1302,11 +1302,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         </div>
       </div>
     </div>
-    <div class="card card-collapsible">
-      <div class="card-title">Work sites (GPS)</div>
-      <div id="sites-list"></div>
-      <button class="btn btn-secondary" style="margin-top:8px" onclick="addSite()">+ Add site</button>
-    </div>
+    <!-- Work sites (GPS) — now merged into Clients & Sites card above -->
     <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
     <div style="height:12px"></div>
     <button class="btn btn-secondary" onclick="clearCacheAndRefresh()" style="background:var(--amber-light);color:var(--amber);border-color:var(--amber)">🔄 Clear cache &amp; refresh app</button>
@@ -3364,7 +3360,7 @@ function loadSettings(){
   renderMaterialsLib();
   updateExtraLabels();
   initCollapsibleCards();
-  renderSitesList();renderClientsList();
+  renderClientsSites();
   // Extra worker toggle
   const ewCb=document.getElementById('s-show-extra-worker');
   if(ewCb) ewCb.checked=!!(s.showExtraWorker);
@@ -3968,21 +3964,7 @@ function loadTravelSettings(){
 // --- Sites ---
 let modalLat=null,modalLng=null,modalRadius=100;
 
-function renderSitesList(){
-  const ss=sites(),el=document.getElementById('sites-list');
-  if(!ss.length){el.innerHTML='<div style="font-size:13px;color:var(--text2)">No sites saved yet</div>';return;}
-  el.innerHTML=ss.map((s,i)=>`
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
-      <div>
-        <div style="font-size:14px;font-weight:700">${s.name}</div>
-        <div style="font-size:11px;color:var(--text2)">${s.client?'Client: '+s.client+' · ':''} ${s.lat?s.lat.toFixed(5)+', '+s.lng.toFixed(5)+' · '+(s.radius||100)+'m radius':'No GPS set'}</div>
-      </div>
-      <div style="display:flex;gap:6px;flex-shrink:0">
-        <button class="btn btn-secondary btn-sm" onclick="editSiteClient(${i})">✏️</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteSite(${i})">Remove</button>
-      </div>
-    </div>`).join('');
-}
+function renderSitesList(){ renderClientsSites(); }
 
 function editSiteClient(i){
   const ss=sites();const s=ss[i];if(!s)return;
@@ -4159,22 +4141,92 @@ function saveGstPref(){DB.set('gst_on',document.getElementById('toggle-gst').che
 // --- Clients ---
 function clientsData(){return DB.def('clients',[])}
 
-function renderClientsList(){
-  const cl=clientsData(),el=document.getElementById('clients-list');
+function renderClientsList(){ renderClientsSites(); }
+
+function renderClientsSites(){
+  const el=document.getElementById('clients-sites-list');
   if(!el) return;
-  if(!cl.length){el.innerHTML='<div style="font-size:13px;color:var(--text2)">No clients saved yet</div>';return;}
-  el.innerHTML=cl.map((c,i)=>`
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:14px;font-weight:700">${c.company}${c.isDefault?' <span class="badge badge-green" style="margin-left:6px">Default</span>':''}</div>
-        <div style="font-size:11px;color:var(--text2);margin-top:2px">${[c.contact,c.abn?'ABN '+c.abn:'',c.phone].filter(Boolean).join(' · ')}</div>
+  const cl=clientsData(), ss=sites();
+
+  if(!cl.length){
+    el.innerHTML='<div style="font-size:13px;color:var(--text2);padding:6px 0">No clients saved yet — tap + Add client below.</div>';
+    // Still show unlinked sites if any
+    const unlinked=ss.filter(s=>!s.client);
+    if(unlinked.length) el.innerHTML+=_renderUnlinkedSites(unlinked,ss);
+    return;
+  }
+
+  let html='';
+  cl.forEach((c,ci)=>{
+    const clientSites=ss.filter(s=>s.client===c.company);
+    const subtitle=[c.contact,c.abn?'ABN '+c.abn:'',c.phone].filter(Boolean).join(' · ');
+    const sitesHtml=clientSites.map(s=>{
+      const si=ss.indexOf(s);
+      const coord=s.lat?s.lat.toFixed(4)+', '+s.lng.toFixed(4)+' · '+(s.radius||100)+'m':'No GPS set';
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0 6px 8px;border-top:1px solid var(--border)">
+        <div style="flex:1;min-width:0;font-size:13px">
+          <span style="font-weight:600">📍 ${s.name}</span>
+          <span style="color:var(--text2);font-size:11px;margin-left:6px">${coord}</span>
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0;margin-left:6px">
+          <button class="btn btn-secondary btn-sm" onclick="editSiteClient(${si})" title="Reassign">↔</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteSite(${si})">✕</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    html+=`<div style="padding:12px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:15px;font-weight:700">${c.company}${c.isDefault?' <span class="badge badge-green" style="margin-left:6px">Default</span>':''}</div>
+          ${subtitle?`<div style="font-size:11px;color:var(--text2);margin-top:2px">${subtitle}</div>`:''}
+        </div>
+        <div style="display:flex;gap:5px;flex-shrink:0;margin-left:8px;margin-top:2px">
+          ${!c.isDefault?`<button class="btn btn-secondary btn-sm" onclick="setDefaultClient(${ci})">Default</button>`:''}
+          <button class="btn btn-secondary btn-sm" onclick="editClient(${ci})">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteClient(${ci})">✕</button>
+        </div>
       </div>
-      <div style="display:flex;gap:6px;flex-shrink:0;margin-left:8px">
-        ${!c.isDefault?`<button class="btn btn-secondary btn-sm" onclick="setDefaultClient(${i})">Default</button>`:''}
-        <button class="btn btn-secondary btn-sm" onclick="editClient(${i})">Edit</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteClient(${i})">Remove</button>
+      ${sitesHtml}
+      <button class="btn btn-secondary btn-sm" style="margin-top:8px;width:100%;text-align:center" onclick="addSiteForClient(${ci})">📍 Add site</button>
+    </div>`;
+  });
+
+  // Unlinked sites at the bottom
+  const unlinked=ss.filter(s=>!s.client);
+  if(unlinked.length) html+=_renderUnlinkedSites(unlinked,ss);
+
+  el.innerHTML=html;
+}
+
+function _renderUnlinkedSites(unlinked,ss){
+  let h=`<div style="padding:12px 0">
+    <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Unlinked sites</div>`;
+  unlinked.forEach(s=>{
+    const si=ss.indexOf(s);
+    const coord=s.lat?s.lat.toFixed(4)+', '+s.lng.toFixed(4)+' · '+(s.radius||100)+'m':'No GPS set';
+    h+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;min-width:0;font-size:13px">
+        <span style="font-weight:600">📍 ${s.name}</span>
+        <span style="color:var(--text2);font-size:11px;margin-left:6px">${coord}</span>
       </div>
-    </div>`).join('');
+      <div style="display:flex;gap:4px;flex-shrink:0;margin-left:6px">
+        <button class="btn btn-secondary btn-sm" onclick="editSiteClient(${si})" title="Assign to client">↔</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteSite(${si})">✕</button>
+      </div>
+    </div>`;
+  });
+  h+=`<button class="btn btn-secondary btn-sm" style="margin-top:8px;width:100%;text-align:center" onclick="addSite()">📍 Add unlinked site</button></div>`;
+  return h;
+}
+
+function addSiteForClient(ci){
+  const cl=clientsData();
+  const c=cl[ci];
+  if(!c) return;
+  addSite(); // opens modal and resets fields
+  const sel=document.getElementById('modal-site-client');
+  if(sel) sel.value=c.company;
 }
 
 function addClient(){
