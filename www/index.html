@@ -1256,7 +1256,7 @@ window.firebaseSignOut = async function() {
   </div>
 </div>
 <script>
-const APP_VERSION = 'v40';
+const APP_VERSION = 'v41';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1657,6 +1657,10 @@ var DB={
   set(k,v){localStorage.setItem('mcn_'+k,JSON.stringify(v))},
   def(k,d){const v=DB.get(k);return v!==null?v:d}
 };
+
+function escHtml(s){
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
 // --- IndexedDB for saved invoices ---
 const InvoiceDB={
