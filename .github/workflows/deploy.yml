@@ -49,7 +49,7 @@ jobs:
           cat > www/updates/latest.json << EOF
           {
             "version": "${SEMVER}",
-            "url": "https://banksiasprings.github.io/mcnichol-invoices/updates/bundle.zip",
+            "url": "https://banksiasprings.github.io/tradie-invoices/updates/bundle.zip",
             "checksum": "${CHECKSUM}"
           }
           EOF
