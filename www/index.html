@@ -610,7 +610,7 @@ onAuthStateChanged(auth, async (user) => {
       // round-trip. The blob restore above already gives us the correct invoiced
       // flags; this is a promotion-only safety net that can settle after the UI loads.
       ArchivedSync.restoreArchivedFlags().catch(e => console.warn('ArchivedSync:', e));
-      GeoLog.add('info', 'App started (v50)');
+      GeoLog.add('info', 'App started (v51)');
       if (loadingScreen) loadingScreen.style.display = 'none';
       if (loginScreen)   loginScreen.style.display   = 'none';
       if (appWrapper)    appWrapper.style.display     = 'block';
@@ -1469,7 +1469,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v50';
+const APP_VERSION = 'v51';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1501,12 +1501,15 @@ async function forceAppUpdate() {
         console.warn('[Updater] getLatest() failed, falling back:', e);
       }
 
-      // If getLatest() didn't work, build manifest info from known values
+      // If getLatest() didn't work, fetch the manifest directly as fallback
       if (!latest || !latest.url) {
-        latest = {
-          version: '1.49.0',
-          url: 'https://banksiasprings.github.io/tradie-invoices/updates/bundle.zip'
-        };
+        try {
+          const mRes = await fetch('https://banksiasprings.github.io/tradie-invoices/updates/latest.json?_=' + Date.now());
+          latest = await mRes.json();
+        } catch(e) {
+          console.warn('[Updater] manifest fetch failed:', e);
+          latest = { version: '1.50.0', url: 'https://banksiasprings.github.io/tradie-invoices/updates/bundle.zip' };
+        }
       }
 
       // Get current bundle version to avoid re-downloading the same version
@@ -2048,8 +2051,10 @@ async function cloudPullNow(){
   if(!window.CloudSync||!window.CloudSync.uid){toast('Not signed in');return;}
   toast('Pulling from cloud…');
   GeoLog.add('info','Force pull started');
-  // Wipe local data + modTimes so forceRestore pulls every key fresh from Firestore
-  const _PULL_KEYS=['settings','clients','days','sites','activeDay','invoices','gst_on'];
+  // Wipe local data + modTimes so forceRestore pulls every key fresh from Firestore.
+  // IMPORTANT: never wipe activeDay — if there's a day in progress (timer running or review pending)
+  // pulling from Firestore would overwrite or destroy unsaved work for today.
+  const _PULL_KEYS=['settings','clients','days','sites','invoices','gst_on'];
   _PULL_KEYS.forEach(k=>localStorage.removeItem('mcn_'+k));
   localStorage.removeItem('mcn_modTimes');
   try {
