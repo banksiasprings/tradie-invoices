@@ -610,7 +610,7 @@ onAuthStateChanged(auth, async (user) => {
       // round-trip. The blob restore above already gives us the correct invoiced
       // flags; this is a promotion-only safety net that can settle after the UI loads.
       ArchivedSync.restoreArchivedFlags().catch(e => console.warn('ArchivedSync:', e));
-      GeoLog.add('info', 'App started (v49)');
+      GeoLog.add('info', 'App started (v50)');
       if (loadingScreen) loadingScreen.style.display = 'none';
       if (loginScreen)   loginScreen.style.display   = 'none';
       if (appWrapper)    appWrapper.style.display     = 'block';
@@ -1469,7 +1469,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v49';
+const APP_VERSION = 'v50';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -2423,6 +2423,8 @@ const GeoLog = {
 let watchId=null,lastLat=null,lastLng=null;
 let geoAutoStartTriggered=false;
 let geoAutoStopTriggered=false;
+let geoAutoStartDate=null; // calendar date (YYYY-MM-DD) when auto-start last fired
+let geoAutoStopDate=null;  // calendar date when auto-stop last fired
 let outsideSiteTimer=null;
 let outsideSiteTimerStart=null; // when the debounce started (for countdown display)
 let bgPollInterval=null; // backup polling when watchPosition goes quiet
@@ -2451,7 +2453,7 @@ function startBgPoll(){
   }, 90000);
 }
 function stopBgPoll(){ clearInterval(bgPollInterval); bgPollInterval=null; }
-const GEO_STOP_DEBOUNCE=2.5*60*1000; // 2.5 minutes
+const GEO_STOP_DEBOUNCE=5*60*1000; // 5 minutes — must be outside this long before auto-stop fires
 
 function startGPS(){
   if(!navigator.geolocation) return;
@@ -2500,6 +2502,7 @@ function checkNearbySites(lat,lng){
     const h=new Date().getHours();
     if(h>=5&&h<21){ // 5am–9pm only
       geoAutoStartTriggered=true;
+      geoAutoStartDate=todayStr();
       GeoLog.add('enter','[Web GPS] Entered geofence: '+nearestGeo.name+' ('+Math.round(ndGeo)+'m)');
       autoStartTimer(nearestGeo);
     }
@@ -2522,6 +2525,7 @@ function checkNearbySites(lat,lng){
             const hour=new Date().getHours();
             if(hour>=5&&hour<21&&activeDay()&&!geoAutoStopTriggered){
               geoAutoStopTriggered=true;
+              geoAutoStopDate=todayStr();
               GeoLog.add('exit','[Web GPS] Left geofence: '+(activeDay()?activeDay().site:'?'));
               autoStopTimer();
             }
@@ -2855,6 +2859,7 @@ function saveDay(){
   DB.set('days',filtered);DB.set('activeDay',null);clearInterval(timerInterval);
   if(window.CloudSync) window.CloudSync.pushAll().then(()=>toast('☁ Synced to cloud ✓')).catch(()=>{});
   geoAutoStartTriggered=false;geoAutoStopTriggered=false;
+  geoAutoStartDate=null;geoAutoStopDate=null; // allow fresh triggers for next job entry
   if(outsideSiteTimer){clearTimeout(outsideSiteTimer);outsideSiteTimer=null;outsideSiteTimerStart=null;}
   stopBgPoll();
   toast('Day saved! ✓');
@@ -5398,6 +5403,7 @@ window.initApp = function() {
         return;
       }
       geoAutoStartTriggered = true;
+      geoAutoStartDate = todayStr();
       autoStartTimer(site, ev.time);
 
     } else if (ev.type === 'exit') {
@@ -5413,8 +5419,33 @@ window.initApp = function() {
         GeoLog.add('ignore', 'Exit ignored — active site is ' + ad.site + ', not ' + ev.site);
         return;
       }
-      geoAutoStopTriggered = true;
-      autoStopTimer(ev.time);
+      // Debounce native EXIT the same way web GPS does — don't stop instantly on boundary flutter.
+      // If the exit event is older than GEO_STOP_DEBOUNCE, apply immediately (user was clearly away).
+      // If recent, start a debounce timer so a quick re-enter can cancel it.
+      const evMs = ev.timestamp ? Date.parse(ev.timestamp) : Date.now();
+      const evAge = Date.now() - evMs;
+      if (evAge >= GEO_STOP_DEBOUNCE) {
+        // Been outside long enough — stop now
+        geoAutoStopTriggered = true;
+        geoAutoStopDate = todayStr();
+        autoStopTimer(ev.time);
+      } else {
+        // Recent exit — debounce before stopping
+        const delay = GEO_STOP_DEBOUNCE - evAge;
+        GeoLog.add('info', 'Native EXIT — debouncing ' + Math.round(delay/1000) + 's before stopping');
+        if (!outsideSiteTimer) {
+          outsideSiteTimerStart = Date.now();
+          outsideSiteTimer = setTimeout(() => {
+            outsideSiteTimer = null; outsideSiteTimerStart = null;
+            const hour = new Date().getHours();
+            if (hour >= 5 && hour < 21 && activeDay() && !geoAutoStopTriggered) {
+              geoAutoStopTriggered = true;
+              geoAutoStopDate = todayStr();
+              autoStopTimer();
+            }
+          }, delay);
+        }
+      }
     }
   }
 
@@ -5458,9 +5489,12 @@ window.initApp = function() {
   // appearing while the loading screen is up and potentially locking the WebView.
   window.initNativeGeo = initNativeGeo;
   document.addEventListener('resume', function() {
-    // Reset double-fire guards so a new day's events can fire
-    geoAutoStartTriggered = false;
-    geoAutoStopTriggered = false;
+    // Only reset geo flags on a NEW calendar day — not on every app resume.
+    // Resetting on every resume caused repeated auto-start/stop when the user
+    // opened the app while near the geofence boundary (GPS flutter).
+    const _today = todayStr();
+    if (geoAutoStartDate !== _today) { geoAutoStartTriggered = false; geoAutoStartDate = null; }
+    if (geoAutoStopDate !== _today) { geoAutoStopTriggered = false; geoAutoStopDate = null; }
     processPendingGeoEvents();
   });
 
