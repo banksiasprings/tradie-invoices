@@ -622,6 +622,9 @@ onAuthStateChanged(auth, async (user) => {
     // Signed out — reset flag so next sign-in does a fresh restore
     _sessionInit = false;
     CloudSync.uid = null;
+    // Stop GPS — a logged-out device must not keep polling location.
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    stopBgPoll();
     if (loadingScreen) loadingScreen.style.display = 'none';
     if (loginScreen)   { loginScreen.style.display = 'flex'; }
     if (appWrapper)    appWrapper.style.display     = 'none';
