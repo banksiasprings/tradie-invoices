@@ -1480,7 +1480,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v56';
+const APP_VERSION = 'v57';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1494,7 +1494,7 @@ document.getElementById('app-version').textContent = APP_VERSION;
   }catch(e){ console.warn('[Updater] notifyAppReady failed:',e); }
 })();
 
-async function forceAppUpdate() {
+async function forceAppUpdate(isRetry) {
   const btn = document.getElementById('update-btn');
   btn.textContent = 'Checking…';
   btn.disabled = true;
@@ -1551,7 +1551,8 @@ async function forceAppUpdate() {
       toast('Installing — app will reload…');
 
       await updater.set({ id: bundle.id });
-      // set() reloads the app — nothing below this runs
+      // set() should reload the app, but add a fallback in case it doesn't
+      setTimeout(() => { window.location.reload(true); }, 1500);
 
     } else {
       // ── Web / PWA fallback: clear SW cache and hard-reload ──
@@ -1569,6 +1570,13 @@ async function forceAppUpdate() {
   } catch(e) {
     console.error('[Update] error:', e);
     const msg = e && e.message ? e.message : 'Unknown error';
+    // Auto-retry once — plugin init can fail on first call
+    if (!isRetry) {
+      console.log('[Update] Retrying in 1s…');
+      btn.textContent = 'Retrying…';
+      setTimeout(() => forceAppUpdate(true), 1000);
+      return;
+    }
     toast('Update failed: ' + msg);
     btn.textContent = 'Check for Update';
     btn.disabled = false;
