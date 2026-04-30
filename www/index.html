@@ -610,7 +610,7 @@ onAuthStateChanged(auth, async (user) => {
       // round-trip. The blob restore above already gives us the correct invoiced
       // flags; this is a promotion-only safety net that can settle after the UI loads.
       ArchivedSync.restoreArchivedFlags().catch(e => console.warn('ArchivedSync:', e));
-      GeoLog.add('info', 'App started (v51)');
+      GeoLog.add('info', 'App started (v52)');
       if (loadingScreen) loadingScreen.style.display = 'none';
       if (loginScreen)   loginScreen.style.display   = 'none';
       if (appWrapper)    appWrapper.style.display     = 'block';
@@ -1469,7 +1469,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v51';
+const APP_VERSION = 'v52';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -2840,23 +2840,41 @@ function editDay(){
 }
 
 function saveEdit(){
-  const ad=activeDay();if(!ad)return;
-  ad.start=document.getElementById('edit-start').value;
-  ad.finish=document.getElementById('edit-finish').value;
-  ad.lunchMins=parseInt(document.getElementById('edit-lunch').value)||0;
-  ad.sonWorking=document.getElementById('edit-son-toggle').checked;
-  const sv=document.getElementById('edit-son-hours').value;
-  ad.sonHours=sv?parseFloat(sv):null;
-  ad.machines=readMachinesFromUI('edit');
-  if(!ad.rate) ad.rate=S().rate;
-  if(!ad.sonrate) ad.sonrate=S().sonrate||30;
-  Object.assign(ad,readTravelFromUI('edit'));
-  Object.assign(ad,readMaterialsFromUI('edit'));
-  DB.set('activeDay',ad);closeEditModal();showReview(ad);
+  const ad=activeDay();
+  if(!ad){
+    GeoLog.add('error','saveEdit: activeDay is null — cannot save edit');
+    toast('⚠ Save failed: no active day found. Please re-enter manually in Log tab.');
+    return;
+  }
+  try {
+    ad.start=document.getElementById('edit-start').value;
+    ad.finish=document.getElementById('edit-finish').value;
+    ad.lunchMins=parseInt(document.getElementById('edit-lunch').value)||0;
+    ad.sonWorking=document.getElementById('edit-son-toggle').checked;
+    const sv=document.getElementById('edit-son-hours').value;
+    ad.sonHours=sv?parseFloat(sv):null;
+    ad.machines=readMachinesFromUI('edit');
+    if(!ad.rate) ad.rate=S().rate;
+    if(!ad.sonrate) ad.sonrate=S().sonrate||30;
+    Object.assign(ad,readTravelFromUI('edit'));
+    Object.assign(ad,readMaterialsFromUI('edit'));
+    GeoLog.add('info','saveEdit: saved start='+ad.start+' finish='+ad.finish+' son='+ad.sonWorking);
+    DB.set('activeDay',ad);closeEditModal();showReview(ad);
+  } catch(e) {
+    GeoLog.add('error','saveEdit threw: '+e.message);
+    toast('⚠ Edit error: '+e.message);
+  }
 }
 
 function saveDay(){
-  const ad=activeDay();if(!ad)return;
+  const ad=activeDay();
+  if(!ad){
+    GeoLog.add('error','saveDay: activeDay is null — nothing to save');
+    toast('⚠ Save failed: no active day. Check Geo Log for details.');
+    return;
+  }
+  GeoLog.add('info','saveDay: saving '+ad.date+' start='+ad.start+' finish='+ad.finish+' son='+ad.sonWorking);
+  try {
   // Filter by unique id so a second entry on the same day doesn't wipe the first
   const dl=days(),filtered=ad.id?dl.filter(d=>d.id!==ad.id):dl;
   const _newDay={...ad,invoiced:false};filtered.push(_newDay);
@@ -2881,6 +2899,10 @@ function saveDay(){
   document.getElementById('toggle-machine2').checked=false;
   document.getElementById('machine-section2').style.display='none';
   renderMachineUI('machine-idle-list',[],'idle');
+  } catch(e) {
+    GeoLog.add('error','saveDay threw: '+e.message);
+    toast('⚠ Save error: '+e.message);
+  }
 }
 
 function closeEditModal(){document.getElementById('edit-modal').classList.remove('open')}
