@@ -1476,7 +1476,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v53';
+const APP_VERSION = 'v54';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -5486,11 +5486,26 @@ window.initApp = function() {
         GeoLog.add('ignore', 'Exit ignored — active site is ' + ad.site + ', not ' + ev.site);
         return;
       }
+      // Before acting on a queued EXIT, check if we're currently inside the geofence.
+      // GPS flutter while the screen was off can fire a spurious EXIT even though the
+      // user never actually left. If current position is inside, discard the event.
+      if (lastLat != null && lastLng != null) {
+        const activeSite = siteList.find(s => s.name === ev.site);
+        if (activeSite && activeSite.lat) {
+          const nowDist = dist(lastLat, lastLng, activeSite.lat, activeSite.lng);
+          const radius = activeSite.radius || 100;
+          if (nowDist < radius) {
+            GeoLog.add('ignore', 'Native EXIT discarded — currently ' + Math.round(nowDist) + 'm inside ' + ev.site + ' (radius ' + radius + 'm)');
+            return;
+          }
+        }
+      }
+
       // Debounce native EXIT the same way web GPS does — don't stop instantly on boundary flutter.
       // If the exit event is older than GEO_STOP_DEBOUNCE, apply immediately (user was clearly away).
       // If recent, start a debounce timer so a quick re-enter can cancel it.
-      const evMs = ev.timestamp ? Date.parse(ev.timestamp) : Date.now();
-      const evAge = Date.now() - evMs;
+      const evMs = ev.timestamp ? Date.parse(ev.timestamp) : 0;
+      const evAge = (evMs > 0) ? (Date.now() - evMs) : 0; // treat unparseable timestamps as "just now"
       if (evAge >= GEO_STOP_DEBOUNCE) {
         // Been outside long enough — stop now
         geoAutoStopTriggered = true;
