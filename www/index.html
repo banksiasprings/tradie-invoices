@@ -2497,7 +2497,8 @@ function startGPS(){
   },()=>{dot.className='gps-dot';lbl.textContent='GPS unavailable — select site manually';},{enableHighAccuracy:true,maximumAge:30000});
 }
 
-function dist(la1,lo1,la2,lo2){return Math.sqrt(Math.pow(la2-la1,2)+Math.pow(lo2-lo1,2))*111000}
+// Haversine great-circle distance in metres.
+function dist(la1,lo1,la2,lo2){const R=6371000,toRad=Math.PI/180,p1=la1*toRad,p2=la2*toRad,dp=(la2-la1)*toRad,dl=(lo2-lo1)*toRad,a=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))}
 
 function checkNearbySites(lat,lng){
   const ss=sites();
