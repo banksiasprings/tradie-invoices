@@ -8,6 +8,20 @@ const ASSETS = [
   'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap'
 ];
 
+// URLs we must never cache: auth/data calls and OTA manifest must always
+// be fresh. Returning without calling respondWith() lets the browser handle
+// the request as if the SW weren't installed.
+const NEVER_CACHE = [
+  'firestore.googleapis.com',
+  'identitytoolkit.googleapis.com',
+  'securetoken.googleapis.com',
+  'firebasestorage.googleapis.com',
+  'firebaseapp.com',
+  'firebaseinstallations.googleapis.com',
+  '/updates/latest.json',
+  '/updates/bundle.zip'
+];
+
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE).then(cache => {
@@ -27,14 +41,23 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
+  const req = e.request;
+  // Mutating requests must never go through the cache.
+  if (req.method !== 'GET') return;
+  // Firestore, auth, and OTA URLs always hit the network — caching them
+  // either serves stale data across users or pins old OTA versions forever.
+  if (NEVER_CACHE.some(p => req.url.includes(p))) return;
+  // Cache-first for everything else (app shell, fonts, icons).
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      return cached || fetch(e.request).then(response => {
-        const clone = response.clone();
-        caches.open(CACHE).then(cache => cache.put(e.request, clone));
+    caches.match(req).then(cached =>
+      cached || fetch(req).then(response => {
+        if (response && response.status === 200 && response.type !== 'opaque') {
+          const clone = response.clone();
+          caches.open(CACHE).then(cache => cache.put(req, clone));
+        }
         return response;
-      }).catch(() => cached);
-    })
+      }).catch(() => cached)
+    )
   );
 });
 
