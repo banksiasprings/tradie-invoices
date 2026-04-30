@@ -1492,23 +1492,33 @@ async function forceAppUpdate() {
 
     if (updater) {
       // ── Native app: hot-swap the web bundle without reinstalling the APK ──
-      const manifestUrl = 'https://banksiasprings.github.io/tradie-invoices/updates/latest.json?t=' + Date.now();
-      let res;
-      try { res = await fetch(manifestUrl); } catch(fetchErr) { throw new Error('No internet — check your connection'); }
-      if (!res.ok) throw new Error('Could not reach update server (' + res.status + ')');
-      const latest = await res.json();
+      // Use getLatest() — native HTTP request (avoids WebView fetch restrictions on Android)
+      let latest = null;
+      try {
+        latest = await updater.getLatest();
+      } catch(e) {
+        // getLatest() not available in this plugin version — fall back to direct download
+        console.warn('[Updater] getLatest() failed, falling back:', e);
+      }
 
-      // Get current bundle version — API varies across CapacitorUpdater versions, guard defensively
+      // If getLatest() didn't work, build manifest info from known values
+      if (!latest || !latest.url) {
+        latest = {
+          version: '1.49.0',
+          url: 'https://banksiasprings.github.io/tradie-invoices/updates/bundle.zip'
+        };
+      }
+
+      // Get current bundle version to avoid re-downloading the same version
       let currentVersion = null;
       try {
         const result = await updater.getCurrentBundle();
-        // Different versions expose it as result.bundle.version or result.current.version
         currentVersion = (result.bundle && result.bundle.version)
           || (result.current && result.current.version)
           || null;
       } catch(e) {
         console.warn('[Updater] getCurrentBundle failed:', e);
-        currentVersion = null; // can't determine current — proceed with download
+        currentVersion = null;
       }
 
       if (currentVersion && latest.version === currentVersion) {
