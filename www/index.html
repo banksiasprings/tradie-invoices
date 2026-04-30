@@ -648,11 +648,15 @@ window.loadAdminUsers = async function(location) {
       list.innerHTML += `
         <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
           <div>
-            <div style="font-size:14px;font-weight:600;color:var(--text)">${u.email}${isMe?' <span style="font-size:11px;color:var(--green)">(admin)</span>':''}</div>
+            <div style="font-size:14px;font-weight:600;color:var(--text)">${escHtml(u.email)}${isMe?' <span style="font-size:11px;color:var(--green)">(admin)</span>':''}</div>
             <div style="font-size:11px;color:var(--text3);margin-top:2px">Last seen: ${seen}</div>
           </div>
-          ${isMe ? '' : `<button class="btn btn-secondary" style="font-size:12px;padding:6px 12px;color:var(--red);border-color:var(--red)" onclick="deleteUserData('${u.uid}','${u.email}')">Delete</button>`}
+          ${isMe ? '' : `<button class="btn btn-secondary admin-delete-btn" style="font-size:12px;padding:6px 12px;color:var(--red);border-color:var(--red)" data-uid="${escHtml(u.uid)}" data-email="${escHtml(u.email)}">Delete</button>`}
         </div>`;
+    });
+    // Wire delete buttons via dataset — avoids onclick string injection from email/uid.
+    list.querySelectorAll('.admin-delete-btn').forEach(btn => {
+      btn.onclick = () => deleteUserData(btn.dataset.uid, btn.dataset.email);
     });
   } catch(e) {
     list.innerHTML = '<div style="color:var(--red);font-size:13px">Could not load users. Check connection.</div>';
@@ -2254,7 +2258,7 @@ function _renderMachineLines(prefix){
   if(!lines.length){container.innerHTML='';return;}
   container.innerHTML=lines.map((m,i)=>{
     const ht=m.hireType||'wet';
-    const plantStr=m.plantNum?` · #${m.plantNum}`:'';
+    const plantStr=m.plantNum?` · #${escHtml(m.plantNum)}`:'';
     const badgeLbl=ht==='wet'?'WET HIRE':ht==='dry'?'DRY HIRE':'DAY RATE';
     const badgeSty=ht==='wet'?'color:#1E40AF;background:#DBEAFE':ht==='dry'?'color:#2D6B4A;background:#D4EDE0':'color:var(--amber);background:var(--amber-light)';
     let body='';
@@ -2273,7 +2277,7 @@ function _renderMachineLines(prefix){
     }
     return`<div style="padding:10px 0;border-bottom:1px solid var(--border)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div><div style="font-size:14px;font-weight:600">${m.name}${plantStr}</div>
+        <div><div style="font-size:14px;font-weight:600">${escHtml(m.name)}${plantStr}</div>
           <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;${badgeSty}">${badgeLbl}</span></div>
         <button onclick="_removeMachineFromUI('${prefix}',${i})" style="background:var(--red-light);color:var(--red);border:none;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer">✕</button>
       </div>${body}</div>`;
@@ -2330,16 +2334,19 @@ function openMachinePicker(prefix){
     const rStr=ht==='day'?'$'+(m.dayRate||0)+'/day':'$'+(m.rate||0)+'/hr';
     const badge=ht==='wet'?'WET':ht==='dry'?'DRY':'DAY';
     const badgeSty=ht==='wet'?'color:#1E40AF;background:#DBEAFE':ht==='dry'?'color:#2D6B4A;background:#D4EDE0':'color:var(--amber);background:var(--amber-light)';
-    const ne=m.name.replace(/'/g,"\\'");
     const alreadyAdded=(_machineLines[prefix]||[]).find(ml=>ml.name===m.name);
-    return`<div onclick="${alreadyAdded?'':'addMachineFromLib(\''+prefix+'\',\''+ne+'\');closeMachinePicker()'}" style="display:flex;justify-content:space-between;align-items:center;padding:11px 12px;border-radius:var(--radius-sm);border:1.5px solid var(--border);margin-bottom:7px;cursor:${alreadyAdded?'default':'pointer'};opacity:${alreadyAdded?0.5:1}${alreadyAdded?'':';background:var(--surface2)'}">
+    return`<div ${alreadyAdded?'':`class="machine-picker-item" data-name="${escHtml(m.name)}"`} style="display:flex;justify-content:space-between;align-items:center;padding:11px 12px;border-radius:var(--radius-sm);border:1.5px solid var(--border);margin-bottom:7px;cursor:${alreadyAdded?'default':'pointer'};opacity:${alreadyAdded?0.5:1}${alreadyAdded?'':';background:var(--surface2)'}">
       <div>
-        <div style="font-size:14px;font-weight:600">${m.name}${m.plantNum?' <span style="font-weight:400;color:var(--text2)">#'+m.plantNum+'</span>':''}</div>
+        <div style="font-size:14px;font-weight:600">${escHtml(m.name)}${m.plantNum?' <span style="font-weight:400;color:var(--text2)">#'+escHtml(m.plantNum)+'</span>':''}</div>
         <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;${badgeSty}">${badge}</span>
       </div>
       <div style="font-size:13px;font-weight:600;color:var(--text2)">${alreadyAdded?'Added':rStr}</div>
     </div>`;
   }).join('');
+  // Wire pick-a-machine via dataset — avoids onclick injection from machine name.
+  el.querySelectorAll('.machine-picker-item').forEach(item => {
+    item.onclick = () => { addMachineFromLib(prefix, item.dataset.name); closeMachinePicker(); };
+  });
   document.getElementById('machine-picker-modal').classList.add('open');
 }
 function closeMachinePicker(){
@@ -2434,7 +2441,7 @@ const GeoLog = {
           <span style="flex-shrink:0;width:18px;text-align:center">${icon}</span>
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;${errStyle}color:var(--text1)">${e.type.toUpperCase()} <span style="font-weight:400;color:var(--text2)">${e.time}</span></div>
-            <div style="color:var(--text2);word-break:break-word">${e.detail}</div>
+            <div style="color:var(--text2);word-break:break-word">${escHtml(e.detail)}</div>
           </div>
         </div>`;
       }).join('');
@@ -2676,7 +2683,7 @@ function initCheckinScreen(){
   document.getElementById('active-son-rate').textContent=sonRate;
   const sel=document.getElementById('checkin-site');
   sel.innerHTML='<option value="">Select site…</option>';
-  sites().forEach(st=>{sel.innerHTML+=`<option value="${st.name}">${st.name}</option>`});
+  sites().forEach(st=>{sel.innerHTML+=`<option value="${escHtml(st.name)}">${escHtml(st.name)}</option>`});
   updateClientIndicator(sel.value);
   renderMachineUI('machine-idle-list',[],'idle');
   initTravelSection('idle',null);
@@ -2841,9 +2848,9 @@ function showReview(ad){
   if(machineRevEl){
     if(machineLines&&machineLines.length){
       machineRevEl.innerHTML=machineLines.map(ml=>{
-        if(ml.hireType==='day') return`${ml.name}: day rate = ${fmtMoney(ml.total)}`;
-        const pn=ml.plantNum?` #${ml.plantNum}`:'';
-        let s=`${ml.name}${pn} (${ml.hireType}): ${ml.machineHrs.toFixed(1)}h × $${ml.rate}/hr = ${fmtMoney(ml.machineHrs*ml.rate)}`;
+        if(ml.hireType==='day') return`${escHtml(ml.name)}: day rate = ${fmtMoney(ml.total)}`;
+        const pn=ml.plantNum?` #${escHtml(ml.plantNum)}`:'';
+        let s=`${escHtml(ml.name)}${pn} (${ml.hireType}): ${ml.machineHrs.toFixed(1)}h × $${ml.rate}/hr = ${fmtMoney(ml.machineHrs*ml.rate)}`;
         if(ml.laborOvertHrs>0) s+=` + ${ml.laborOvertHrs.toFixed(1)}h overage × $${ml.laborRate}/hr = ${fmtMoney(ml.laborOverage)}`;
         s+=` = ${fmtMoney(ml.total)}`;return s;
       }).join(' | ');
@@ -3141,11 +3148,11 @@ function renderLog(){
     c.innerHTML=`<div class="day-item" style="border:none;padding:0">
       <div class="day-item-left">
         <div class="date">${fmtDate(d.date)}</div>
-        <div class="detail">${d.site} · ${d.start}–${d.finish||'?'} · ${d.lunchMins?d.lunchMins+'min lunch':'no lunch'}</div>
+        <div class="detail">${escHtml(d.site)} · ${escHtml(d.start)}–${escHtml(d.finish||'?')} · ${d.lunchMins?d.lunchMins+'min lunch':'no lunch'}</div>
         <div style="margin-top:4px">
           <span class="badge badge-green">${currentTradeProfile().label}</span>
           ${d.sonWorking?`<span class="badge badge-blue" style="margin-left:4px">Extra ${formatHours(sonH)} @$${sonrate}</span>`:''}
-          ${(d.machines||[]).map(m=>`<span class="badge badge-amber" style="margin-left:4px">${m.name}</span>`).join('')}
+          ${(d.machines||[]).map(m=>`<span class="badge badge-amber" style="margin-left:4px">${escHtml(m.name)}</span>`).join('')}
           ${travelLine?`<span class="badge" style="margin-left:4px;background:var(--surface2);color:var(--text2)">🚗 ${travelLine.mode==='km'?travelLine.km+'km':travelLine.hrs+'h'}</span>`:''}
           ${materialsTotal>0?`<span class="badge" style="margin-left:4px;background:var(--surface2);color:var(--text2)">🧱 ${fmtMoney(materialsTotal)}</span>`:''}
           ${d.invoiced?'<span class="badge badge-amber" style="margin-left:4px">Archived</span>':''}
@@ -3217,7 +3224,7 @@ function renderInvoice(){
       <input type="checkbox" class="inv-day-check" data-id="${id}" ${sel?'checked':''} onchange="toggleInvoiceDay('${id}')">
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:700;color:var(--text)">${fmtDate(d.date)}${isArchived?' <span class="badge badge-amber" style="font-size:9px;margin-left:4px">archived</span>':''}</div>
-        <div style="font-size:11px;color:var(--text2);margin-top:2px">${d.site} · ${formatHours(h)} · $${d.rate}/hr${d.sonWorking?` + Extra ${formatHours(sonH)} @$${sonrate}`:''}${ml.length?' + '+ml.map(m=>m.name).join(', '):''}${tt>0?' + 🚗 '+fmtMoney(tt):''}${matT>0?' + 🧱 '+fmtMoney(matT):''}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">${escHtml(d.site)} · ${formatHours(h)} · $${d.rate}/hr${d.sonWorking?` + Extra ${formatHours(sonH)} @$${sonrate}`:''}${ml.length?' + '+ml.map(m=>escHtml(m.name)).join(', '):''}${tt>0?' + 🚗 '+fmtMoney(tt):''}${matT>0?' + 🧱 '+fmtMoney(matT):''}</div>
       </div>
       <div style="font-size:15px;font-weight:700;color:${sel?'var(--amber)':'var(--text3)'};font-family:'Montserrat',system-ui,sans-serif;flex-shrink:0;margin-left:8px">${fmtMoney(total)}</div>`;
     le.appendChild(wrap);
@@ -3287,7 +3294,7 @@ function buildInvoiceHTML(){
   const numInput=document.getElementById('inv-num-input');
   const invNumOverride=numInput&&numInput.value?parseInt(numInput.value)||s.invnum:s.invnum;
   const c=getSelectedClient();
-  const clientLines=[c.company,c.contact,c.abn?'ABN '+c.abn:'',c.address,c.email,c.phone].filter(Boolean).join('<br>');
+  const clientLines=[c.company,c.contact,c.abn?'ABN '+c.abn:'',c.address,c.email,c.phone].filter(Boolean).map(escHtml).join('<br>');
   let rows='',te=0,th=0,sonTotal=0,sonTotalHrs=0,grandTravelTotal=0,grandMaterialsTotal=0;
   let sonrateUsed=s.sonrate||30;
   const machineAgg={},materialAgg2={};
@@ -3302,7 +3309,7 @@ function buildInvoiceHTML(){
     });
     matL.forEach(m=>{if(!materialAgg2[m.name])materialAgg2[m.name]={qty:0,unitPrice:m.unitPrice,total:0};materialAgg2[m.name].qty+=m.qty;materialAgg2[m.name].total+=m.total;});
     rows+=`<tr>
-      <td>${fmtDate(d.date)}</td><td>${d.start}</td><td>${d.finish||'—'}</td>
+      <td>${fmtDate(d.date)}</td><td>${escHtml(d.start)}</td><td>${escHtml(d.finish||'—')}</td>
       <td>${d.lunchMins?d.lunchMins+'min':'—'}</td>
       <td>${h.toFixed(2)}</td><td>$${d.rate.toFixed(2)}</td>
       <td>${d.sonWorking?currentTradeProfile().label+'+Extra':currentTradeProfile().label}</td>
@@ -3323,10 +3330,10 @@ function buildInvoiceHTML(){
   let machineLinesHTML='';
   if(machineNames.length){
     machineLinesHTML+=machineNames.map(nm=>{
-      const a=machineAgg[nm];const pn=a.plantNum?` (${a.plantNum})`:'';
-      if(a.hireType==='day') return`<div>${nm}${pn} &mdash; day rate &times; ${a.dayCount} day${a.dayCount!==1?'s':''}: $${a.total.toFixed(2)}</div>`;
+      const a=machineAgg[nm];const pn=a.plantNum?` (${escHtml(a.plantNum)})`:'';
+      if(a.hireType==='day') return`<div>${escHtml(nm)}${pn} &mdash; day rate &times; ${a.dayCount} day${a.dayCount!==1?'s':''}: $${a.total.toFixed(2)}</div>`;
       const ht=a.hireType==='wet'?'wet hire':'dry hire';
-      let line=`<div>${nm}${pn} &mdash; ${ht}: ${a.totalHrs.toFixed(2)}h &times; $${a.rate.toFixed(2)}/hr = $${(a.totalHrs*a.rate).toFixed(2)}`;
+      let line=`<div>${escHtml(nm)}${pn} &mdash; ${ht}: ${a.totalHrs.toFixed(2)}h &times; $${a.rate.toFixed(2)}/hr = $${(a.totalHrs*a.rate).toFixed(2)}`;
       if(a.laborOvertHrs>0) line+=` + operator overage ${a.laborOvertHrs.toFixed(2)}h &times; $${a.laborRate.toFixed(2)}/hr = $${a.laborOverage.toFixed(2)}`;
       return line+` = $${a.total.toFixed(2)}</div>`;
     }).join('');
@@ -3341,7 +3348,7 @@ function buildInvoiceHTML(){
   }
 
   const gstLines=gstOn?`<div>GST (10%): $${gst.toFixed(2)}</div><div class="tot">Total inc. GST: $${(grandTotal+gst).toFixed(2)}</div>`:`<div class="tot">Total Payable: $${grandTotal.toFixed(2)}</div>`;
-  return`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice ${n} — ${s.name}</title>
+  return`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice ${n} — ${escHtml(s.name)}</title>
 <style>
 body{font-family:Arial,sans-serif;font-size:11px;color:#111;max-width:800px;margin:20px auto;padding:20px}
 .hg{display:grid;grid-template-columns:1fr 1fr;margin-bottom:16px}.rt{text-align:right;line-height:1.9}.lt{line-height:1.9}
@@ -3352,11 +3359,11 @@ td{padding:4px;border-bottom:1px solid #eee}.tots{text-align:right;margin-top:12
 @media print{body{margin:0;padding:10px}}
 </style></head><body>
 <div class="hg">
-  <div class="lt"><strong>Payable to ${s.name}</strong><br>${s.name}<br>BSB ${s.bsb} Account ${s.account}<br>ABN ${s.abn}</div>
-  <div class="rt"><h2>INVOICE</h2>${s.address}<br>${s.phone}<br>${s.email}<br><strong>INVOICE NO. ${n}</strong><br><strong>DATE: ${fmtDate(todayStr())}</strong></div>
+  <div class="lt"><strong>Payable to ${escHtml(s.name)}</strong><br>${escHtml(s.name)}<br>BSB ${escHtml(s.bsb)} Account ${escHtml(s.account)}<br>ABN ${escHtml(s.abn)}</div>
+  <div class="rt"><h2>INVOICE</h2>${escHtml(s.address)}<br>${escHtml(s.phone)}<br>${escHtml(s.email)}<br><strong>INVOICE NO. ${n}</strong><br><strong>DATE: ${fmtDate(todayStr())}</strong></div>
 </div>
 <hr>
-<div style="line-height:1.9;margin:8px 0"><strong>TO:</strong><br>${clientLines}<br><br><strong>FOR:</strong> ${s.service}</div>
+<div style="line-height:1.9;margin:8px 0"><strong>TO:</strong><br>${clientLines}<br><br><strong>FOR:</strong> ${escHtml(s.service)}</div>
 <hr>
 <table><thead><tr><th>Date</th><th>Start</th><th>Finish</th><th>Lunch</th><th>Hours</th><th>Rate</th><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
 <tbody>${rows}</tbody></table>
@@ -3372,7 +3379,7 @@ ${gstLines}
 function previewInvoice(){
   const s=S(),ui=_getSelectedInvoiceDays();
   const c=getSelectedClient();
-  const clientLines=[c.company,c.contact,c.abn?'ABN '+c.abn:'',c.address,c.email,c.phone].filter(Boolean).join('<br>');
+  const clientLines=[c.company,c.contact,c.abn?'ABN '+c.abn:'',c.address,c.email,c.phone].filter(Boolean).map(escHtml).join('<br>');
   let rows='',te=0,th=0,sonTotal=0,sonTotalHrs=0,grandTravelTotal=0,grandMaterialsTotal=0;
   let sonrateUsed=s.sonrate||30;
   const machineAgg={};
@@ -3387,7 +3394,7 @@ function previewInvoice(){
       if(m.hireType==='day'){a.dayCount++;}else{a.totalHrs+=m.machineHrs||0;a.laborOvertHrs+=m.laborOvertHrs||0;a.laborOverage+=m.laborOverage||0;}
     });
     matL.forEach(m=>{if(!materialAggP[m.name])materialAggP[m.name]={qty:0,unitPrice:m.unitPrice,total:0};materialAggP[m.name].qty+=m.qty;materialAggP[m.name].total+=m.total;});
-    rows+=`<tr><td>${fmtDate(d.date)}</td><td>${d.start}</td><td>${d.finish||'—'}</td><td>${d.lunchMins?d.lunchMins+'m':'—'}</td><td>${h.toFixed(2)}</td><td>$${d.rate}</td><td>${d.sonWorking?currentTradeProfile().label+'+Extra':currentTradeProfile().label}</td><td>$${total.toFixed(2)}</td></tr>`;
+    rows+=`<tr><td>${fmtDate(d.date)}</td><td>${escHtml(d.start)}</td><td>${escHtml(d.finish||'—')}</td><td>${d.lunchMins?d.lunchMins+'m':'—'}</td><td>${h.toFixed(2)}</td><td>$${d.rate}</td><td>${d.sonWorking?currentTradeProfile().label+'+Extra':currentTradeProfile().label}</td><td>$${total.toFixed(2)}</td></tr>`;
   });
   const machineNames=Object.keys(machineAgg);
   const grandMachineTotal=machineNames.reduce((sum,nm)=>sum+machineAgg[nm].total,0);
@@ -3405,10 +3412,10 @@ function previewInvoice(){
   let machineLinesPreview='';
   if(machineNames.length){
     machineLinesPreview+=machineNames.map(nm=>{
-      const a=machineAgg[nm];const pn=a.plantNum?` (${a.plantNum})`:'';
-      if(a.hireType==='day') return`<div>${nm}${pn} — day rate × ${a.dayCount} day${a.dayCount!==1?'s':''}: $${a.total.toFixed(2)}</div>`;
+      const a=machineAgg[nm];const pn=a.plantNum?` (${escHtml(a.plantNum)})`:'';
+      if(a.hireType==='day') return`<div>${escHtml(nm)}${pn} — day rate × ${a.dayCount} day${a.dayCount!==1?'s':''}: $${a.total.toFixed(2)}</div>`;
       const ht=a.hireType==='wet'?'wet hire':'dry hire';
-      let line=`<div>${nm}${pn} — ${ht}: ${a.totalHrs.toFixed(2)}h × $${a.rate.toFixed(2)}/hr = $${(a.totalHrs*a.rate).toFixed(2)}`;
+      let line=`<div>${escHtml(nm)}${pn} — ${ht}: ${a.totalHrs.toFixed(2)}h × $${a.rate.toFixed(2)}/hr = $${(a.totalHrs*a.rate).toFixed(2)}`;
       if(a.laborOvertHrs>0) line+=` + overage ${a.laborOvertHrs.toFixed(2)}h × $${a.laborRate.toFixed(2)}/hr = $${a.laborOverage.toFixed(2)}`;
       return line+` = $${a.total.toFixed(2)}</div>`;
     }).join('');
@@ -3424,11 +3431,11 @@ function previewInvoice(){
   const gstPreview=gstOn?`<div>GST (10%): $${gst.toFixed(2)}</div><div class="inv-total-line">Total inc. GST: $${(grandTotal+gst).toFixed(2)}</div>`:`<div class="inv-total-line">Total Payable: $${grandTotal.toFixed(2)}</div>`;
   document.getElementById('invoice-preview-content').innerHTML=`
 <div class="inv-meta">
-  <div class="inv-left"><strong>Payable to ${s.name}</strong><br>${s.name}<br>BSB ${s.bsb} Acc ${s.account}<br>ABN ${s.abn}</div>
-  <div class="inv-right"><div class="inv-title">INVOICE</div>${s.address}<br>${s.phone}<br>${s.email}<br><strong>NO. ${n}</strong><br>${fmtDate(todayStr())}</div>
+  <div class="inv-left"><strong>Payable to ${escHtml(s.name)}</strong><br>${escHtml(s.name)}<br>BSB ${escHtml(s.bsb)} Acc ${escHtml(s.account)}<br>ABN ${escHtml(s.abn)}</div>
+  <div class="inv-right"><div class="inv-title">INVOICE</div>${escHtml(s.address)}<br>${escHtml(s.phone)}<br>${escHtml(s.email)}<br><strong>NO. ${n}</strong><br>${fmtDate(todayStr())}</div>
 </div>
 <hr class="inv-divider">
-<div style="font-size:10px;margin:6px 0"><strong>TO:</strong><br>${clientLines}<br><br><strong>FOR:</strong> ${s.service}</div>
+<div style="font-size:10px;margin:6px 0"><strong>TO:</strong><br>${clientLines}<br><br><strong>FOR:</strong> ${escHtml(s.service)}</div>
 <hr class="inv-divider">
 <table class="inv-table"><thead><tr><th>Date</th><th>Start</th><th>Finish</th><th>Lunch</th><th>Hrs</th><th>Rate</th><th>Desc</th><th>Amt</th></tr></thead>
 <tbody>${rows||'<tr><td colspan="8" style="text-align:center;color:#999;padding:8px">No days to invoice</td></tr>'}</tbody></table>
@@ -3941,7 +3948,7 @@ function _renderMatLines(prefix){
   if(!lines.length){ container.innerHTML=''; return; }
   container.innerHTML = lines.map((m,i)=>`
     <div style="display:grid;grid-template-columns:1fr 70px 80px 28px;gap:5px;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)">
-      <div style="font-size:13px;font-weight:600;color:var(--text);padding-left:2px">${m.name}</div>
+      <div style="font-size:13px;font-weight:600;color:var(--text);padding-left:2px">${escHtml(m.name)}</div>
       <input type="number" min="1" step="1" value="${m.qty||1}" style="padding:5px 7px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;text-align:center"
         onchange="_updateMatQty('${prefix}',${i},this.value)">
       <div style="font-size:12px;color:var(--text2);text-align:right">$${((m.qty||1)*(m.unitPrice||0)).toFixed(2)}</div>
@@ -3956,12 +3963,15 @@ function _renderMatQuickAdd(prefix){
   if(!lib.length){ container.style.display='none'; return; }
   container.style.display='flex';
   container.innerHTML = lib.map(item=>{
-    const nameEsc = item.name.replace(/'/g,"\\'");
-    return`<button onclick="addMaterialLineUI('${prefix}','${nameEsc}',${item.defaultPrice})"
+    return`<button class="mat-quick-add-btn" data-name="${escHtml(item.name)}" data-price="${item.defaultPrice||0}"
       style="background:var(--surface2);border:1.5px solid var(--border);border-radius:999px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;color:var(--text)">
-      ${item.name} <span style="color:var(--amber)">$${(item.defaultPrice||0).toFixed(2)}</span>
+      ${escHtml(item.name)} <span style="color:var(--amber)">$${(item.defaultPrice||0).toFixed(2)}</span>
     </button>`;
   }).join('');
+  // Wire quick-add via dataset — avoids onclick injection from material name.
+  container.querySelectorAll('.mat-quick-add-btn').forEach(btn => {
+    btn.onclick = () => addMaterialLineUI(prefix, btn.dataset.name, parseFloat(btn.dataset.price)||0);
+  });
   // Show custom button
   const custom = document.getElementById('materials-'+prefix+'-custom');
   if(custom) custom.style.display = 'none'; // collapsed by default — show after first item or via custom toggle
@@ -4111,7 +4121,7 @@ function openMaterialsStore(prefix){
     list.innerHTML = lib.map((m,i)=>`
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)" id="store-row-${i}">
         <div>
-          <div style="font-size:14px;font-weight:600">${m.name}</div>
+          <div style="font-size:14px;font-weight:600">${escHtml(m.name)}</div>
           <div style="font-size:12px;color:var(--text2)">$${(m.defaultPrice||0).toFixed(2)} ea</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
@@ -4270,11 +4280,11 @@ function editSiteClient(i){
   // Quick inline prompt using a select
   const sel=document.createElement('select');
   sel.style.cssText='width:100%;padding:10px;border:1.5px solid var(--amber);border-radius:8px;font-family:inherit;font-size:14px;margin-top:6px';
-  sel.innerHTML='<option value="">— Not assigned —</option>'+cl.map(c=>`<option value="${c.company}" ${s.client===c.company?'selected':''}>${c.company}</option>`).join('');
+  sel.innerHTML='<option value="">— Not assigned —</option>'+cl.map(c=>`<option value="${escHtml(c.company)}" ${s.client===c.company?'selected':''}>${escHtml(c.company)}</option>`).join('');
   const modal=document.createElement('div');
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:300;display:flex;align-items:flex-end';
   modal.innerHTML=`<div style="background:#fff;border-radius:24px 24px 0 0;padding:24px 16px;width:100%;padding-bottom:calc(24px + env(safe-area-inset-bottom))">
-    <div style="font-size:17px;font-weight:700;margin-bottom:12px">Assign client: ${s.name}</div>
+    <div style="font-size:17px;font-weight:700;margin-bottom:12px">Assign client: ${escHtml(s.name)}</div>
     <div id="site-client-sel-wrap"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px">
       <button class="btn btn-secondary" onclick="this.closest('.site-client-modal').remove()">Cancel</button>
@@ -4302,7 +4312,7 @@ function addSite(){
   document.getElementById('modal-gps-status').textContent='';
   // Populate client dropdown
   const cl=clientsData(),sel=document.getElementById('modal-site-client');
-  sel.innerHTML='<option value="">— Not assigned —</option>'+cl.map(c=>`<option value="${c.company}">${c.company}</option>`).join('');
+  sel.innerHTML='<option value="">— Not assigned —</option>'+cl.map(c=>`<option value="${escHtml(c.company)}">${escHtml(c.company)}</option>`).join('');
   // Pre-select default client
   const defClient=cl.find(c=>c.isDefault)||cl[0];
   if(defClient) sel.value=defClient.company;
@@ -4333,7 +4343,7 @@ function saveSite(){
   DB.set('sites',ss);closeSiteModal();renderSitesList();
   const sel=document.getElementById('checkin-site');
   sel.innerHTML='<option value="">Select site…</option>';
-  ss.forEach(s=>{sel.innerHTML+=`<option value="${s.name}">${s.name}</option>`;});
+  ss.forEach(s=>{sel.innerHTML+=`<option value="${escHtml(s.name)}">${escHtml(s.name)}</option>`;});
   toast('Site saved: '+name);
   // Re-register native geofences with the updated site list
   if(typeof window.onSitesChanged==='function') window.onSitesChanged();
@@ -4457,13 +4467,13 @@ function renderClientsSites(){
   let html='';
   cl.forEach((c,ci)=>{
     const clientSites=ss.filter(s=>s.client===c.company);
-    const subtitle=[c.contact,c.abn?'ABN '+c.abn:'',c.phone].filter(Boolean).join(' · ');
+    const subtitle=[c.contact,c.abn?'ABN '+c.abn:'',c.phone].filter(Boolean).map(escHtml).join(' · ');
     const sitesHtml=clientSites.map(s=>{
       const si=ss.indexOf(s);
       const coord=s.lat?s.lat.toFixed(4)+', '+s.lng.toFixed(4)+' · '+(s.radius||100)+'m':'No GPS set';
       return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0 6px 8px;border-top:1px solid var(--border)">
         <div style="flex:1;min-width:0;font-size:13px">
-          <span style="font-weight:600">📍 ${s.name}</span>
+          <span style="font-weight:600">📍 ${escHtml(s.name)}</span>
           <span style="color:var(--text2);font-size:11px;margin-left:6px">${coord}</span>
         </div>
         <div style="display:flex;gap:4px;flex-shrink:0;margin-left:6px">
@@ -4476,7 +4486,7 @@ function renderClientsSites(){
     html+=`<div style="padding:12px 0;border-bottom:1px solid var(--border)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
         <div style="flex:1;min-width:0">
-          <div style="font-size:15px;font-weight:700">${c.company}${c.isDefault?' <span class="badge badge-green" style="margin-left:6px">Default</span>':''}</div>
+          <div style="font-size:15px;font-weight:700">${escHtml(c.company)}${c.isDefault?' <span class="badge badge-green" style="margin-left:6px">Default</span>':''}</div>
           ${subtitle?`<div style="font-size:11px;color:var(--text2);margin-top:2px">${subtitle}</div>`:''}
         </div>
         <div style="display:flex;gap:5px;flex-shrink:0;margin-left:8px;margin-top:2px">
@@ -4505,7 +4515,7 @@ function _renderUnlinkedSites(unlinked,ss){
     const coord=s.lat?s.lat.toFixed(4)+', '+s.lng.toFixed(4)+' · '+(s.radius||100)+'m':'No GPS set';
     h+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
       <div style="flex:1;min-width:0;font-size:13px">
-        <span style="font-weight:600">📍 ${s.name}</span>
+        <span style="font-weight:600">📍 ${escHtml(s.name)}</span>
         <span style="color:var(--text2);font-size:11px;margin-left:6px">${coord}</span>
       </div>
       <div style="display:flex;gap:4px;flex-shrink:0;margin-left:6px">
@@ -4599,7 +4609,7 @@ function openNewJobSheet(){
   document.getElementById('nj-gps-status').textContent='';
   // Populate existing clients
   const cl=clientsData(), sel=document.getElementById('nj-client-select');
-  sel.innerHTML='<option value="">— Select client —</option>'+cl.map((c,i)=>`<option value="${i}">${c.company}</option>`).join('');
+  sel.innerHTML='<option value="">— Select client —</option>'+cl.map((c,i)=>`<option value="${i}">${escHtml(c.company)}</option>`).join('');
   // Pre-select default client
   const defIdx=cl.findIndex(c=>c.isDefault);
   if(defIdx>=0) sel.value=String(defIdx);
@@ -4668,7 +4678,7 @@ function saveNewJob(){
   // Update checkin dropdown and select the new site
   const sel=document.getElementById('checkin-site');
   sel.innerHTML='<option value="">Select site…</option>';
-  ss.forEach(s=>{sel.innerHTML+=`<option value="${s.name}">${s.name}</option>`;});
+  ss.forEach(s=>{sel.innerHTML+=`<option value="${escHtml(s.name)}">${escHtml(s.name)}</option>`;});
   sel.value=siteName;
   updateClientIndicator(siteName);
 
@@ -4753,7 +4763,7 @@ function renderTimesheet(){
       return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
         <div>
           <div style="font-size:14px;font-weight:700">${fmtDate(d.date)}</div>
-          <div style="font-size:12px;color:var(--text2)">${d.site||'—'} · ${d.start||''}${d.finish?' – '+d.finish:''}</div>
+          <div style="font-size:12px;color:var(--text2)">${escHtml(d.site||'—')} · ${escHtml(d.start||'')}${d.finish?' – '+escHtml(d.finish):''}</div>
         </div>
         <div style="text-align:right">
           <div style="font-size:14px;font-weight:700;color:var(--amber)">${fmtMoney(t.myE)}</div>
@@ -4930,7 +4940,7 @@ async function loadTeamMembers(){
     const recentHrs=recentDays.reduce((s,d)=>s+dayTotals(d).h,0);
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-top:1px solid var(--border)">
       <div>
-        <div style="font-size:14px;font-weight:700">${m.profile.name||'Unknown'}</div>
+        <div style="font-size:14px;font-weight:700">${escHtml(m.profile.name||'Unknown')}</div>
         <div style="font-size:12px;color:var(--text2)">Last 7 days: ${recentHrs.toFixed(1)}h · Bill rate: $${m.profile.billRate||m.profile.rate||35}/hr</div>
       </div>
       <div style="display:flex;gap:6px;align-items:center">
@@ -5029,7 +5039,7 @@ function renderTeamHoursInInvoice(){
     const total=hrs*billRate;
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
       <div>
-        <div style="font-size:14px;font-weight:700">${m.profile.name||'Unknown'}</div>
+        <div style="font-size:14px;font-weight:700">${escHtml(m.profile.name||'Unknown')}</div>
         <div style="font-size:12px;color:var(--text2)">${hrs.toFixed(2)}h @ $${billRate}/hr</div>
       </div>
       <div style="font-size:15px;font-weight:700;color:var(--amber)">${fmtMoney(total)}</div>
@@ -5042,7 +5052,7 @@ function populateClientDropdown(){
   if(!sel) return;
   if(!cl.length){sel.innerHTML='<option value="-1">No clients — add in Settings</option>';return;}
   const prev=sel.value;
-  sel.innerHTML=cl.map((c,i)=>`<option value="${i}">${c.company}</option>`).join('');
+  sel.innerHTML=cl.map((c,i)=>`<option value="${i}">${escHtml(c.company)}</option>`).join('');
   // Try to auto-detect client from uninvoiced days' site assignments
   if(prev===''||prev===null||!cl[parseInt(prev)]){
     const ss=sites();
@@ -5137,7 +5147,7 @@ function renderSavedInvoices(location){
     el.innerHTML=records.map(r=>`
       <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
         <div style="flex:1;min-width:0;cursor:pointer" onclick="viewSavedInvoice(${r.id})">
-          <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.filename}</div>
+          <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(r.filename)}</div>
           <div style="font-size:11px;color:var(--text2);margin-top:2px">${fmtDate(r.date)}${r.clientName?' · '+r.clientName:''}${r.rawData?' · <span style="color:var(--amber)">✎ restorable</span>':''}</div>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0;margin-left:10px">
@@ -5572,7 +5582,7 @@ function initManualEntry(){
   const sel = document.getElementById('me-site');
   const prev = sel.value;
   sel.innerHTML = '<option value="">Select site…</option>';
-  sites().forEach(st => { sel.innerHTML += `<option value="${st.name}">${st.name}</option>`; });
+  sites().forEach(st => { sel.innerHTML += `<option value="${escHtml(st.name)}">${escHtml(st.name)}</option>`; });
   if(prev) sel.value = prev;
   // Update son rate label
   const s = S();
