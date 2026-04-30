@@ -576,6 +576,7 @@ onAuthStateChanged(auth, async (user) => {
       // round-trip. The blob restore above already gives us the correct invoiced
       // flags; this is a promotion-only safety net that can settle after the UI loads.
       ArchivedSync.restoreArchivedFlags().catch(e => console.warn('ArchivedSync:', e));
+      GeoLog.add('info', 'App started (v48)');
       if (loadingScreen) loadingScreen.style.display = 'none';
       if (loginScreen)   loginScreen.style.display   = 'none';
       if (appWrapper)    appWrapper.style.display     = 'block';
@@ -1412,6 +1413,18 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       <div style="margin-top:10px;text-align:center">
         <a href="https://github.com/banksiasprings/tradie-invoices/releases/latest/download/InvoicePDF.apk" style="display:inline-block;font-size:12px;font-weight:600;padding:8px 20px;border-radius:8px;background:var(--amber);color:#fff;text-decoration:none;letter-spacing:.3px">⬇ Download Latest APK</a>
       </div>
+    </div>
+    <div class="card card-collapsible" data-collapse-default="collapsed" style="margin-top:12px">
+      <div class="card-title">📍 Geo Event Log</div>
+      <div class="card-body">
+        <div id="geo-log-list" style="max-height:320px;overflow-y:auto"></div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn btn-secondary" style="flex:1;font-size:12px" onclick="GeoLog.render()">↻ Refresh</button>
+          <button class="btn btn-secondary" style="flex:1;font-size:12px;color:#c0392b" onclick="if(confirm('Clear geo log?')){GeoLog.clear();GeoLog.render();}">🗑 Clear Log</button>
+        </div>
+      </div>
+    </div>
+    <div style="display:none"><!-- placeholder to balance the card we opened above -->
       <div id="admin-only-section" style="display:none;border-top:1px solid var(--border);padding-top:14px;margin-top:14px">
         <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px;padding-left:10px;border-left:3px solid var(--amber)">👥 Registered Users</div>
         <div id="admin-user-list-settings"><div style="color:var(--text2);font-size:13px">Tap refresh to load.</div></div>
@@ -2149,7 +2162,7 @@ function showScreen(id,btn){
     else{populateClientDropdown();renderInvoice();refreshTeamHours();}
   }
   if(id==='analytics') renderAnalytics();
-  if(id==='settings') {loadSettings();renderSavedInvoices('settings');}
+  if(id==='settings') {loadSettings();renderSavedInvoices('settings');GeoLog.render();}
 }
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400)}
 function nowTime(){const n=new Date();return String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0')}
@@ -2313,6 +2326,47 @@ function readMachinesFromUI(prefix){
   return JSON.parse(JSON.stringify(lines));
 }
 
+// --- Geo Event Log ---
+const GeoLog = {
+  MAX: 200,
+  _key: 'mcn_geoLog',
+  get() { try { return JSON.parse(localStorage.getItem(this._key)||'[]'); } catch(e){ return []; } },
+  add(type, detail) {
+    const entries = this.get();
+    const now = new Date();
+    entries.unshift({
+      ts: now.toISOString(),
+      time: now.toTimeString().slice(0,8),
+      date: now.toISOString().slice(0,10),
+      type,
+      detail
+    });
+    if (entries.length > this.MAX) entries.length = this.MAX;
+    localStorage.setItem(this._key, JSON.stringify(entries));
+  },
+  clear() { localStorage.removeItem(this._key); },
+  render() {
+    const el = document.getElementById('geo-log-list');
+    if (!el) return;
+    const entries = this.get();
+    if (entries.length === 0) {
+      el.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:8px 0">No geo events recorded yet.</div>';
+      return;
+    }
+    const icons = { enter:'🟢', exit:'🔴', start:'▶️', stop:'⏹️', ignore:'⚪', error:'⚠️', info:'ℹ️' };
+    el.innerHTML = entries.map(e => {
+      const icon = icons[e.type] || '•';
+      return `<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+        <span style="flex-shrink:0;width:18px;text-align:center">${icon}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;color:var(--text1)">${e.type.toUpperCase()} <span style="font-weight:400;color:var(--text2)">${e.time} · ${e.date}</span></div>
+          <div style="color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.detail}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+};
+
 // --- GPS & Geofence ---
 let watchId=null,lastLat=null,lastLng=null;
 let geoAutoStartTriggered=false;
@@ -2394,6 +2448,7 @@ function checkNearbySites(lat,lng){
     const h=new Date().getHours();
     if(h>=5&&h<21){ // 5am–9pm only
       geoAutoStartTriggered=true;
+      GeoLog.add('enter','[Web GPS] Entered geofence: '+nearestGeo.name+' ('+Math.round(ndGeo)+'m)');
       autoStartTimer(nearestGeo);
     }
   }
@@ -2415,6 +2470,7 @@ function checkNearbySites(lat,lng){
             const hour=new Date().getHours();
             if(hour>=5&&hour<21&&activeDay()&&!geoAutoStopTriggered){
               geoAutoStopTriggered=true;
+              GeoLog.add('exit','[Web GPS] Left geofence: '+(activeDay()?activeDay().site:'?'));
               autoStopTimer();
             }
           },GEO_STOP_DEBOUNCE);
@@ -2437,6 +2493,7 @@ function checkNearbySites(lat,lng){
 
 function autoStartTimer(site, overrideTime){
   const s=S(),startTime=overrideTime||nowTime();
+  GeoLog.add('start', 'Auto-timer started at ' + startTime + ' · ' + site.name);
   const ad={
     site:site.name,start:startTime,date:todayStr(),
     rate:s.rate,sonrate:s.sonrate||30,
@@ -2473,6 +2530,8 @@ function showGeofenceNotification(siteName,startTime){
 function autoStopTimer(overrideTime){
   clearInterval(timerInterval);
   const ad=activeDay();if(!ad)return;
+  const stopT=overrideTime||nowTime();
+  GeoLog.add('stop', 'Auto-timer stopped at ' + stopT + ' · ' + (ad.site||'?'));
   if(ad.lunchStart){
     const[sh,sm]=ad.lunchStart.split(':').map(Number),now=new Date(),mins=now.getHours()*60+now.getMinutes()-sh*60-sm;
     ad.lunchMins=(ad.lunchMins||0)+Math.max(0,mins);ad.lunchStart=null;
@@ -5268,15 +5327,18 @@ window.initApp = function() {
   async function processGeoEvent(ev) {
     // ev = { site, type: 'enter'|'exit', time, date, timestamp }
     const hour = parseInt((ev.time || '00:00').substring(0, 2), 10);
-    if (hour < 5 || hour >= 21) return; // outside working hours
+    const outOfHours = hour < 5 || hour >= 21;
+    GeoLog.add(ev.type, (ev.type==='enter'?'Arrived at ':'Left ') + ev.site + ' at ' + (ev.time||'?') + (outOfHours?' [outside hours — ignored]':''));
+    if (outOfHours) return; // outside working hours
 
     if (ev.type === 'enter') {
       // Only auto-start if there's no active day already
       if (activeDay()) {
         console.log('[NativeGeo] ENTER ignored — timer already running');
+        GeoLog.add('ignore', 'Enter ignored — timer already running (' + ev.site + ')');
         return;
       }
-      if (geoAutoStartTriggered) return;
+      if (geoAutoStartTriggered) { GeoLog.add('ignore', 'Enter ignored — already triggered today (' + ev.site + ')'); return; }
       const siteList = (typeof sites === 'function') ? sites() : [];
       const site = siteList.find(s => s.name === ev.site);
       if (!site) {
@@ -5290,11 +5352,13 @@ window.initApp = function() {
       const ad = activeDay();
       if (!ad) {
         console.log('[NativeGeo] EXIT ignored — no active day');
+        GeoLog.add('ignore', 'Exit ignored — no active timer (' + ev.site + ')');
         return;
       }
-      if (geoAutoStopTriggered) return;
+      if (geoAutoStopTriggered) { GeoLog.add('ignore', 'Exit ignored — already triggered today (' + ev.site + ')'); return; }
       if (ad.site !== ev.site) {
         console.log('[NativeGeo] EXIT ignored — active site is', ad.site, 'not', ev.site);
+        GeoLog.add('ignore', 'Exit ignored — active site is ' + ad.site + ', not ' + ev.site);
         return;
       }
       geoAutoStopTriggered = true;
