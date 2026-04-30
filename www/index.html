@@ -1480,7 +1480,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v57';
+const APP_VERSION = 'v58';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -2589,20 +2589,25 @@ function checkNearbySites(lat,lng){
             outsideSiteTimer=null; outsideSiteTimerStart=null;
             const hour=new Date().getHours();
             if(hour>=5&&hour<21&&activeDay()&&!geoAutoStopTriggered){
-              // Re-check current position before stopping — a stale reading may have started
-              // the debounce but we might actually still be inside the geofence
               const _ad=activeDay(), _site=sites().find(s=>s.name===_ad.site);
-              if(_site&&_site.lat&&lastLat!=null){
-                const _d=dist(lastLat,lastLng,_site.lat,_site.lng);
-                if(_d<(_site.radius||100)){
-                  GeoLog.add('ignore','[Web GPS] Debounce expired but currently '+Math.round(_d)+'m inside '+_site.name+' — ignoring exit');
-                  return;
-                }
+              // Get a FRESH GPS fix before stopping — lastLat may be the same stale
+              // "outside" reading that started the debounce (screen off = no updates)
+              function doStop(){
+                geoAutoStopTriggered=true;
+                geoAutoStopDate=todayStr();
+                GeoLog.add('exit','[Web GPS] Left geofence: '+(_ad?_ad.site:'?'));
+                autoStopTimer();
               }
-              geoAutoStopTriggered=true;
-              geoAutoStopDate=todayStr();
-              GeoLog.add('exit','[Web GPS] Left geofence: '+(activeDay()?activeDay().site:'?'));
-              autoStopTimer();
+              if(_site&&_site.lat){
+                navigator.geolocation.getCurrentPosition(pos=>{
+                  const freshD=dist(pos.coords.latitude,pos.coords.longitude,_site.lat,_site.lng);
+                  if(freshD<(_site.radius||100)){
+                    GeoLog.add('ignore','[Web GPS] Debounce expired but fresh GPS shows '+Math.round(freshD)+'m inside '+_site.name+' — ignoring exit');
+                    return;
+                  }
+                  doStop();
+                },()=>{ doStop(); },{ enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
+              } else { doStop(); }
             }
           },GEO_STOP_DEBOUNCE);
         }
@@ -5558,13 +5563,18 @@ window.initApp = function() {
       const evMs = ev.timestamp ? Date.parse(ev.timestamp) : 0;
       const evAge = (evMs > 0) ? (Date.now() - evMs) : 0; // treat unparseable timestamps as "just now"
       if (evAge >= GEO_STOP_DEBOUNCE) {
-        // Been outside long enough — but verify current position first
+        // Been outside long enough — but get a fresh GPS fix to verify
         const _site2 = siteList.find(s => s.name === ev.site);
-        if (_site2 && _site2.lat && lastLat != null) {
-          const _d2 = dist(lastLat, lastLng, _site2.lat, _site2.lng);
-          if (_d2 < (_site2.radius || 100)) {
-            GeoLog.add('ignore', 'Native EXIT (old) discarded — currently ' + Math.round(_d2) + 'm inside ' + ev.site);
-            return;
+        if (_site2 && _site2.lat) {
+          const freshPos = await new Promise(resolve => {
+            navigator.geolocation.getCurrentPosition(p => resolve(p), () => resolve(null), { enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
+          });
+          if (freshPos) {
+            const _d2 = dist(freshPos.coords.latitude, freshPos.coords.longitude, _site2.lat, _site2.lng);
+            if (_d2 < (_site2.radius || 100)) {
+              GeoLog.add('ignore', 'Native EXIT (old) discarded — fresh GPS shows ' + Math.round(_d2) + 'm inside ' + ev.site);
+              return;
+            }
           }
         }
         geoAutoStopTriggered = true;
@@ -5580,18 +5590,22 @@ window.initApp = function() {
             outsideSiteTimer = null; outsideSiteTimerStart = null;
             const hour = new Date().getHours();
             if (hour >= 5 && hour < 21 && activeDay() && !geoAutoStopTriggered) {
-              // Re-check current position before stopping
               const _ad=activeDay(), _site=(typeof sites==='function'?sites():[]).find(s=>s.name===_ad.site);
-              if(_site&&_site.lat&&lastLat!=null){
-                const _d=dist(lastLat,lastLng,_site.lat,_site.lng);
-                if(_d<(_site.radius||100)){
-                  GeoLog.add('ignore','[Native] Debounce expired but currently '+Math.round(_d)+'m inside '+_site.name+' — ignoring exit');
-                  return;
-                }
+              function _doNativeStop(){
+                geoAutoStopTriggered = true;
+                geoAutoStopDate = todayStr();
+                autoStopTimer();
               }
-              geoAutoStopTriggered = true;
-              geoAutoStopDate = todayStr();
-              autoStopTimer();
+              if(_site&&_site.lat){
+                navigator.geolocation.getCurrentPosition(pos=>{
+                  const freshD=dist(pos.coords.latitude,pos.coords.longitude,_site.lat,_site.lng);
+                  if(freshD<(_site.radius||100)){
+                    GeoLog.add('ignore','[Native] Debounce expired but fresh GPS shows '+Math.round(freshD)+'m inside '+_site.name+' — ignoring exit');
+                    return;
+                  }
+                  _doNativeStop();
+                },()=>{ _doNativeStop(); },{ enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
+              } else { _doNativeStop(); }
             }
           }, delay);
         }
