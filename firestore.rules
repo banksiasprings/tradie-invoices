@@ -7,11 +7,18 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // Business codes — any authenticated user can read (to look up by code)
-    // Any authenticated user can write (employee looks themselves up, boss creates their code)
+    // Business codes — short shareable handles a boss sends to employees / customers.
+    // Read: any signed-in user, including anonymous (quote.html public form).
+    // Create: signed-in non-anon user only, and the new doc must record the
+    //   creator's UID as ownerUID so subsequent writes can be gated.
+    // Update / delete: only the original owner (matched against ownerUID).
     match /businessCodes/{code} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow create: if request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && request.resource.data.ownerUID == request.auth.uid;
+      allow update, delete: if request.auth != null
+        && resource.data.ownerUID == request.auth.uid;
     }
 
     // Employee hours sync — cross-user access
@@ -25,10 +32,12 @@ service cloud.firestore {
       allow write: if request.auth.uid == employeeUID;
     }
 
-    // Admin collection: only the admin email can read/write
+    // Admin collection: only the verified admin email can read/write.
+    // email_verified guards against providers that issue unverified email claims.
     match /admin/{document=**} {
       allow read, write: if request.auth != null
-        && request.auth.token.email == 'smcnichol@outlook.com';
+        && request.auth.token.email == 'smcnichol@outlook.com'
+        && request.auth.token.email_verified == true;
     }
 
   }
