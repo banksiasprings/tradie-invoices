@@ -1458,7 +1458,7 @@ async function forceAppUpdate() {
 
     if (updater) {
       // ── Native app: hot-swap the web bundle without reinstalling the APK ──
-      const manifestUrl = 'https://banksiasprings.github.io/mcnichol-invoices/updates/latest.json?t=' + Date.now();
+      const manifestUrl = 'https://banksiasprings.github.io/tradie-invoices/updates/latest.json?t=' + Date.now();
       let res;
       try { res = await fetch(manifestUrl); } catch(fetchErr) { throw new Error('No internet — check your connection'); }
       if (!res.ok) throw new Error('Could not reach update server (' + res.status + ')');
