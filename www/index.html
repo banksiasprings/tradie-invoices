@@ -381,6 +381,7 @@ const CloudSync = {
     // Fresh install / reinstall: modTimes is empty (all 0) → Firestore always wins → correct.
     try {
       const modTimes = this._getModTimes();
+      let localWins = false;
       for (const key of SYNC_KEYS) {
         const ref = doc(firestoreDb, 'users', this.uid, 'data', key);
         const snap = await getDoc(ref);
@@ -399,13 +400,46 @@ const CloudSync = {
             // keep re-pulling this version on future restores
             modTimes[key] = fsClientTs;
           }
+        } else {
+          // Local is newer — keep it; we'll push it back to Firestore below
+          localWins = true;
         }
-        // else: local is newer — keep it, pushAll() below will update Firestore
       }
       localStorage.setItem('mcn_modTimes', JSON.stringify(modTimes));
-      // Push whatever won locally so Firestore stays current
-      await this.pushAll();
-    } catch(e) { console.warn('CloudSync.restore failed:', e); }
+      // Only push back if local data actually won a conflict — avoids a stale
+      // device push overwriting fresher Firestore data that was just pulled.
+      if (localWins) await this.pushAll();
+    } catch(e) {
+      console.warn('CloudSync.restore failed:', e);
+      GeoLog && GeoLog.add('error', 'CloudSync.restore failed: ' + e.message);
+    }
+  },
+
+  // Pull all keys from Firestore unconditionally — used by "Pull from Cloud" button.
+  // Does NOT call pushAll() afterward, so a stale local push can't overwrite what was just pulled.
+  async forceRestore() {
+    if (!this.uid) return;
+    try {
+      const modTimes = {};
+      for (const key of SYNC_KEYS) {
+        const ref = doc(firestoreDb, 'users', this.uid, 'data', key);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) continue;
+        const data = snap.data();
+        const raw = data.value;
+        if (raw !== undefined && raw !== null) {
+          const stored = typeof raw === 'string' ? raw : JSON.stringify(raw);
+          localStorage.setItem('mcn_' + key, stored);
+          modTimes[key] = data.clientTs || Date.now();
+        }
+      }
+      localStorage.setItem('mcn_modTimes', JSON.stringify(modTimes));
+      GeoLog && GeoLog.add('info', 'Force pull complete — all keys restored from Firestore');
+    } catch(e) {
+      console.warn('CloudSync.forceRestore failed:', e);
+      GeoLog && GeoLog.add('error', 'CloudSync.forceRestore failed: ' + e.message);
+      throw e; // re-throw so cloudPullNow can show the right toast
+    }
   },
 
   async pushAll() {
@@ -576,7 +610,7 @@ onAuthStateChanged(auth, async (user) => {
       // round-trip. The blob restore above already gives us the correct invoiced
       // flags; this is a promotion-only safety net that can settle after the UI loads.
       ArchivedSync.restoreArchivedFlags().catch(e => console.warn('ArchivedSync:', e));
-      GeoLog.add('info', 'App started (v48)');
+      GeoLog.add('info', 'App started (v49)');
       if (loadingScreen) loadingScreen.style.display = 'none';
       if (loginScreen)   loginScreen.style.display   = 'none';
       if (appWrapper)    appWrapper.style.display     = 'block';
@@ -1435,7 +1469,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v48';
+const APP_VERSION = 'v49';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -2003,12 +2037,20 @@ async function cloudSyncNow(){
 async function cloudPullNow(){
   if(!window.CloudSync||!window.CloudSync.uid){toast('Not signed in');return;}
   toast('Pulling from cloud…');
-  // Force full pull: wipe local data + modTimes so Firestore beats local for ALL keys
-  const SYNC_KEYS=['settings','clients','days','sites','activeDay','invoices','gst_on'];
-  SYNC_KEYS.forEach(k=>localStorage.removeItem('mcn_'+k));
-  localStorage.removeItem('mcn_modTimes'); // clear timestamps so Firestore always wins
-  await window.CloudSync.restore();
-  toast('Cloud data restored — reloading…');
+  GeoLog.add('info','Force pull started');
+  // Wipe local data + modTimes so forceRestore pulls every key fresh from Firestore
+  const _PULL_KEYS=['settings','clients','days','sites','activeDay','invoices','gst_on'];
+  _PULL_KEYS.forEach(k=>localStorage.removeItem('mcn_'+k));
+  localStorage.removeItem('mcn_modTimes');
+  try {
+    await window.CloudSync.forceRestore();
+    toast('☁ Cloud data restored — reloading…');
+    GeoLog.add('info','Force pull succeeded — reloading');
+  } catch(e) {
+    toast('Pull failed: ' + e.message);
+    GeoLog.add('error','Force pull failed: ' + e.message);
+    return;
+  }
   setTimeout(()=>location.reload(),1200);
 }
 
