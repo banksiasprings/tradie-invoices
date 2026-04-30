@@ -1,4 +1,4 @@
-# CLAUDE.md — McNichol Invoice & Time Tracker PWA
+# CLAUDE.md — Tradie Invoices PWA
 
 Behavioural guidelines for all coding work on this project.
 Adapted from Andrej Karpathy's LLM coding observations and the Superpowers methodology.
@@ -39,4 +39,4 @@ Deployed via GitHub Pages from `main` branch.
 - All git via osascript
 - Commit and push after every change — never leave work uncommitted
 - Clear lock files first: `rm -f .git/index.lock .git/HEAD.lock`
-- Working dir: `~/Documents/mcnichol-invoices`
+- Working dir: `~/Documents/tradie-invoices`

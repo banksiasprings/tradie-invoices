@@ -1,6 +1,6 @@
-# 📋 mcnichol-invoices
+# 📋 Tradie Invoices
 
-[![Live Demo](https://img.shields.io/badge/live%20demo-mcnichol--invoices-brightgreen)](https://banksiasprings.github.io/mcnichol-invoices/)
+[![Live Demo](https://img.shields.io/badge/live%20demo-tradie--invoices-brightgreen)](https://banksiasprings.github.io/tradie-invoices/)
 
 A professional Invoice & PDF Generator PWA for sole traders and small businesses. Built for earthmoving contractors, it combines GPS-based worksite detection, time tracking, and invoice generation in one sleek interface.
 
@@ -33,7 +33,7 @@ A professional Invoice & PDF Generator PWA for sole traders and small businesses
 ## 🚀 Getting Started
 
 ### For Users
-1. **Open the app:** https://banksiasprings.github.io/mcnichol-invoices/
+1. **Open the app:** https://banksiasprings.github.io/tradie-invoices/
 2. **Sign up or login** with your email
 3. **Set up your clients** and hourly rates in settings
 4. **Start tracking work:**
@@ -47,8 +47,8 @@ A professional Invoice & PDF Generator PWA for sole traders and small businesses
 
 ### For Development
 ```bash
-git clone https://github.com/banksiasprings/mcnichol-invoices.git
-cd mcnichol-invoices
+git clone https://github.com/banksiasprings/tradie-invoices.git
+cd tradie-invoices
 # Serve the root directory with any static file server
 python3 -m http.server 8000
 # Open http://localhost:8000 in your browser
@@ -66,4 +66,4 @@ MIT – See LICENSE file for details
 
 ---
 
-**Found a bug?** [Open an issue](https://github.com/banksiasprings/mcnichol-invoices/issues). **Want to contribute?** PRs welcome!
+**Found a bug?** [Open an issue](https://github.com/banksiasprings/tradie-invoices/issues). **Want to contribute?** PRs welcome!

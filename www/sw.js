@@ -3,8 +3,8 @@ const CACHE = 'invoice-pdf-v50';
 const ASSETS = [
   './index.html',
   './manifest.json',
-  './mcnichol-app/icons/icon-192.png',
-  './mcnichol-app/icons/icon-512.png',
+  './tradie-app/icons/icon-192.png',
+  './tradie-app/icons/icon-512.png',
   'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap'
 ];
 

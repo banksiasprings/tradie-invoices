@@ -26,8 +26,8 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
-REPO_DIR="$HOME/Documents/mcnichol-invoices"
-BUNDLE_URL="https://banksiasprings.github.io/mcnichol-invoices/updates/bundle.zip"
+REPO_DIR="$HOME/Documents/tradie-invoices"
+BUNDLE_URL="https://banksiasprings.github.io/tradie-invoices/updates/bundle.zip"
 
 cd "$REPO_DIR"
 

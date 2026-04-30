@@ -70,7 +70,7 @@ First Play Store release. Includes GPS geofencing, auto timer start/stop, machin
 ---
 
 ## Contact email (for Play Store)
-smcnichol@outlook.com
+banksiaspringsfarm@gmail.com
 
 ## Privacy policy URL
 https://banksiasprings.github.io/tradie-invoices/privacy.html
