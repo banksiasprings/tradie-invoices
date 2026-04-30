@@ -1480,7 +1480,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v55';
+const APP_VERSION = 'v56';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -2581,6 +2581,16 @@ function checkNearbySites(lat,lng){
             outsideSiteTimer=null; outsideSiteTimerStart=null;
             const hour=new Date().getHours();
             if(hour>=5&&hour<21&&activeDay()&&!geoAutoStopTriggered){
+              // Re-check current position before stopping — a stale reading may have started
+              // the debounce but we might actually still be inside the geofence
+              const _ad=activeDay(), _site=sites().find(s=>s.name===_ad.site);
+              if(_site&&_site.lat&&lastLat!=null){
+                const _d=dist(lastLat,lastLng,_site.lat,_site.lng);
+                if(_d<(_site.radius||100)){
+                  GeoLog.add('ignore','[Web GPS] Debounce expired but currently '+Math.round(_d)+'m inside '+_site.name+' — ignoring exit');
+                  return;
+                }
+              }
               geoAutoStopTriggered=true;
               geoAutoStopDate=todayStr();
               GeoLog.add('exit','[Web GPS] Left geofence: '+(activeDay()?activeDay().site:'?'));
@@ -5540,7 +5550,15 @@ window.initApp = function() {
       const evMs = ev.timestamp ? Date.parse(ev.timestamp) : 0;
       const evAge = (evMs > 0) ? (Date.now() - evMs) : 0; // treat unparseable timestamps as "just now"
       if (evAge >= GEO_STOP_DEBOUNCE) {
-        // Been outside long enough — stop now
+        // Been outside long enough — but verify current position first
+        const _site2 = siteList.find(s => s.name === ev.site);
+        if (_site2 && _site2.lat && lastLat != null) {
+          const _d2 = dist(lastLat, lastLng, _site2.lat, _site2.lng);
+          if (_d2 < (_site2.radius || 100)) {
+            GeoLog.add('ignore', 'Native EXIT (old) discarded — currently ' + Math.round(_d2) + 'm inside ' + ev.site);
+            return;
+          }
+        }
         geoAutoStopTriggered = true;
         geoAutoStopDate = todayStr();
         autoStopTimer(ev.time);
@@ -5554,6 +5572,15 @@ window.initApp = function() {
             outsideSiteTimer = null; outsideSiteTimerStart = null;
             const hour = new Date().getHours();
             if (hour >= 5 && hour < 21 && activeDay() && !geoAutoStopTriggered) {
+              // Re-check current position before stopping
+              const _ad=activeDay(), _site=(typeof sites==='function'?sites():[]).find(s=>s.name===_ad.site);
+              if(_site&&_site.lat&&lastLat!=null){
+                const _d=dist(lastLat,lastLng,_site.lat,_site.lng);
+                if(_d<(_site.radius||100)){
+                  GeoLog.add('ignore','[Native] Debounce expired but currently '+Math.round(_d)+'m inside '+_site.name+' — ignoring exit');
+                  return;
+                }
+              }
               geoAutoStopTriggered = true;
               geoAutoStopDate = todayStr();
               autoStopTimer();
