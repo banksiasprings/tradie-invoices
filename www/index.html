@@ -1480,7 +1480,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v58';
+const APP_VERSION = 'v59';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -2606,7 +2606,7 @@ function checkNearbySites(lat,lng){
                     return;
                   }
                   doStop();
-                },()=>{ doStop(); },{ enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
+                },()=>{ GeoLog.add('ignore','[Web GPS] Debounce expired but GPS unavailable — not stopping'); },{ enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
               } else { doStop(); }
             }
           },GEO_STOP_DEBOUNCE);
@@ -5569,12 +5569,14 @@ window.initApp = function() {
           const freshPos = await new Promise(resolve => {
             navigator.geolocation.getCurrentPosition(p => resolve(p), () => resolve(null), { enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
           });
-          if (freshPos) {
-            const _d2 = dist(freshPos.coords.latitude, freshPos.coords.longitude, _site2.lat, _site2.lng);
-            if (_d2 < (_site2.radius || 100)) {
-              GeoLog.add('ignore', 'Native EXIT (old) discarded — fresh GPS shows ' + Math.round(_d2) + 'm inside ' + ev.site);
-              return;
-            }
+          if (!freshPos) {
+            GeoLog.add('ignore', 'Native EXIT (old) — GPS unavailable, not stopping');
+            return;
+          }
+          const _d2 = dist(freshPos.coords.latitude, freshPos.coords.longitude, _site2.lat, _site2.lng);
+          if (_d2 < (_site2.radius || 100)) {
+            GeoLog.add('ignore', 'Native EXIT (old) discarded — fresh GPS shows ' + Math.round(_d2) + 'm inside ' + ev.site);
+            return;
           }
         }
         geoAutoStopTriggered = true;
@@ -5604,7 +5606,7 @@ window.initApp = function() {
                     return;
                   }
                   _doNativeStop();
-                },()=>{ _doNativeStop(); },{ enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
+                },()=>{ GeoLog.add('ignore','[Native] Debounce expired but GPS unavailable — not stopping'); },{ enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
               } else { _doNativeStop(); }
             }
           }, delay);
