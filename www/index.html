@@ -34,7 +34,7 @@
   body{background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;overscroll-behavior:none;font-family:'Inter',system-ui,-apple-system,Arial,sans-serif}
 
   .nav{position:fixed;bottom:0;left:0;right:0;background:var(--navy);border-top:none;display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -4px 20px rgba(0,0,0,.25)}
-  .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px 8px;border:none;background:none;cursor:pointer;color:rgba(255,255,255,.4);font-family:'Inter',inherit;font-size:10px;font-weight:600;transition:color .15s;letter-spacing:.3px}
+  .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:12px 4px 10px;border:none;background:none;cursor:pointer;color:rgba(255,255,255,.4);font-family:'Inter',inherit;font-size:10px;font-weight:600;transition:color .15s;letter-spacing:.3px;min-height:48px}
   .nav-btn.active{color:#fff}
   .nav-btn.active .nav-icon svg{stroke:var(--amber)}
   .nav-icon{width:26px;height:26px;display:flex;align-items:center;justify-content:center;transition:all .15s}
@@ -124,12 +124,13 @@
   .inv-totals{text-align:right;margin-top:12px;line-height:2}
   .inv-total-line{font-size:13px;font-weight:700}
 
-  .bar-chart{display:flex;align-items:flex-end;gap:6px;height:80px;margin:8px 0 4px}
-  .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px}
-  .bar{width:100%;background:var(--amber-light);border-radius:4px 4px 0 0}
+  .bar-chart{display:flex;align-items:flex-end;gap:6px;height:100px;margin:8px 0 4px}
+  .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer}
+  .bar-col:active .bar{opacity:0.7}
+  .bar{width:100%;background:var(--amber-light);border-radius:4px 4px 0 0;transition:opacity .15s}
   .bar.current{background:var(--amber)}
-  .bar-label{font-size:9px;color:var(--text3);white-space:nowrap}
-  .bar-val{font-size:9px;font-weight:700;color:var(--text2)}
+  .bar-label{font-size:10px;color:var(--text3);white-space:nowrap}
+  .bar-val{font-size:10px;font-weight:700;color:var(--text2)}
 
   /* empty states — see extended CSS block below */
 
@@ -160,7 +161,7 @@
   .modal-bg.open{display:flex}
   .modal{background:var(--surface);border-radius:24px 24px 0 0;padding:24px 16px calc(24px + env(safe-area-inset-bottom));width:100%;max-height:90vh;overflow-y:auto}
   .modal-title{font-size:18px;font-weight:700;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)}
-  .modal-close{float:right;background:var(--surface2);border:none;border-radius:50%;width:30px;height:30px;font-size:15px;cursor:pointer;line-height:30px;text-align:center;color:var(--text2);margin-top:-3px}
+  .modal-close{float:right;background:var(--surface2);border:none;border-radius:50%;width:40px;height:40px;font-size:18px;cursor:pointer;line-height:40px;text-align:center;color:var(--text2);margin-top:-6px}
 
   .offline-banner{display:none;background:var(--amber-light);color:var(--amber);text-align:center;font-size:12px;font-weight:600;padding:6px}
   .offline-banner.show{display:block}
@@ -1144,6 +1145,14 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       </table>
     </div>
 
+    <!-- Sticky footer with total -->
+    <div id="me-sticky-total" style="display:none;position:sticky;bottom:70px;z-index:40;background:var(--navy);color:#fff;border-radius:var(--radius);padding:10px 16px;margin-bottom:10px;box-shadow:0 -4px 20px rgba(0,0,0,.3);display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:13px;font-weight:600;opacity:0.7">Estimated total</span>
+        <span id="me-sticky-amount" style="font-size:20px;font-weight:800;color:var(--amber)">$0.00</span>
+      </div>
+    </div>
+
     <button class="btn btn-primary btn-full" onclick="saveManualEntry()" style="margin-bottom:8px">Save Entry ✓</button>
     <button class="btn btn-secondary btn-full" onclick="resetManualEntry()">Clear Form</button>
   </div>
@@ -1487,7 +1496,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v61';
+const APP_VERSION = 'v62';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -3723,11 +3732,15 @@ function renderAnalytics(){
   document.getElementById('ana-eff-rate').textContent='$'+(th>0?te/th:0).toFixed(0);
   const ti=ai.reduce((s,i)=>s+i.total,0);document.getElementById('ana-total').textContent=ti>=10000?'$'+Math.round(ti/100)/10+'k':fmtMoney(ti);
   const mh=Math.max(...wh,1);
-  document.getElementById('hours-chart').innerHTML=weeks.map((w,i)=>{const h=wh[i],p=Math.max(4,Math.round(h/mh*100));return`<div class="bar-col"><div class="bar-val">${h>0?h.toFixed(1):''}</div><div class="bar ${i===7?'current':''}" style="height:${p}%"></div><div class="bar-label">${w.label}</div></div>`;}).join('');
+  const rate=parseFloat(s.rate)||0;
+  document.getElementById('hours-chart').innerHTML=weeks.map((w,i)=>{const h=wh[i],p=Math.max(4,Math.round(h/mh*100)),earn=h*rate;return`<div class="bar-col" onclick="toast('${w.label}: ${h.toFixed(1)}h — ${fmtMoney(earn).replace("'","")}')"><div class="bar-val">${h>0?h.toFixed(1)+'h':''}</div><div class="bar ${i===7?'current':''}" style="height:${p}%"></div><div class="bar-label">${w.label}</div></div>`;}).join('');
   document.getElementById('ana-rate-now').textContent='$'+parseFloat(s.rate).toFixed(2);
   const yr=parseFloat(s.rate)/(1+parseFloat(s.incpct??7.8)/100);
   document.getElementById('ana-rate-year').textContent='$'+yr.toFixed(2);
-  document.getElementById('ana-rate-change').textContent='+$'+(parseFloat(s.rate)-yr).toFixed(2)+' over 12 months ('+s.incpct+'% annual increase)';
+  const rateChange=parseFloat(s.rate)-yr;
+  const rateChangeEl=document.getElementById('ana-rate-change');
+  rateChangeEl.textContent=(rateChange>=0?'+':'')+'$'+rateChange.toFixed(2)+' over 12 months ('+s.incpct+'% annual increase)';
+  rateChangeEl.style.color=rateChange>0?'var(--success)':rateChange<0?'var(--red)':'var(--text2)';
   const il=document.getElementById('ana-invoice-list');
   if(!ai.length){il.innerHTML='<div style="color:var(--text2);font-size:13px">No invoices yet</div>';return;}
   il.innerHTML=ai.slice().reverse().slice(0,8).map(inv=>`<div class="day-item"><div class="day-item-left"><div class="date">Invoice #${String(inv.num).padStart(4,'0')}</div><div class="detail">${fmtDate(inv.date)} · ${inv.days} day${inv.days!==1?'s':''}</div></div><div class="day-item-right" style="display:flex;align-items:center;gap:8px"><div class="amount">${fmtMoney(inv.total)}</div><button onclick="deleteInvoiceRecord(${inv.num})" style="background:none;border:1.5px solid var(--border);border-radius:8px;padding:4px 10px;font-size:12px;font-weight:700;color:var(--text2);cursor:pointer" title="Delete record">✕</button></div></div>`).join('');
@@ -5411,6 +5424,13 @@ window.initApp = function() {
   // Init native geo AFTER the app is visible — delay so the permission dialog
   // appears to the user as a deliberate prompt, not a startup-blocking freeze.
   if (window.initNativeGeo) setTimeout(window.initNativeGeo, 1500);
+
+  // Tap outside modal to close — works for all modals
+  document.addEventListener('click', function(e){
+    if(e.target.classList.contains('modal-bg')&&e.target.classList.contains('open')){
+      e.target.classList.remove('open');
+    }
+  });
 };
 </script>
 
@@ -5802,6 +5822,10 @@ function mePreview(){
     document.getElementById('me-prev-son').textContent = fmtMoney(sonE) + ' ('+formatHours(sonH)+' × $'+sonrate+'/hr)';
   } else { sonRow.style.display='none'; }
   document.getElementById('me-prev-total').textContent = fmtMoney(total);
+  // Update sticky total bar
+  const stickyBar=document.getElementById('me-sticky-total');
+  const stickyAmt=document.getElementById('me-sticky-amount');
+  if(stickyBar&&stickyAmt){ stickyBar.style.display='block'; stickyAmt.textContent=fmtMoney(total); }
 }
 
 function saveManualEntry(){
