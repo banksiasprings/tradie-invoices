@@ -26,10 +26,52 @@
     --blue:#1E40AF;--blue-light:#DBEAFE;
     --red:#DC2626;--red-light:#FEE2E2;
     --success:#4A9C6E;--success-light:#D4EDE0;
+    --input-border:#D1D5DB;
     --radius:16px;--radius-sm:12px;
     --shadow:0 2px 8px rgba(0,0,0,.10),0 1px 3px rgba(0,0,0,.06);
     --shadow-lg:0 4px 16px rgba(0,0,0,.14),0 2px 6px rgba(0,0,0,.08);
     font-family:'Inter',system-ui,-apple-system,Arial,sans-serif;
+  }
+  /* Dark mode overrides */
+  .dark{
+    --bg:#121212;--surface:#1E1E1E;--surface2:#2A2A2A;--border:#3A3A3A;
+    --text:#E8E8E8;--text2:#A0A0A0;--text3:#6A6A6A;
+    --green-light:#1A3D2A;--green-text:#6FCF97;
+    --amber-light:#3D2218;
+    --navy:#0F1A2E;--navy-light:#1A2D4A;
+    --blue-light:#1A2744;
+    --red-light:#3D1A1A;
+    --success-light:#1A3D2A;
+    --input-border:#4A4A4A;
+    --shadow:0 2px 8px rgba(0,0,0,.30),0 1px 3px rgba(0,0,0,.20);
+    --shadow-lg:0 4px 16px rgba(0,0,0,.40),0 2px 6px rgba(0,0,0,.25);
+  }
+  .dark .btn-secondary{border-color:var(--border);color:var(--text)}
+  .dark .btn-secondary:active{background:var(--border)}
+  .dark .toggle-slider{background:var(--border)}
+  .dark .toggle-slider::before{background:var(--text)}
+  .dark input[type="checkbox"]:checked+.toggle-slider{background:var(--amber)}
+  .dark input[type="checkbox"]:checked+.toggle-slider::before{background:#fff}
+  @media(prefers-color-scheme:dark){
+    .dark-auto .btn-secondary{border-color:var(--border);color:var(--text)}
+    .dark-auto .btn-secondary:active{background:var(--border)}
+    .dark-auto .toggle-slider{background:var(--border)}
+    .dark-auto .toggle-slider::before{background:var(--text)}
+    .dark-auto input[type="checkbox"]:checked+.toggle-slider{background:var(--amber)}
+    .dark-auto input[type="checkbox"]:checked+.toggle-slider::before{background:#fff}
+    .dark-auto{
+      --bg:#121212;--surface:#1E1E1E;--surface2:#2A2A2A;--border:#3A3A3A;
+      --text:#E8E8E8;--text2:#A0A0A0;--text3:#6A6A6A;
+      --green-light:#1A3D2A;--green-text:#6FCF97;
+      --amber-light:#3D2218;
+      --navy:#0F1A2E;--navy-light:#1A2D4A;
+      --blue-light:#1A2744;
+      --red-light:#3D1A1A;
+      --success-light:#1A3D2A;
+      --input-border:#4A4A4A;
+      --shadow:0 2px 8px rgba(0,0,0,.30),0 1px 3px rgba(0,0,0,.20);
+      --shadow-lg:0 4px 16px rgba(0,0,0,.40),0 2px 6px rgba(0,0,0,.25);
+    }
   }
   body{background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;overscroll-behavior:none;font-family:'Inter',system-ui,-apple-system,Arial,sans-serif}
 
@@ -53,10 +95,10 @@
   .card-title{font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px;padding-left:10px;border-left:3px solid var(--amber)}
 
   .field{margin-bottom:14px}
-  .ti-input{width:100%;padding:9px 12px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:14px;background:var(--surface);color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s;box-sizing:border-box}
+  .ti-input{width:100%;padding:9px 12px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:14px;background:var(--surface);color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s;box-sizing:border-box}
   .ti-input:focus{border-color:var(--amber);box-shadow:0 0 0 3px rgba(193,88,58,.12)}
   .field label{display:block;font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px;letter-spacing:.6px;text-transform:uppercase}
-  .field input,.field select,.field textarea{width:100%;padding:11px 14px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s}
+  .field input,.field select,.field textarea{width:100%;padding:11px 14px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s}
   .field textarea{height:auto;min-height:44px}
   .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--amber);box-shadow:0 0 0 3px rgba(193,88,58,.12)}
   .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -241,6 +283,14 @@
   .inv-num-input{width:100%;font-size:22px;font-weight:700;font-family:'Montserrat',system-ui,sans-serif;letter-spacing:-1px;color:var(--text);background:none;border:none;border-bottom:2px solid var(--amber);outline:none;padding:0;text-align:center}
   .inv-num-input:focus{border-bottom-color:var(--amber)}
 </style>
+<script>
+// Apply theme immediately to prevent flash of wrong mode
+(function(){
+  var m=localStorage.getItem('mcn_theme')||'light';
+  if(m==='dark')document.documentElement.classList.add('dark');
+  else if(m==='auto')document.documentElement.classList.add('dark-auto');
+})();
+</script>
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
@@ -1063,25 +1113,25 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       <div class="section-heading">Day Details</div>
       <div class="field" style="margin-bottom:12px">
         <label>Date</label>
-        <input type="date" id="me-date" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
+        <input type="date" id="me-date" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
       </div>
       <div class="field" style="margin-bottom:12px">
         <label>Site</label>
-        <select id="me-site" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)"><option value="">Select site…</option></select>
+        <select id="me-site" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)"><option value="">Select site…</option></select>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
         <div class="field" style="margin:0">
           <label>Start Time</label>
-          <input type="time" id="me-start" onchange="mePreview()" style="margin-top:5px;width:100%;padding:11px 10px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
+          <input type="time" id="me-start" onchange="mePreview()" style="margin-top:5px;width:100%;padding:11px 10px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
         </div>
         <div class="field" style="margin:0">
           <label>Finish Time</label>
-          <input type="time" id="me-finish" onchange="mePreview()" style="margin-top:5px;width:100%;padding:11px 10px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
+          <input type="time" id="me-finish" onchange="mePreview()" style="margin-top:5px;width:100%;padding:11px 10px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
         </div>
       </div>
       <div class="field" style="margin:0">
         <label>Lunch Break (minutes)</label>
-        <input type="number" id="me-lunch" placeholder="0 — no lunch" min="0" step="5" onchange="mePreview()" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
+        <input type="number" id="me-lunch" placeholder="0 — no lunch" min="0" step="5" onchange="mePreview()" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
       </div>
     </div>
 
@@ -1093,7 +1143,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       <div id="me-son-section" style="display:none;margin-top:10px">
         <div class="field" style="margin:0">
           <label>Extra Labourer Hours <span style="color:var(--text2);font-weight:400">(leave blank = same as mine)</span></label>
-          <input type="number" id="me-son-hours" placeholder="Same as mine" step="0.25" min="0" onchange="mePreview()" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
+          <input type="number" id="me-son-hours" placeholder="Same as mine" step="0.25" min="0" onchange="mePreview()" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
         </div>
         <div style="font-size:12px;color:var(--text2);margin-top:6px">Rate: <strong id="me-son-rate-label">$30/hr</strong></div>
       </div>
@@ -1128,7 +1178,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
     <div class="card">
       <div class="field" style="margin:0">
         <label>Notes <span style="color:var(--text2);font-weight:400">(optional — reason for manual entry)</span></label>
-        <input type="text" id="me-notes" placeholder="e.g. Left phone at home, GPS failed…" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
+        <input type="text" id="me-notes" placeholder="e.g. Left phone at home, GPS failed…" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
       </div>
     </div>
 
@@ -1216,7 +1266,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
     <div class="card">
       <div class="field" style="margin:0">
         <label>Bill to</label>
-        <select id="inv-client-select" onchange="resetInvoiceDaySelection();renderInvoice()" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)"></select>
+        <select id="inv-client-select" onchange="resetInvoiceDaySelection();renderInvoice()" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)"></select>
       </div>
     </div>
     <div class="card" id="inv-day-select-card">
@@ -1459,6 +1509,15 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       <div class="card-title">📁 Saved Invoices</div>
       <div id="settings-saved-invoices-list"></div>
     </div>
+    <div class="card" style="margin-top:12px">
+      <div class="section-heading" style="margin-bottom:10px">Appearance</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary btn-sm" id="theme-light" onclick="setTheme('light')" style="flex:1;padding:8px">☀️ Light</button>
+        <button class="btn btn-secondary btn-sm" id="theme-dark" onclick="setTheme('dark')" style="flex:1;padding:8px">🌙 Dark</button>
+        <button class="btn btn-secondary btn-sm" id="theme-auto" onclick="setTheme('auto')" style="flex:1;padding:8px">📱 Auto</button>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:6px">Auto follows your phone's day/night setting</div>
+    </div>
     <div class="card card-collapsible" style="margin-top:12px">
       <div class="card-title">☁️ Account &amp; Sync</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Signed in as <span id="cloud-account-display" style="font-weight:600;color:var(--text)">…</span></div>
@@ -1496,7 +1555,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v62';
+const APP_VERSION = 'v63';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1639,7 +1698,7 @@ async function forceAppUpdate(isRetry) {
   <div class="modal">
     <div class="modal-title">Add Work Site <button class="modal-close" onclick="closeSiteModal()">✕</button></div>
     <div class="field"><label>Site name</label><input type="text" id="modal-site-name" placeholder="e.g. Main Farm"></div>
-    <div class="field"><label>Client</label><select id="modal-site-client" style="width:100%;padding:11px 14px;border:1.5px solid #D1D5DB;border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)"><option value="">— Not assigned —</option></select></div>
+    <div class="field"><label>Client</label><select id="modal-site-client" style="width:100%;padding:11px 14px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)"><option value="">— Not assigned —</option></select></div>
     <div class="field">
       <label>Coordinates</label>
       <div style="font-size:13px;color:var(--text2);margin-bottom:8px" id="modal-coords">Not captured yet</div>
@@ -5201,6 +5260,36 @@ function getSelectedClient(){
 }
 
 // --- Export ---
+// --- Theme (Light / Dark / Auto) ---
+function setTheme(mode){
+  localStorage.setItem('mcn_theme',mode);
+  applyTheme(mode);
+  // Highlight active button
+  ['light','dark','auto'].forEach(m=>{
+    const btn=document.getElementById('theme-'+m);
+    if(btn) btn.style.cssText='flex:1;padding:8px'+(m===mode?';background:var(--amber);color:#fff;border-color:var(--amber)':'');
+  });
+}
+function applyTheme(mode){
+  const html=document.documentElement;
+  html.classList.remove('dark','dark-auto');
+  if(mode==='dark') html.classList.add('dark');
+  else if(mode==='auto') html.classList.add('dark-auto');
+  // Update meta theme-color for status bar
+  const isDark=mode==='dark'||(mode==='auto'&&window.matchMedia('(prefers-color-scheme:dark)').matches);
+  const meta=document.querySelector('meta[name="theme-color"]');
+  if(meta) meta.content=isDark?'#0F1A2E':'#1C2A44';
+}
+function initTheme(){
+  const mode=localStorage.getItem('mcn_theme')||'light';
+  applyTheme(mode);
+  // Highlight active button after DOM ready
+  ['light','dark','auto'].forEach(m=>{
+    const btn=document.getElementById('theme-'+m);
+    if(btn) btn.style.cssText='flex:1;padding:8px'+(m===mode?';background:var(--amber);color:#fff;border-color:var(--amber)':'');
+  });
+}
+
 function clearCacheAndRefresh(){
   toast('Clearing cache…');
   const doReload=()=>window.location.reload(true);
@@ -5421,6 +5510,7 @@ window.initApp = function() {
   populateClientDropdown();
   updateExtraLabels();
   initCheckinScreen();
+  initTheme();
   // Init native geo AFTER the app is visible — delay so the permission dialog
   // appears to the user as a deliberate prompt, not a startup-blocking freeze.
   if (window.initNativeGeo) setTimeout(window.initNativeGeo, 1500);
