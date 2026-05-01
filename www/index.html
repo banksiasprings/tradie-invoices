@@ -1480,7 +1480,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v59';
+const APP_VERSION = 'v60';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -2644,7 +2644,13 @@ function autoStartTimer(site, overrideTime){
   toast('Auto-started at '+site.name+(overrideTime?' (replayed '+overrideTime+')':''));
 }
 
+let _lastArrivalNotifyDate=null;
+let _lastDepartureNotifyDate=null;
 function showGeofenceNotification(siteName,startTime){
+  // Only one arrival notification per day
+  const today=todayStr();
+  if(_lastArrivalNotifyDate===today) return;
+  _lastArrivalNotifyDate=today;
   if(!('Notification' in window)||Notification.permission!=='granted') return;
   if(!('serviceWorker' in navigator)) return;
   navigator.serviceWorker.ready.then(reg=>{
@@ -2681,6 +2687,10 @@ function autoStopTimer(overrideTime){
 }
 
 function showGeofenceDepartureNotification(siteName,stopTime){
+  // Only one departure notification per day
+  const today=todayStr();
+  if(_lastDepartureNotifyDate===today) return;
+  _lastDepartureNotifyDate=today;
   if(!('Notification' in window)||Notification.permission!=='granted') return;
   if(!('serviceWorker' in navigator)) return;
   navigator.serviceWorker.ready.then(reg=>{
@@ -5399,16 +5409,25 @@ window.initApp = function() {
   }
 
   // ---- Override web notification calls with native ones ----
+  // The date guard in the original functions prevents duplicate notifications,
+  // so call the original first (which sets the flag) then only send native if it passed.
   const _webArrival = window.showGeofenceNotification;
   window.showGeofenceNotification = function(siteName, startTime) {
-    nativeNotify('Arrived at ' + siteName, 'Timer started at ' + startTime + '. Tap to confirm.');
+    const before = _lastArrivalNotifyDate;
     if (_webArrival) _webArrival(siteName, startTime);
+    // Only send native notification if the web function accepted it (date changed)
+    if (_lastArrivalNotifyDate !== before) {
+      nativeNotify('Arrived at ' + siteName, 'Timer started at ' + startTime + '. Tap to confirm.');
+    }
   };
 
   const _webDeparture = window.showGeofenceDepartureNotification;
   window.showGeofenceDepartureNotification = function(siteName, stopTime) {
-    nativeNotify('Left ' + siteName, 'Timer stopped at ' + stopTime + '. Tap to review.');
+    const before = _lastDepartureNotifyDate;
     if (_webDeparture) _webDeparture(siteName, stopTime);
+    if (_lastDepartureNotifyDate !== before) {
+      nativeNotify('Left ' + siteName, 'Timer stopped at ' + stopTime + '. Tap to review.');
+    }
   };
 
   // ────────────────────────────────────────────────────────────────────────────
