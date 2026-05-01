@@ -663,7 +663,7 @@ onAuthStateChanged(auth, async (user) => {
       // round-trip. The blob restore above already gives us the correct invoiced
       // flags; this is a promotion-only safety net that can settle after the UI loads.
       ArchivedSync.restoreArchivedFlags().catch(e => console.warn('ArchivedSync:', e));
-      GeoLog.add('info', 'App started (' + APP_VERSION + ' — ArchivedSync exposed on window, fixes Save Day crash)');
+      GeoLog.add('info', 'App started (' + APP_VERSION + ' — startup batches now act only on the last queued geo event)');
       if (loadingScreen) loadingScreen.style.display = 'none';
       if (loginScreen)   loginScreen.style.display   = 'none';
       if (appWrapper)    appWrapper.style.display     = 'block';
@@ -1557,7 +1557,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v64';
+const APP_VERSION = 'v65';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -5666,8 +5666,18 @@ window.initApp = function() {
       const events = JSON.parse(raw || '[]');
       if (events.length === 0) return;
       console.log('[NativeGeo] Replaying', events.length, 'pending events');
-      for (const ev of events) {
-        await processGeoEvent(ev);
+      // Capacitor delivers all events buffered while the app was closed in one batch.
+      // Replaying every one fires multiple notifications and can leave the auto-stop
+      // flag set incorrectly. Only the LAST event reflects the user's current GPS
+      // state — log the intermediate events (history) and act only on the last.
+      if (events.length > 1) {
+        for (let i = 0; i < events.length - 1; i++) {
+          const ev = events[i];
+          GeoLog.add('info', '[Batch] Skipped intermediate ' + ev.type.toUpperCase() + ' ' + ev.site + ' at ' + (ev.time||'?'));
+        }
+        await processGeoEvent(events[events.length - 1]);
+      } else {
+        await processGeoEvent(events[0]);
       }
       await NativeGeo.clearPendingEvents();
     } catch(e) {
