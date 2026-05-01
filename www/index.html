@@ -663,7 +663,7 @@ onAuthStateChanged(auth, async (user) => {
       // round-trip. The blob restore above already gives us the correct invoiced
       // flags; this is a promotion-only safety net that can settle after the UI loads.
       ArchivedSync.restoreArchivedFlags().catch(e => console.warn('ArchivedSync:', e));
-      GeoLog.add('info', 'App started (' + APP_VERSION + ' — startup batches now act only on the last queued geo event)');
+      GeoLog.add('info', 'App started (' + APP_VERSION + ' — confirmed ENTER now clears auto-stop flag so re-entries can stop again)');
       if (loadingScreen) loadingScreen.style.display = 'none';
       if (loginScreen)   loginScreen.style.display   = 'none';
       if (appWrapper)    appWrapper.style.display     = 'block';
@@ -1557,7 +1557,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v65';
+const APP_VERSION = 'v66';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -2670,6 +2670,8 @@ function checkNearbySites(lat,lng){
     if(h>=5&&h<21){ // 5am–9pm only
       geoAutoStartTriggered=true;
       geoAutoStartDate=todayStr();
+      // Fresh auto-start: ensure auto-stop is clear so this day's exit can trigger.
+      geoAutoStopTriggered=false; geoAutoStopDate=null;
       GeoLog.add('enter','[Web GPS] Entered geofence: '+nearestGeo.name+' ('+Math.round(ndGeo)+'m)');
       autoStartTimer(nearestGeo);
     }
@@ -2719,8 +2721,16 @@ function checkNearbySites(lat,lng){
         const countdown=minsLeft>0?minsLeft+'m '+sLeft+'s':sLeft+'s';
         updateGeoStatusBar('outside','⚠ '+Math.abs(distToBoundary)+'m outside · stops in '+countdown);
       } else {
-        // Inside geofence — cancel any pending debounce
-        if(outsideSiteTimer){clearTimeout(outsideSiteTimer);outsideSiteTimer=null;outsideSiteTimerStart=null;}
+        // Inside geofence — confirmed re-entry. Cancel any pending exit debounce
+        // and reset the auto-stop flag so a future exit can trigger again.
+        if(outsideSiteTimer){
+          clearTimeout(outsideSiteTimer);outsideSiteTimer=null;outsideSiteTimerStart=null;
+          GeoLog.add('info','[Web GPS] Re-entered '+ad.site+' — pending exit debounce cancelled');
+          if(geoAutoStopTriggered||geoAutoStopDate){
+            geoAutoStopTriggered=false; geoAutoStopDate=null;
+            GeoLog.add('info','[Web GPS] Re-entered '+ad.site+' — auto-stop flag cleared');
+          }
+        }
         updateGeoStatusBar('inside','📍 Inside · '+Math.max(0,Math.round(distToBoundary))+'m to boundary');
       }
     } else {
@@ -5693,6 +5703,19 @@ window.initApp = function() {
     if (outOfHours) return; // outside working hours
 
     if (ev.type === 'enter') {
+      // Confirmed re-entry to the active site: clear any pending exit debounce
+      // and reset the auto-stop flag so the next real EXIT can trigger again.
+      const _ad0 = activeDay();
+      if (_ad0 && _ad0.site === ev.site) {
+        if (outsideSiteTimer) {
+          clearTimeout(outsideSiteTimer); outsideSiteTimer = null; outsideSiteTimerStart = null;
+          GeoLog.add('info', 'Re-entered ' + ev.site + ' — pending exit debounce cancelled');
+        }
+        if (geoAutoStopTriggered || geoAutoStopDate) {
+          geoAutoStopTriggered = false; geoAutoStopDate = null;
+          GeoLog.add('info', 'Re-entered ' + ev.site + ' — auto-stop flag cleared');
+        }
+      }
       // Only auto-start if there's no active day already
       if (activeDay()) {
         console.log('[NativeGeo] ENTER ignored — timer already running');
@@ -5708,6 +5731,8 @@ window.initApp = function() {
       }
       geoAutoStartTriggered = true;
       geoAutoStartDate = todayStr();
+      // Fresh auto-start: ensure auto-stop is clear so this day's exit can trigger.
+      geoAutoStopTriggered = false; geoAutoStopDate = null;
       autoStartTimer(site, ev.time);
 
     } else if (ev.type === 'exit') {
