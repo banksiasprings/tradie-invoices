@@ -1187,7 +1187,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   <div id="invoice-mode-section">
   <div class="section">
     <div class="stats-grid">
-      <div class="stat-card"><div class="stat-label">Invoice #</div><input type="number" class="inv-num-input" id="inv-num-input" value="0045" oninput="this.dataset.userEdited='1'" onchange="renderInvoice()"></div>
+      <div class="stat-card"><div class="stat-label">Invoice # <span style="font-size:9px;opacity:0.5">✏️ tap to edit</span></div><input type="number" class="inv-num-input" id="inv-num-input" value="0045" oninput="this.dataset.userEdited='1'" onchange="renderInvoice()"></div>
       <div class="stat-card" style="background:var(--navy);border:none"><div class="stat-label" style="color:rgba(255,255,255,.55)">Total Payable</div><div class="stat-value" style="color:var(--amber)" id="inv-total-display">$0</div></div>
       <div class="stat-card"><div class="stat-label">Days</div><div class="stat-value" id="inv-days-display">0</div></div>
       <div class="stat-card"><div class="stat-label">Hours</div><div class="stat-value" id="inv-hours-display">0</div></div>
@@ -1202,6 +1202,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         <span style="font-size:14px">Add GST (10%)</span>
         <label class="toggle"><input type="checkbox" id="toggle-gst" onchange="saveGstPref();renderInvoice()"><span class="toggle-slider"></span></label>
       </div>
+      <div id="inv-gst-preview" style="display:none;font-size:12px;color:var(--text2);margin-top:8px"></div>
     </div>
     <div class="card">
       <div class="field" style="margin:0">
@@ -1217,6 +1218,12 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
           <button class="btn-ghost" onclick="selectAllInvoiceDays(false)">None</button>
           <button class="btn-ghost" id="inv-show-archived-btn" onclick="toggleInvoiceArchive()" style="color:var(--text2)">+ Archived</button>
         </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        <button class="btn btn-secondary btn-sm" onclick="filterInvoiceDays('week')" style="font-size:11px;padding:4px 10px">Last 7 days</button>
+        <button class="btn btn-secondary btn-sm" onclick="filterInvoiceDays('fortnight')" style="font-size:11px;padding:4px 10px">Last 2 weeks</button>
+        <button class="btn btn-secondary btn-sm" onclick="filterInvoiceDays('month')" style="font-size:11px;padding:4px 10px">This month</button>
+        <button class="btn btn-secondary btn-sm" onclick="filterInvoiceDays('all')" style="font-size:11px;padding:4px 10px">All</button>
       </div>
       <div id="invoice-day-list"></div>
     </div>
@@ -1480,7 +1487,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v60';
+const APP_VERSION = 'v61';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -2054,6 +2061,22 @@ function selectAllInvoiceDays(checked){
   renderInvoice();
 }
 
+function filterInvoiceDays(range){
+  const now=new Date();
+  let cutoff=null;
+  if(range==='week'){ cutoff=new Date(now); cutoff.setDate(cutoff.getDate()-7); }
+  else if(range==='fortnight'){ cutoff=new Date(now); cutoff.setDate(cutoff.getDate()-14); }
+  else if(range==='month'){ cutoff=new Date(now.getFullYear(),now.getMonth(),1); }
+  // 'all' = no cutoff
+  const selClient=_getInvoiceClientFilter();
+  const eligible=days().filter(d=>!d.invoiced&&_dayMatchesClient(d,selClient));
+  _invoiceDaySelection=new Set();
+  eligible.forEach(d=>{
+    if(!cutoff||d.date>=cutoff.toISOString().slice(0,10)) _invoiceDaySelection.add(d.id||d.date);
+  });
+  renderInvoice();
+}
+
 function toggleInvoiceArchive(){
   _invoiceShowArchived = !_invoiceShowArchived;
   const btn = document.getElementById('inv-show-archived-btn');
@@ -2523,11 +2546,20 @@ function startGPS(){
   if(!navigator.geolocation) return;
   const dot=document.getElementById('gps-dot-main'),lbl=document.getElementById('gps-label-main');
   dot.className='gps-dot searching';lbl.textContent='Getting your location…';
+  let gotFix=false;
   watchId=navigator.geolocation.watchPosition(pos=>{
+    gotFix=true;
     lastLat=pos.coords.latitude;lastLng=pos.coords.longitude;
     dot.className='gps-dot active';lbl.textContent='GPS actively tracking';
     checkNearbySites(lastLat,lastLng);
   },()=>{dot.className='gps-dot';lbl.textContent='GPS unavailable — select site manually';},{enableHighAccuracy:true,maximumAge:30000});
+  // Timeout: if no GPS fix after 15s, nudge user to select site manually
+  setTimeout(()=>{
+    if(!gotFix){
+      lbl.textContent='GPS slow — select site manually below';
+      dot.className='gps-dot';
+    }
+  },15000);
 }
 
 // Haversine great-circle distance in metres.
@@ -3204,7 +3236,7 @@ function renderLog(){
   if(filterLabel) filterLabel.textContent=showArchivedLogs?'All entries ('+allDays.length+')':'Active entries ('+ui+')';
   if(toggleBtn) toggleBtn.textContent=showArchivedLogs?'Hide archived':'Show archived ('+archivedCount+')';
   const list=showArchivedLogs?allDays:allDays.filter(d=>!d.invoiced);
-  if(!allDays.length){el.innerHTML='<div class="empty"><div class="empty-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></div><h3>No days logged yet</h3><p>Use the Today tab to check in and start tracking your time</p></div>';return;}
+  if(!allDays.length){el.innerHTML='<div class="empty"><div class="empty-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></div><h3>No days logged yet</h3><p>Use the Today tab to check in and start tracking your time</p><button class="btn btn-primary" style="margin-top:12px" onclick="showScreen(\'today\',this)">Go to Today</button></div>';return;}
   if(!list.length){el.innerHTML='<div class="empty"><div class="empty-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></div><h3>All days are invoiced</h3><p>Tap "Show archived" above to view invoiced entries</p></div>';return;}
   el.innerHTML='';
   list.forEach(d=>{
@@ -3221,7 +3253,7 @@ function renderLog(){
           ${(d.machines||[]).map(m=>`<span class="badge badge-amber" style="margin-left:4px">${escHtml(m.name)}</span>`).join('')}
           ${travelLine?`<span class="badge" style="margin-left:4px;background:var(--surface2);color:var(--text2)">🚗 ${travelLine.mode==='km'?travelLine.km+'km':travelLine.hrs+'h'}</span>`:''}
           ${materialsTotal>0?`<span class="badge" style="margin-left:4px;background:var(--surface2);color:var(--text2)">🧱 ${fmtMoney(materialsTotal)}</span>`:''}
-          ${d.invoiced?'<span class="badge badge-amber" style="margin-left:4px">Archived</span>':''}
+          ${d.invoiced?'<span class="badge badge-green" style="margin-left:4px">Invoiced ✓</span>':'<span class="badge" style="margin-left:4px;background:#FEF3C7;color:#92400E">Pending</span>'}
         </div>
       </div>
       <div class="day-item-right" style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
@@ -3316,6 +3348,14 @@ function renderInvoice(){
   document.getElementById('inv-days-display').textContent=selectedCount;
   document.getElementById('inv-hours-display').textContent=th.toFixed(1);
   document.getElementById('invoice-subtitle').textContent=selectedCount+' day'+(selectedCount!==1?'s':'')+' selected';
+  // GST preview
+  const gstPreview=document.getElementById('inv-gst-preview');
+  if(gstPreview){
+    if(gstOn&&grandTotal>0){
+      gstPreview.style.display='block';
+      gstPreview.textContent='Subtotal: '+fmtMoney(grandTotal)+' + GST: '+fmtMoney(gst)+' = '+fmtMoney(grandTotal+gst);
+    } else { gstPreview.style.display='none'; }
+  }
   // Subtotals card
   const sc=document.getElementById('inv-subtotals-card'),scContent=document.getElementById('inv-subtotals-content');
   if(selectedCount){
