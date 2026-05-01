@@ -663,7 +663,7 @@ onAuthStateChanged(auth, async (user) => {
       // round-trip. The blob restore above already gives us the correct invoiced
       // flags; this is a promotion-only safety net that can settle after the UI loads.
       ArchivedSync.restoreArchivedFlags().catch(e => console.warn('ArchivedSync:', e));
-      GeoLog.add('info', 'App started (' + APP_VERSION + ' — confirmed ENTER now clears auto-stop flag so re-entries can stop again)');
+      GeoLog.add('info', 'App started (' + APP_VERSION + ' — Settings reorganised into Setup / Business / Admin sections)');
       if (loadingScreen) loadingScreen.style.display = 'none';
       if (loginScreen)   loginScreen.style.display   = 'none';
       if (appWrapper)    appWrapper.style.display     = 'block';
@@ -1386,6 +1386,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       </div>
       <div id="team-member-list" style="margin-top:14px"></div>
     </div>
+    <div class="section-heading" style="margin-top:12px">🔧 Setup</div>
     <div class="card">
       <div class="card-title">Clients &amp; Sites</div>
       <div id="clients-sites-list"></div>
@@ -1431,6 +1432,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         </div>
       </div>
     </div>
+    <div class="section-heading" style="margin-top:18px">💼 Business</div>
     <div class="card" id="business-settings-card">
       <div class="card-title">Business details</div>
       <div class="field"><label>Name</label><input type="text" id="s-name"></div>
@@ -1536,28 +1538,30 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         <a href="https://github.com/banksiasprings/tradie-invoices/releases/latest/download/InvoicePDF.apk" style="display:inline-block;font-size:12px;font-weight:600;padding:8px 20px;border-radius:8px;background:var(--amber);color:#fff;text-decoration:none;letter-spacing:.3px">⬇ Download Latest APK</a>
       </div>
     </div>
-    <div class="card card-collapsible" data-collapse-default="collapsed" style="margin-top:12px">
-      <div class="card-title">📍 Geo Event Log</div>
+    <div class="card card-collapsible" data-collapse-default="collapsed" style="margin-top:24px;border:1.5px dashed var(--border)">
+      <div class="card-title">🛠 Admin / Diagnostics</div>
       <div class="card-body">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:14px">Internal tools for troubleshooting GPS/geofence behaviour and managing registered users. Safe to ignore in normal use.</div>
+
+        <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">📍 Geo Event Log</div>
         <div id="geo-log-list" style="max-height:500px;overflow-y:auto"></div>
         <div style="display:flex;gap:8px;margin-top:10px">
           <button class="btn btn-secondary" style="flex:1;font-size:12px" onclick="GeoLog.render()">↻ Refresh</button>
           <button class="btn btn-secondary" style="flex:1;font-size:12px;color:#c0392b" onclick="if(confirm('Clear geo log?')){GeoLog.clear();GeoLog.render();}">🗑 Clear Log</button>
         </div>
-      </div>
-    </div>
-    <div style="display:none"><!-- placeholder to balance the card we opened above -->
-      <div id="admin-only-section" style="display:none;border-top:1px solid var(--border);padding-top:14px;margin-top:14px">
-        <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px;padding-left:10px;border-left:3px solid var(--amber)">👥 Registered Users</div>
-        <div id="admin-user-list-settings"><div style="color:var(--text2);font-size:13px">Tap refresh to load.</div></div>
-        <button class="btn btn-secondary" style="margin-top:12px;width:100%" onclick="loadAdminUsers('settings')">↻ Refresh User List</button>
-        <div style="font-size:11px;color:var(--text3);margin-top:8px">To delete login credentials, use Firebase Console → Authentication → Users.</div>
+
+        <div id="admin-only-section" style="display:none;border-top:1px solid var(--border);padding-top:14px;margin-top:18px">
+          <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px;padding-left:10px;border-left:3px solid var(--amber)">👥 Registered Users</div>
+          <div id="admin-user-list-settings"><div style="color:var(--text2);font-size:13px">Tap refresh to load.</div></div>
+          <button class="btn btn-secondary" style="margin-top:12px;width:100%" onclick="loadAdminUsers('settings')">↻ Refresh User List</button>
+          <div style="font-size:11px;color:var(--text3);margin-top:8px">To delete login credentials, use Firebase Console → Authentication → Users.</div>
+        </div>
       </div>
     </div>
   </div>
 </div>
 <script>
-const APP_VERSION = 'v66';
+const APP_VERSION = 'v67';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
