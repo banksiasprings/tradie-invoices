@@ -1,5 +1,5 @@
 
-const CACHE = 'invoice-pdf-v68';
+const CACHE = 'invoice-pdf-v69';
 // Resources that must survive a fresh SW install so the app can boot offline.
 // Anything fetched at runtime gets cached by the fetch handler too, but that
 // only helps if the user happens to be online when it's first requested.
