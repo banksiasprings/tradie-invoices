@@ -1685,7 +1685,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v68';
+const APP_VERSION = 'v69';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -2712,6 +2712,11 @@ let geoAutoStopDate=null;  // calendar date when auto-stop last fired
 let outsideSiteTimer=null;
 let outsideSiteTimerStart=null; // when the debounce started (for countdown display)
 let bgPollInterval=null; // backup polling when watchPosition goes quiet
+// Two-reading confirmation before EXIT — a single bad GPS fix (e.g. under a shed)
+// must not trigger the 5-min stop debounce. Resets when an "inside" reading lands
+// or when readings are too far apart (>90s) to count as consecutive.
+let outsideReadingCount=0;
+let lastOutsideReadingAt=0;
 
 function updateGeoStatusBar(state,text){
   const dot=document.getElementById('geo-status-dot');
@@ -2732,7 +2737,7 @@ function startBgPoll(){
     if(!activeDay()) return;
     navigator.geolocation.getCurrentPosition(pos=>{
       lastLat=pos.coords.latitude; lastLng=pos.coords.longitude;
-      checkNearbySites(lastLat,lastLng);
+      checkNearbySites(lastLat,lastLng,pos.coords.accuracy);
     },()=>{},{ enableHighAccuracy:true, timeout:15000, maximumAge:60000 });
   }, 90000);
 }
@@ -2748,7 +2753,7 @@ function startGPS(){
     gotFix=true;
     lastLat=pos.coords.latitude;lastLng=pos.coords.longitude;
     dot.className='gps-dot active';lbl.textContent='GPS actively tracking';
-    checkNearbySites(lastLat,lastLng);
+    checkNearbySites(lastLat,lastLng,pos.coords.accuracy);
   },()=>{dot.className='gps-dot';lbl.textContent='GPS unavailable — select site manually';},{enableHighAccuracy:true,maximumAge:30000});
   // Timeout: if no GPS fix after 15s, nudge user to select site manually
   setTimeout(()=>{
@@ -2762,10 +2767,20 @@ function startGPS(){
 // Haversine great-circle distance in metres.
 function dist(la1,lo1,la2,lo2){const R=6371000,toRad=Math.PI/180,p1=la1*toRad,p2=la2*toRad,dp=(la2-la1)*toRad,dl=(lo2-lo1)*toRad,a=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))}
 
-function checkNearbySites(lat,lng){
+function checkNearbySites(lat,lng,accuracy){
   const ss=sites();
   let nearestGeo=null,ndGeo=Infinity;
   let nearestSuggest=null,ndSuggest=Infinity;
+
+  // On the APK, NativeGeo's GeofencingClient is the canonical source of enter/exit
+  // events (it fires reliably even when the app is dead). Web GPS would only
+  // duplicate those events here, so suppress the auto-start/auto-stop logic on native.
+  // Position tracking + UI suggestion still runs.
+  const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  // Discard fixes with poor horizontal accuracy for geofence decisions — under a
+  // shed or in a tin building, browser GPS can return >100m readings that look
+  // outside the fence even when the user hasn't moved.
+  const accOk = (accuracy == null) || (accuracy <= 100);
 
   ss.forEach(s=>{
     if(!s.lat) return;
@@ -2791,8 +2806,8 @@ function checkNearbySites(lat,lng){
     no.style.display=activeDay()?'none':'block';
   }
 
-  // Geofence auto-start
-  if(nearestGeo&&!activeDay()&&!geoAutoStartTriggered){
+  // Geofence auto-start (Web GPS path only — NativeGeo handles native)
+  if(!isNative&&accOk&&nearestGeo&&!activeDay()&&!geoAutoStartTriggered){
     const h=new Date().getHours();
     if(h>=5&&h<21){ // 5am–9pm only
       geoAutoStartTriggered=true;
@@ -2810,43 +2825,63 @@ function checkNearbySites(lat,lng){
       const dActive=Math.round(dist(lat,lng,activeSite.lat,activeSite.lng));
       const activeRadius=activeSite.radius||100;
       const distToBoundary=activeRadius-dActive; // positive = inside, negative = outside
-      if(dActive>activeRadius){
-        // Outside geofence — start debounce if not already counting
-        if(!outsideSiteTimer){
-          outsideSiteTimerStart=Date.now();
-          outsideSiteTimer=setTimeout(()=>{
-            outsideSiteTimer=null; outsideSiteTimerStart=null;
-            const hour=new Date().getHours();
-            if(hour>=5&&hour<21&&activeDay()&&!geoAutoStopTriggered){
-              const _ad=activeDay(), _site=sites().find(s=>s.name===_ad.site);
-              // Get a FRESH GPS fix before stopping — lastLat may be the same stale
-              // "outside" reading that started the debounce (screen off = no updates)
-              function doStop(){
-                geoAutoStopTriggered=true;
-                geoAutoStopDate=todayStr();
-                GeoLog.add('exit','[Web GPS] Left geofence: '+(_ad?_ad.site:'?'));
-                autoStopTimer();
+      if(!accOk){
+        // Inaccurate fix — discard for exit decisions, don't update outside-reading counter
+        GeoLog.add('info','[Web GPS] Reading discarded for geofence — accuracy '+Math.round(accuracy)+'m (>100m)');
+        updateGeoStatusBar('searching','📡 Poor GPS · accuracy '+Math.round(accuracy)+'m');
+      } else if(dActive>activeRadius){
+        // Two-reading confirmation — a single bad fix must not start the 5-min debounce
+        const _now=Date.now();
+        if(lastOutsideReadingAt&&(_now-lastOutsideReadingAt>90000)) outsideReadingCount=0;
+        outsideReadingCount++;
+        lastOutsideReadingAt=_now;
+        const confirmed=outsideReadingCount>=2;
+        // Only the Web GPS path schedules the stop debounce here; native owns its own
+        if(!confirmed){
+          GeoLog.add('info','[Web GPS] First outside reading ('+Math.abs(distToBoundary)+'m) — waiting for confirmation');
+          updateGeoStatusBar('outside','⚠ '+Math.abs(distToBoundary)+'m outside · verifying…');
+        } else if(isNative){
+          // Native handles the actual stop; just surface state to the user
+          updateGeoStatusBar('outside','⚠ '+Math.abs(distToBoundary)+'m outside');
+        } else {
+          // Outside geofence (confirmed) — start debounce if not already counting
+          if(!outsideSiteTimer){
+            outsideSiteTimerStart=Date.now();
+            outsideSiteTimer=setTimeout(()=>{
+              outsideSiteTimer=null; outsideSiteTimerStart=null;
+              const hour=new Date().getHours();
+              if(hour>=5&&hour<21&&activeDay()&&!geoAutoStopTriggered){
+                const _ad=activeDay(), _site=sites().find(s=>s.name===_ad.site);
+                // Get a FRESH GPS fix before stopping — lastLat may be the same stale
+                // "outside" reading that started the debounce (screen off = no updates)
+                function doStop(){
+                  geoAutoStopTriggered=true;
+                  geoAutoStopDate=todayStr();
+                  GeoLog.add('exit','[Web GPS] Left geofence: '+(_ad?_ad.site:'?'));
+                  autoStopTimer();
+                }
+                if(_site&&_site.lat){
+                  navigator.geolocation.getCurrentPosition(pos=>{
+                    const freshD=dist(pos.coords.latitude,pos.coords.longitude,_site.lat,_site.lng);
+                    if(freshD<(_site.radius||100)){
+                      GeoLog.add('ignore','[Web GPS] Debounce expired but fresh GPS shows '+Math.round(freshD)+'m inside '+_site.name+' — ignoring exit');
+                      return;
+                    }
+                    doStop();
+                  },()=>{ GeoLog.add('ignore','[Web GPS] Debounce expired but GPS unavailable — not stopping'); },{ enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
+                } else { doStop(); }
               }
-              if(_site&&_site.lat){
-                navigator.geolocation.getCurrentPosition(pos=>{
-                  const freshD=dist(pos.coords.latitude,pos.coords.longitude,_site.lat,_site.lng);
-                  if(freshD<(_site.radius||100)){
-                    GeoLog.add('ignore','[Web GPS] Debounce expired but fresh GPS shows '+Math.round(freshD)+'m inside '+_site.name+' — ignoring exit');
-                    return;
-                  }
-                  doStop();
-                },()=>{ GeoLog.add('ignore','[Web GPS] Debounce expired but GPS unavailable — not stopping'); },{ enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
-              } else { doStop(); }
-            }
-          },GEO_STOP_DEBOUNCE);
+            },GEO_STOP_DEBOUNCE);
+          }
+          // Show countdown in status bar
+          const secsLeft=outsideSiteTimerStart?Math.max(0,Math.round((GEO_STOP_DEBOUNCE-(Date.now()-outsideSiteTimerStart))/1000)):Math.round(GEO_STOP_DEBOUNCE/1000);
+          const minsLeft=Math.floor(secsLeft/60),sLeft=secsLeft%60;
+          const countdown=minsLeft>0?minsLeft+'m '+sLeft+'s':sLeft+'s';
+          updateGeoStatusBar('outside','⚠ '+Math.abs(distToBoundary)+'m outside · stops in '+countdown);
         }
-        // Show countdown in status bar
-        const secsLeft=outsideSiteTimerStart?Math.max(0,Math.round((GEO_STOP_DEBOUNCE-(Date.now()-outsideSiteTimerStart))/1000)):Math.round(GEO_STOP_DEBOUNCE/1000);
-        const minsLeft=Math.floor(secsLeft/60),sLeft=secsLeft%60;
-        const countdown=minsLeft>0?minsLeft+'m '+sLeft+'s':sLeft+'s';
-        updateGeoStatusBar('outside','⚠ '+Math.abs(distToBoundary)+'m outside · stops in '+countdown);
       } else {
-        // Inside geofence — cancel any pending debounce
+        // Inside geofence — reset outside-reading counter and cancel any pending debounce
+        outsideReadingCount=0; lastOutsideReadingAt=0;
         if(outsideSiteTimer){clearTimeout(outsideSiteTimer);outsideSiteTimer=null;outsideSiteTimerStart=null;}
         updateGeoStatusBar('inside','📍 Inside · '+Math.max(0,Math.round(distToBoundary))+'m to boundary');
       }
@@ -2931,6 +2966,11 @@ function showGeofenceDepartureNotification(siteName,stopTime){
       icon:'./tradie-app/icons/icon-192.png',
       badge:'./tradie-app/icons/icon-192.png',
       tag:'geofence-departure',
+      // Departure notifications must be silent — they were beeping on the phone
+      // and adding noise. The arrival notification confirms the timer started;
+      // the exit one is just a status update.
+      silent:true,
+      vibrate:[0],
       actions:[
         {action:'confirm',title:'✓ Correct'},
         {action:'adjust-stop',title:'Adjust time'}
@@ -5596,7 +5636,7 @@ document.addEventListener('visibilitychange',()=>{
     // Also grab a fresh position in case we've moved while backgrounded
     navigator.geolocation.getCurrentPosition(pos=>{
       lastLat=pos.coords.latitude; lastLng=pos.coords.longitude;
-      checkNearbySites(lastLat,lastLng);
+      checkNearbySites(lastLat,lastLng,pos.coords.accuracy);
     },()=>{},{enableHighAccuracy:true,timeout:15000,maximumAge:30000});
   }
 });
@@ -5699,19 +5739,47 @@ window.initApp = function() {
 
   // ---- Native notification helper ----
   let _notifId = 2000;
-  async function nativeNotify(title, body) {
+  // Android decides "sound vs silent" by channel importance, not by the notification itself.
+  // We create a low-importance channel once for departure (exit) notifications so they
+  // appear in the tray without making sound or vibrating.
+  let _silentChannelReady = null;
+  async function ensureSilentChannel() {
+    if (_silentChannelReady) return _silentChannelReady;
+    _silentChannelReady = (async () => {
+      if (!LocalNotifications || !LocalNotifications.createChannel) return;
+      try {
+        await LocalNotifications.createChannel({
+          id: 'geofence_silent',
+          name: 'Geofence (silent)',
+          description: 'Silent notifications for site departures — no sound or vibration',
+          importance: 2, // IMPORTANCE_LOW: visible in tray, no sound, no peek, no vibrate
+          sound: '',
+          vibration: false,
+          visibility: 1
+        });
+      } catch(e) { console.warn('[Capacitor] createChannel failed:', e); }
+    })();
+    return _silentChannelReady;
+  }
+  async function nativeNotify(title, body, opts) {
+    opts = opts || {};
     try {
       if (LocalNotifications) {
         await LocalNotifications.requestPermissions();
-        await LocalNotifications.schedule({
-          notifications: [{
-            title, body,
-            id: _notifId++,
-            schedule: { at: new Date(Date.now() + 800) },
-            sound: 'default',
-            actionTypeId: 'OPEN_APP'
-          }]
-        });
+        const notif = {
+          title, body,
+          id: _notifId++,
+          schedule: { at: new Date(Date.now() + 800) },
+          actionTypeId: 'OPEN_APP'
+        };
+        if (opts.silent) {
+          await ensureSilentChannel();
+          notif.channelId = 'geofence_silent';
+          notif.sound = '';
+        } else {
+          notif.sound = 'default';
+        }
+        await LocalNotifications.schedule({ notifications: [notif] });
       }
     } catch(e) { console.warn('[Capacitor] Notification failed:', e); }
   }
@@ -5734,7 +5802,9 @@ window.initApp = function() {
     const before = _lastDepartureNotifyDate;
     if (_webDeparture) _webDeparture(siteName, stopTime);
     if (_lastDepartureNotifyDate !== before) {
-      nativeNotify('Left ' + siteName, 'Timer stopped at ' + stopTime + '. Tap to review.');
+      // Silent — no sound, no vibration. The arrival notification confirms the
+      // timer started; departures are just informational.
+      nativeNotify('Left ' + siteName, 'Timer stopped at ' + stopTime + '. Tap to review.', { silent: true });
     }
   };
 

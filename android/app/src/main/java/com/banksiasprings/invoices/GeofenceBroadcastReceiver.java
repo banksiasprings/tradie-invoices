@@ -25,7 +25,12 @@ import java.util.Locale;
 public class GeofenceBroadcastReceiver extends BroadcastReceiver {
 
     private static final String TAG = "GeofenceReceiver";
-    private static final String CHANNEL_ID = "geofence_channel";
+    // Arrival notifications use a high-importance channel — they confirm the timer started.
+    private static final String CHANNEL_ID_ARRIVAL = "geofence_channel";
+    // Departure notifications use a separate low-importance channel so they appear
+    // silently in the tray without sound or vibration. Once a channel is created on
+    // Android 8+ its importance can't be changed, so it must be a distinct channel.
+    private static final String CHANNEL_ID_EXIT = "geofence_channel_exit";
     private static final String PREFS_NAME = "native_geo_prefs";
     private static final String EVENTS_KEY = "pending_events";
 
@@ -84,23 +89,34 @@ public class GeofenceBroadcastReceiver extends BroadcastReceiver {
         // Fire a notification so the user knows what was detected
         for (Geofence fence : fences) {
             String siteName = fence.getRequestId();
-            String title = type.equals("enter") ? "Arrived at " + siteName : "Left " + siteName;
-            String body = type.equals("enter")
+            boolean isEnter = type.equals("enter");
+            String title = isEnter ? "Arrived at " + siteName : "Left " + siteName;
+            String body = isEnter
                     ? "Timer started at " + timeStr + ". Open app to review."
                     : "Timer stopped at " + timeStr + ". Open app to generate invoice.";
-            sendNotification(context, title, body, type.equals("enter") ? 100 : 101);
+            sendNotification(context, title, body, isEnter ? 100 : 101, isEnter);
         }
     }
 
-    private void sendNotification(Context context, String title, String body, int notifId) {
+    private void sendNotification(Context context, String title, String body, int notifId, boolean isEnter) {
         NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
 
+        // Two channels: arrivals are loud (confirm timer started); departures are silent
+        // (just an informational status update — the user complained about the beeping).
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel ch = new NotificationChannel(
-                    CHANNEL_ID, "Site Arrival/Departure", NotificationManager.IMPORTANCE_HIGH);
-            ch.setDescription("Notifies when you arrive at or leave a job site");
-            nm.createNotificationChannel(ch);
+            NotificationChannel arrivalCh = new NotificationChannel(
+                    CHANNEL_ID_ARRIVAL, "Site Arrival", NotificationManager.IMPORTANCE_HIGH);
+            arrivalCh.setDescription("Notifies when you arrive at a job site (timer auto-start)");
+            nm.createNotificationChannel(arrivalCh);
+
+            NotificationChannel exitCh = new NotificationChannel(
+                    CHANNEL_ID_EXIT, "Site Departure (silent)", NotificationManager.IMPORTANCE_LOW);
+            exitCh.setDescription("Silent notifications when you leave a job site (timer auto-stop) — no sound or vibration");
+            exitCh.setSound(null, null);
+            exitCh.enableVibration(false);
+            exitCh.setVibrationPattern(new long[]{0});
+            nm.createNotificationChannel(exitCh);
         }
 
         // Tap notification → open app
@@ -110,13 +126,23 @@ public class GeofenceBroadcastReceiver extends BroadcastReceiver {
                 context, notifId, launch,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
+        String channelId = isEnter ? CHANNEL_ID_ARRIVAL : CHANNEL_ID_EXIT;
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, channelId)
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .setContentTitle(title)
                 .setContentText(body)
                 .setAutoCancel(true)
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setContentIntent(pi);
+
+        if (isEnter) {
+            builder.setPriority(NotificationCompat.PRIORITY_HIGH);
+        } else {
+            // Pre-O the channel doesn't apply — strip sound/vibration on the builder itself.
+            builder.setPriority(NotificationCompat.PRIORITY_LOW);
+            builder.setSound(null);
+            builder.setVibrate(new long[]{0});
+            builder.setDefaults(0);
+        }
 
         nm.notify(notifId, builder.build());
     }
