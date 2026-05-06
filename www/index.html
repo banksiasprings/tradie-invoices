@@ -660,7 +660,7 @@ onAuthStateChanged(auth, async (user) => {
       // Run ArchivedSync in the background — don't block startup on a Firestore
       // round-trip. The blob restore above already gives us the correct invoiced
       // flags; this is a promotion-only safety net that can settle after the UI loads.
-      ArchivedSync.restoreArchivedFlags().catch(e => console.warn('ArchivedSync:', e));
+      if(typeof ArchivedSync!=='undefined') ArchivedSync.restoreArchivedFlags().catch(e => console.warn('ArchivedSync:', e));
       GeoLog.add('info', 'App started (' + APP_VERSION + ')');
       if (loadingScreen) loadingScreen.style.display = 'none';
       if (loginScreen)   loginScreen.style.display   = 'none';
@@ -1555,7 +1555,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v64';
+const APP_VERSION = 'v65';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -3067,8 +3067,10 @@ function saveDay(){
   // Filter by unique id so a second entry on the same day doesn't wipe the first
   const dl=days(),filtered=ad.id?dl.filter(d=>d.id!==ad.id):dl;
   const _newDay={...ad,invoiced:false};filtered.push(_newDay);
-  ArchivedSync.ensureEntry(_newDay.id||_newDay.date).catch(()=>{});
+  // Save to localStorage FIRST — before any async/cloud calls that could throw
   DB.set('days',filtered);DB.set('activeDay',null);clearInterval(timerInterval);
+  // ArchivedSync is optional — use ?. so a missing definition never blocks the save
+  if(typeof ArchivedSync!=='undefined') ArchivedSync.ensureEntry(_newDay.id||_newDay.date).catch(()=>{});
   if(window.CloudSync) window.CloudSync.pushAll().then(()=>toast('☁ Synced to cloud ✓')).catch(()=>{});
   geoAutoStartTriggered=false;geoAutoStopTriggered=false;
   geoAutoStartDate=null;geoAutoStopDate=null; // allow fresh triggers for next job entry
@@ -3166,7 +3168,7 @@ window.unarchiveLogEntry = function(){
   const dl=days(),idx=dl.findIndex(x=>(x.id&&x.id===_logEditDate)||(!x.id&&x.date===_logEditDate));
   if(idx===-1){toast('Day not found');return;}
   dl[idx].invoiced=false;
-  ArchivedSync.setArchived(dl[idx].id||dl[idx].date,false).catch(()=>{});
+  if(typeof ArchivedSync!=='undefined') ArchivedSync.setArchived(dl[idx].id||dl[idx].date,false).catch(()=>{});
   DB.set('days',dl);
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
   closeLogEditModal();
@@ -3766,7 +3768,7 @@ function generateInvoice(){
   const selectedIds=new Set(ui.map(d=>d.id||d.date));
   const ad=days();
   const it=ui.reduce((sum,d)=>{const{total}=dayTotals(d);return sum+total;},0);
-  ad.forEach(d=>{if(selectedIds.has(d.id||d.date)){d.invoiced=true;ArchivedSync.setArchived(d.id||d.date,true).catch(()=>{});}});DB.set('days',ad);
+  ad.forEach(d=>{if(selectedIds.has(d.id||d.date)){d.invoiced=true;if(typeof ArchivedSync!=='undefined')ArchivedSync.setArchived(d.id||d.date,true).catch(()=>{});}});DB.set('days',ad);
   const il=invoices();il.push({num:invNumOverride,date:todayStr(),total:it,days:ui.length});DB.set('invoices',il);
   const ap=parseFloat(s.incpct??7.8),pi=(parseFloat(s.rate)*ap/100)/26,nr=Math.round((parseFloat(s.rate)+pi)*20)/20;
   // Save to IndexedDB
@@ -5414,7 +5416,7 @@ function restoreInvoice(){
     // Un-mark those days as invoiced so they reappear in invoice tab
     const allDays=days();
     const restoreIds=new Set((rd.days||[]).map(d=>d.id||d.date));
-    allDays.forEach(d=>{ if(restoreIds.has(d.id||d.date)){ d.invoiced=false; ArchivedSync.setArchived(d.id||d.date,false).catch(()=>{}); } });
+    allDays.forEach(d=>{ if(restoreIds.has(d.id||d.date)){ d.invoiced=false; if(typeof ArchivedSync!=='undefined')ArchivedSync.setArchived(d.id||d.date,false).catch(()=>{}); } });
     DB.set('days',allDays);
     closeInvoiceViewer();
     // Switch to invoice tab and re-render
@@ -5951,7 +5953,7 @@ function saveManualEntry(){
   };
   existing.push(entry);
   DB.set('days', existing);
-  ArchivedSync.ensureEntry(entry.id).catch(()=>{});
+  if(typeof ArchivedSync!=='undefined') ArchivedSync.ensureEntry(entry.id).catch(()=>{});
   toast('Manual entry saved! ✓');
   if(window.CloudSync) window.CloudSync.pushAll().then(()=>toast('☁ Synced to cloud ✓')).catch(()=>{});
   // Reset for next entry — keep site/date in case they're logging multiple days
