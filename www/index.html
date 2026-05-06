@@ -167,7 +167,7 @@
   .inv-total-line{font-size:13px;font-weight:700}
 
   .bar-chart{display:flex;align-items:flex-end;gap:6px;height:100px;margin:8px 0 4px}
-  .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer}
+  .bar-col{flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px;cursor:pointer}
   .bar-col:active .bar{opacity:0.7}
   .bar{width:100%;background:var(--amber-light);border-radius:4px 4px 0 0;transition:opacity .15s}
   .bar.current{background:var(--amber)}
@@ -638,6 +638,7 @@ async function registerUserInAdmin(user) {
 // _sessionInit prevents Firebase token-refresh from re-running CloudSync.restore()
 // and overwriting user's locally saved settings with older Firestore data.
 let _sessionInit = false;
+let _adminRegistered = false;
 onAuthStateChanged(auth, async (user) => {
   const loadingScreen = document.getElementById('screen-loading');
   const loginScreen   = document.getElementById('screen-login');
@@ -652,10 +653,13 @@ onAuthStateChanged(auth, async (user) => {
     const isAdmin = user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
     if (adminTab) adminTab.style.display = isAdmin ? 'flex' : 'none';
     if (adminSection) adminSection.style.display = isAdmin ? 'block' : 'none';
+    if (user && !_adminRegistered) {
+      _adminRegistered = true;
+      registerUserInAdmin(user);
+    }
     if (!_sessionInit) {
       // First sign-in this session — restore from cloud and init app
       _sessionInit = true;
-      await registerUserInAdmin(user);
       await CloudSync.restore();
       // Run ArchivedSync in the background — don't block startup on a Firestore
       // round-trip. The blob restore above already gives us the correct invoiced
@@ -672,6 +676,7 @@ onAuthStateChanged(auth, async (user) => {
   } else {
     // Signed out — reset flag so next sign-in does a fresh restore
     _sessionInit = false;
+    _adminRegistered = false;
     CloudSync.uid = null;
     // Stop GPS — a logged-out device must not keep polling location.
     if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
@@ -1555,7 +1560,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v65';
+const APP_VERSION = 'v66';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1833,7 +1838,7 @@ async function forceAppUpdate(isRetry) {
       <button onclick="quickLunch(45)" class="btn btn-secondary btn-sm">45 min</button>
       <button onclick="quickLunch(60)" class="btn btn-secondary btn-sm">60 min</button>
     </div>
-    <button class="btn btn-primary" onclick="saveLunchManually()" style="position:sticky;bottom:0;background:var(--surface);padding-bottom:max(4px,env(safe-area-inset-bottom))">Set Lunch ✓</button>
+    <button class="btn btn-primary" onclick="saveLunchManually()" style="position:sticky;bottom:0;background:var(--amber);padding-bottom:max(4px,env(safe-area-inset-bottom))">Set Lunch ✓</button>
   </div>
 </div>
 
@@ -2064,7 +2069,6 @@ const DEFAULTS={
   rate:55, sonrate:30, incpct:7.8, invnum:45,
   travelMode:'none', travelKmRate:0.88, travelHrRate:30,
   machineRates:{Excavator:150,Grader:180,Bobcat:120,Dozer:200,Tractor:110},
-  customMachines:null,
   machinesLib:[],
   materialsLib:[],
   showExtraWorker:false,
@@ -3768,8 +3772,10 @@ function generateInvoice(){
   const selectedIds=new Set(ui.map(d=>d.id||d.date));
   const ad=days();
   const it=ui.reduce((sum,d)=>{const{total}=dayTotals(d);return sum+total;},0);
+  const totalHours=ui.reduce((sum,d)=>{const{h}=dayTotals(d);return sum+h;},0);
   ad.forEach(d=>{if(selectedIds.has(d.id||d.date)){d.invoiced=true;if(typeof ArchivedSync!=='undefined')ArchivedSync.setArchived(d.id||d.date,true).catch(()=>{});}});DB.set('days',ad);
-  const il=invoices();il.push({num:invNumOverride,date:todayStr(),total:it,days:ui.length});DB.set('invoices',il);
+  const invoiceId=Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  const il=invoices();il.push({id:invoiceId,num:invNumOverride,invoiceNum:String(invNumOverride).padStart(4,'0'),date:todayStr(),clientName:ic.company||'',total:it,days:ui.length,hours:totalHours});DB.set('invoices',il);
   const ap=parseFloat(s.incpct??7.8),pi=(parseFloat(s.rate)*ap/100)/26,nr=Math.round((parseFloat(s.rate)+pi)*20)/20;
   // Save to IndexedDB
   const savedNum=String(invNumOverride).padStart(4,'0');
@@ -3892,8 +3898,8 @@ function saveSettings(){
   if(tkr&&tkr.value) s.travelKmRate=parseFloat(tkr.value)||0.88;
   if(thr&&thr.value) s.travelHrRate=parseFloat(thr.value)||30;
   // Machine library saved directly via addToMachinesLib/deleteMachineFromLib — no read needed here
-  const machinesLib=s.machinesLib||[];
-  s.customMachines=machinesLib.length?machinesLib.map(m=>({name:m.name,rate:m.rate})):null;
+  // customMachines is legacy; machinesLib is the source of truth (migrated at startup)
+  if('customMachines' in s) delete s.customMachines;
   s.machineRates={};
   // Employee fields
   const _en=document.getElementById('s-employee-name');if(_en) s.employeeName=_en.value;
@@ -3928,7 +3934,7 @@ function selectTrade(key){
   s.tradeType=key;
   // Reset machines to new trade's defaults when trade changes
   s.machinesLib=[];
-  s.customMachines=null;
+  delete s.customMachines;
   s.machineRates={};
   DB.set('settings',s);
   renderTradeSelector();
@@ -4057,7 +4063,7 @@ function removeCustomMachineRow(btn){
 function resetMachinesToTradeDefaults(){
   const s=JSON.parse(JSON.stringify(S())),prof=currentTradeProfile();
   s.machinesLib=[];
-  s.customMachines=null;
+  delete s.customMachines;
   s.machineRates={};
   DB.set('settings',s);
   renderMachineRatesCard();
@@ -5504,6 +5510,21 @@ window.initApp = function() {
     if(!s.travelMode){s.travelMode='none';DB.set('settings',s);}
     if(!s.machineRates){s.machineRates=defaultMachineRates();DB.set('settings',s);}
     if(s.incpct===undefined||s.incpct===null){s.incpct=DEFAULTS.incpct;DB.set('settings',s);}
+    // One-time migration: merge legacy customMachines into machinesLib then drop it
+    if(s.customMachines&&s.customMachines.length){
+      if(!s.machinesLib) s.machinesLib=[];
+      const have=new Set(s.machinesLib.map(m=>m.name));
+      s.customMachines.forEach(m=>{
+        if(!m||!m.name||have.has(m.name)) return;
+        s.machinesLib.push({name:m.name,plantNum:'',hireType:'wet',rate:m.rate||0,dayRate:0});
+        have.add(m.name);
+      });
+      delete s.customMachines;
+      DB.set('settings',s);
+    } else if('customMachines' in s){
+      delete s.customMachines;
+      DB.set('settings',s);
+    }
     if(!DB.get('clients')){
       const ec=s.client||DEFAULTS.client;
       DB.set('clients',[{company:ec,contact:'',abn:'',address:'',email:'',phone:'',isDefault:true}]);
