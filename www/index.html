@@ -430,6 +430,8 @@ const CloudSync = {
     // clientTs (when it was last pushed from any device) with our local modTime
     // (when we last wrote it here). The newer one wins.
     // Fresh install / reinstall: modTimes is empty (all 0) → Firestore always wins → correct.
+    // Special case: 'days' merges per-record by updatedAt so a device that worked
+    // offline doesn't lose its newer entries when an older cloud blob is pulled.
     try {
       const modTimes = this._getModTimes();
       let localWins = false;
@@ -441,6 +443,49 @@ const CloudSync = {
         const fsClientTs = data.clientTs || 0; // when any device last pushed this key
         const localModTs = modTimes[key] || 0;  // when THIS device last modified this key
         const localVal = localStorage.getItem('mcn_' + key);
+        if (key === 'days') {
+          // Per-record merge: most recently modified record wins.
+          const fsRaw = data.value;
+          if (fsRaw === undefined || fsRaw === null) continue;
+          let fsDays;
+          try { fsDays = typeof fsRaw === 'string' ? JSON.parse(fsRaw) : fsRaw; } catch { fsDays = []; }
+          if (!Array.isArray(fsDays)) fsDays = [];
+          let localDays = [];
+          if (localVal !== null) {
+            try { localDays = JSON.parse(localVal); } catch { localDays = []; }
+            if (!Array.isArray(localDays)) localDays = [];
+          }
+          const localMap = new Map();
+          for (const d of localDays) {
+            const k = d && (d.id || d.date);
+            if (k) localMap.set(k, d);
+          }
+          const merged = [];
+          const seen = new Set();
+          for (const cd of fsDays) {
+            const k = cd && (cd.id || cd.date);
+            if (!k) { merged.push(cd); continue; }
+            seen.add(k);
+            const ld = localMap.get(k);
+            if (!ld) { merged.push(cd); continue; }
+            const cuts = cd.updatedAt || 0;
+            const luts = ld.updatedAt || 0;
+            // Newer updatedAt wins. If both lack updatedAt, prefer local
+            // (it's the device the user is on right now).
+            merged.push(cuts > luts ? cd : ld);
+          }
+          for (const ld of localDays) {
+            const k = ld && (ld.id || ld.date);
+            if (k && !seen.has(k)) merged.push(ld);
+            else if (!k) merged.push(ld); // legacy record with no id/date — keep
+          }
+          localStorage.setItem('mcn_days', JSON.stringify(merged));
+          // Mark as locally modified so the merged result gets pushed back.
+          modTimes[key] = Date.now();
+          localWins = true;
+          GeoLog && GeoLog.add('info', 'CloudSync.restore: merged days (cloud='+fsDays.length+' local='+localDays.length+' merged='+merged.length+')');
+          continue;
+        }
         if (localVal === null || fsClientTs > localModTs) {
           // Firestore is newer (or we have nothing locally) — pull from Firestore
           const raw = data.value;
@@ -1560,7 +1605,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v66';
+const APP_VERSION = 'v67';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -2735,12 +2780,14 @@ function autoStartTimer(site, overrideTime){
   const s=S(),startTime=overrideTime||nowTime();
   GeoLog.add('start', 'Auto-timer started at ' + startTime + ' · ' + site.name);
   const ad={
+    id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),
     site:site.name,start:startTime,date:todayStr(),
     rate:s.rate,sonrate:s.sonrate||30,
     sonWorking:false,sonHours:null,
     lunchMins:0,lunchStart:null,
     machines:[],
-    autoStarted:true
+    autoStarted:true,
+    updatedAt:Date.now()
   };
   DB.set('activeDay',ad);
   showActiveTimer(ad);
@@ -2867,7 +2914,8 @@ function startDay(){
     machines:readMachinesFromUI('idle'),
     lunchMins:0,lunchStart:null,
     ...readTravelFromUI('idle'),
-    ...readMaterialsFromUI('idle')
+    ...readMaterialsFromUI('idle'),
+    updatedAt:Date.now()
   };
   DB.set('activeDay',ad);showActiveTimer(ad);toast('Day started — good luck out there!');
 }
@@ -3051,6 +3099,7 @@ function saveEdit(){
     if(!ad.sonrate) ad.sonrate=S().sonrate||30;
     Object.assign(ad,readTravelFromUI('edit'));
     Object.assign(ad,readMaterialsFromUI('edit'));
+    ad.updatedAt=Date.now();
     GeoLog.add('info','saveEdit: saved start='+ad.start+' finish='+ad.finish+' son='+ad.sonWorking);
     DB.set('activeDay',ad);closeEditModal();showReview(ad);
   } catch(e) {
@@ -3070,7 +3119,7 @@ function saveDay(){
   try {
   // Filter by unique id so a second entry on the same day doesn't wipe the first
   const dl=days(),filtered=ad.id?dl.filter(d=>d.id!==ad.id):dl;
-  const _newDay={...ad,invoiced:false};filtered.push(_newDay);
+  const _newDay={...ad,invoiced:false,updatedAt:Date.now()};filtered.push(_newDay);
   // Save to localStorage FIRST — before any async/cloud calls that could throw
   DB.set('days',filtered);DB.set('activeDay',null);clearInterval(timerInterval);
   // ArchivedSync is optional — use ?. so a missing definition never blocks the save
@@ -3172,6 +3221,7 @@ window.unarchiveLogEntry = function(){
   const dl=days(),idx=dl.findIndex(x=>(x.id&&x.id===_logEditDate)||(!x.id&&x.date===_logEditDate));
   if(idx===-1){toast('Day not found');return;}
   dl[idx].invoiced=false;
+  dl[idx].updatedAt=Date.now();
   if(typeof ArchivedSync!=='undefined') ArchivedSync.setArchived(dl[idx].id||dl[idx].date,false).catch(()=>{});
   DB.set('days',dl);
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
@@ -3196,6 +3246,7 @@ window.saveLogEdit = function(){
   d.sonHours=sv?parseFloat(sv):null;
   Object.assign(d,readTravelFromUI('le'));
   Object.assign(d,readMaterialsFromUI('le'));
+  d.updatedAt=Date.now();
   dl[idx]=d;
   DB.set('days',dl);
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
@@ -5970,7 +6021,8 @@ function saveManualEntry(){
     invoiced: false, manual: true,
     notes: notes||undefined,
     ...readTravelFromUI('me'),
-    ...readMaterialsFromUI('me')
+    ...readMaterialsFromUI('me'),
+    updatedAt: Date.now()
   };
   existing.push(entry);
   DB.set('days', existing);
