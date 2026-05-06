@@ -1555,7 +1555,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v63';
+const APP_VERSION = 'v64';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -2772,13 +2772,14 @@ function showGeofenceNotification(siteName,startTime){
 function autoStopTimer(overrideTime){
   clearInterval(timerInterval);
   const ad=activeDay();if(!ad)return;
-  const stopT=overrideTime||nowTime();
-  GeoLog.add('stop', 'Auto-timer stopped at ' + stopT + ' · ' + (ad.site||'?'));
+  // Single stopTime variable — avoid two nowTime() calls that can straddle a minute boundary
+  // and produce a mismatch between the GeoLog entry and the saved day record.
+  const stopTime=overrideTime||nowTime();
+  GeoLog.add('stop', 'Auto-timer stopped at ' + stopTime + ' · ' + (ad.site||'?'));
   if(ad.lunchStart){
     const[sh,sm]=ad.lunchStart.split(':').map(Number),now=new Date(),mins=now.getHours()*60+now.getMinutes()-sh*60-sm;
     ad.lunchMins=(ad.lunchMins||0)+Math.max(0,mins);ad.lunchStart=null;
   }
-  const stopTime=overrideTime||nowTime();
   ad.finish=stopTime;
   DB.set('activeDay',ad);
   showReview(ad);
@@ -2839,7 +2840,10 @@ function initCheckinScreen(){
   document.getElementById('checkin-start').value=nowTime();
   applyTradeVisibility();
   const ad=activeDay();
-  if(ad) showActiveTimer(ad);
+  // If the day was auto-stopped while the app was closed (ad.finish set, never cleared),
+  // go straight to the review screen instead of restarting the live timer display.
+  if(ad && ad.finish) showReview(ad);
+  else if(ad) showActiveTimer(ad);
   startGPS();
   requestNotificationPermission();
 }
