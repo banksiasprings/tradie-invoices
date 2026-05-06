@@ -290,6 +290,49 @@
   if(m==='dark')document.documentElement.classList.add('dark');
   else if(m==='auto')document.documentElement.classList.add('dark-auto');
 })();
+
+// Early boot: render the app from localStorage immediately, without waiting
+// for Firebase. The original auth handler awaited CloudSync.restore() before
+// hiding the loading screen — offline that meant ~70s of getDoc() timeouts
+// stalling the splash, and any Firebase init failure left the user stuck on
+// the splash forever. This script runs synchronously, ignores Firebase, and
+// flips the loading screen to the cached app shell as soon as the DOM exists.
+(function(){
+  function showAppFromCache(){
+    if(window._earlyBoot)return;
+    window._earlyBoot=true;
+    var ls=document.getElementById('screen-loading');
+    var aw=document.getElementById('main-app-wrapper');
+    var ln=document.getElementById('screen-login');
+    if(ls)ls.style.display='none';
+    if(ln)ln.style.display='none';
+    if(aw)aw.style.display='block';
+    var tries=0;
+    (function tryInit(){
+      if(window.initApp){try{window.initApp();}catch(e){console.warn('initApp:',e);}return;}
+      if(++tries<100)setTimeout(tryInit,50);
+    })();
+  }
+  function showLoginFallback(){
+    if(window._sessionInit||window._earlyBoot)return;
+    var ls=document.getElementById('screen-loading');
+    var ln=document.getElementById('screen-login');
+    if(ls&&ls.style.display!=='none'){
+      ls.style.display='none';
+      if(ln)ln.style.display='flex';
+    }
+  }
+  function go(){
+    try{
+      if(localStorage.getItem('mcn_settings'))showAppFromCache();
+    }catch(e){}
+    // Hard timeout — never leave the user stuck on the splash if Firebase
+    // never fires onAuthStateChanged (offline / SDK load failure / etc).
+    setTimeout(showLoginFallback,4000);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',go);
+  else go();
+})();
 </script>
 
 <script type="module">
@@ -694,35 +737,72 @@ onAuthStateChanged(auth, async (user) => {
 
   if (user) {
     CloudSync.uid = user.uid;
+    try { localStorage.setItem('mcn_last_uid', user.uid); } catch(_){}
     if (accountEl) accountEl.textContent = user.email;
     const isAdmin = user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
     if (adminTab) adminTab.style.display = isAdmin ? 'flex' : 'none';
     if (adminSection) adminSection.style.display = isAdmin ? 'block' : 'none';
-    if (user && !_adminRegistered) {
+    // Only register in admin when we're actually online — otherwise the
+    // setDoc call hangs against the Firestore offline queue.
+    if (user && !_adminRegistered && navigator.onLine) {
       _adminRegistered = true;
       registerUserInAdmin(user);
     }
     if (!_sessionInit) {
-      // First sign-in this session — restore from cloud and init app
       _sessionInit = true;
-      await CloudSync.restore();
-      // Run ArchivedSync in the background — don't block startup on a Firestore
-      // round-trip. The blob restore above already gives us the correct invoiced
-      // flags; this is a promotion-only safety net that can settle after the UI loads.
-      if(typeof ArchivedSync!=='undefined') ArchivedSync.restoreArchivedFlags().catch(e => console.warn('ArchivedSync:', e));
-      GeoLog.add('info', 'App started (' + APP_VERSION + ')');
+      window._sessionInit = true;
+      const hasLocalData = !!localStorage.getItem('mcn_settings');
+      // First sign-in on a new device with no local data: must block on
+      // restore so initApp() has something to render. Cap the wait so a slow
+      // Firestore can't strand the user on the splash forever.
+      if (!hasLocalData && navigator.onLine) {
+        try {
+          await Promise.race([
+            CloudSync.restore(),
+            new Promise(r => setTimeout(r, 8000))
+          ]);
+        } catch(e) { console.warn('restore (blocking):', e); }
+      }
+      // Show the app immediately — the early-boot script may have already done
+      // this from cache; flip the screens regardless to handle fresh sign-in.
       if (loadingScreen) loadingScreen.style.display = 'none';
       if (loginScreen)   loginScreen.style.display   = 'none';
-      if (appWrapper)    appWrapper.style.display     = 'block';
-      if (window.initApp) window.initApp();
+      if (appWrapper && appWrapper.style.display !== 'block') {
+        appWrapper.style.display = 'block';
+        if (window.initApp) window.initApp();
+      } else if (!window._earlyBoot && window.initApp) {
+        window.initApp();
+      }
+      try { GeoLog.add('info', 'App started (' + APP_VERSION + ')'); } catch(_){}
+      // Background restore for subsequent sessions — never block UI on it.
+      // Firestore getDoc() defaults to network-first and offline times out at
+      // ~10s per key, which is what stranded users on the splash before v68.
+      if (hasLocalData && navigator.onLine) {
+        CloudSync.restore()
+          .catch(e => console.warn('restore (bg):', e))
+          .then(() => {
+            if (typeof ArchivedSync !== 'undefined') {
+              return ArchivedSync.restoreArchivedFlags().catch(e => console.warn('ArchivedSync:', e));
+            }
+          });
+      } else if (navigator.onLine && typeof ArchivedSync !== 'undefined') {
+        ArchivedSync.restoreArchivedFlags().catch(e => console.warn('ArchivedSync:', e));
+      }
       checkPendingClients().catch(()=>{});
     }
     // Subsequent firings (token refresh etc.) — uid/display already set above, skip restore
   } else {
+    // Auth says no user. If we already showed the app from cache and we're
+    // offline, ignore — Firebase Auth can fire null while offline if the
+    // cached token can't be validated, and we don't want to bounce the user
+    // to a login screen they can't use.
+    if (window._earlyBoot && !navigator.onLine) return;
     // Signed out — reset flag so next sign-in does a fresh restore
     _sessionInit = false;
+    window._sessionInit = false;
     _adminRegistered = false;
     CloudSync.uid = null;
+    try { localStorage.removeItem('mcn_last_uid'); } catch(_){}
     // Stop GPS — a logged-out device must not keep polling location.
     if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
     stopBgPoll();
@@ -1605,7 +1685,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v67';
+const APP_VERSION = 'v68';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.

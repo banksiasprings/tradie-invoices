@@ -1,11 +1,22 @@
 
-const CACHE = 'invoice-pdf-v67';
+const CACHE = 'invoice-pdf-v68';
+// Resources that must survive a fresh SW install so the app can boot offline.
+// Anything fetched at runtime gets cached by the fetch handler too, but that
+// only helps if the user happens to be online when it's first requested.
+// Pre-caching these means the very first offline launch after a SW update
+// still has the app shell, fonts, Firebase SDK, and Leaflet available.
 const ASSETS = [
+  './',
   './index.html',
   './manifest.json',
   './tradie-app/icons/icon-192.png',
   './tradie-app/icons/icon-512.png',
-  'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap'
+  'https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js',
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
 ];
 
 // URLs we must never cache: auth/data calls and OTA manifest must always
