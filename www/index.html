@@ -1443,6 +1443,31 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
 <div id="screen-analytics" class="screen">
   <div class="header"><h1>Analytics</h1><p>Your earnings at a glance</p></div>
   <div class="section">
+    <!-- This Year goal card (tap to expand) -->
+    <div class="card" id="year-goal-card" onclick="openYearGoalDetail()" style="background:var(--navy);color:#fff;cursor:pointer;position:relative">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:.5px">This Year (FY <span id="ygc-fy-label">—</span>)</div>
+        <div style="font-size:18px;color:rgba(255,255,255,.55);line-height:1">›</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px">
+        <div>
+          <div style="font-size:11px;color:rgba(255,255,255,.55);font-weight:600">Earned YTD</div>
+          <div style="font-size:26px;font-weight:800;color:var(--amber);font-family:'Montserrat',system-ui,sans-serif;letter-spacing:-1px;line-height:1.1" id="ygc-ytd">—</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:11px;color:rgba(255,255,255,.55);font-weight:600">Goal</div>
+          <div style="font-size:18px;font-weight:700;color:#fff;font-family:'Montserrat',system-ui,sans-serif" id="ygc-goal">—</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;height:6px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden">
+        <div id="ygc-bar" style="height:100%;background:var(--amber);width:0%;transition:width .3s"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:11px;color:rgba(255,255,255,.7)">
+        <span id="ygc-pct">—</span>
+        <span id="ygc-pace">—</span>
+        <span style="color:var(--amber);font-weight:600">See breakdown ›</span>
+      </div>
+    </div>
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-label">Avg hrs/week</div><div class="stat-value" id="ana-avg-hrs">—</div><div class="stat-sub">Last 8 weeks</div></div>
       <div class="stat-card"><div class="stat-label">Avg invoice</div><div class="stat-value" id="ana-avg-inv">—</div><div class="stat-sub">Last 6 invoices</div></div>
@@ -1592,10 +1617,11 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
     </div>
     <div class="card">
       <div class="card-title">Standard Rate</div>
-      <div class="field">
-        <label>My rate ($/hr)</label><input type="number" id="s-rate" step="0.05">
+      <div class="field-row">
+        <div class="field"><label>My rate ($/hr)</label><input type="number" id="s-rate" step="0.05"></div>
+        <div class="field"><label>Weekly hours goal</label><input type="number" id="s-weeklyHoursGoal" step="1" min="0" placeholder="40"></div>
       </div>
-      <div style="font-size:11px;color:var(--text2);margin-bottom:14px">This rate appears on invoices and can be updated here.</div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:14px">Rate appears on invoices. Hours goal drives the "This Year" projection on the Stats tab.</div>
       <div class="toggle-row" style="padding:10px 0;border-top:1px solid var(--border)">
         <div>
           <div style="font-size:14px;font-weight:600">Extra worker billing</div>
@@ -1685,7 +1711,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v68';
+const APP_VERSION = 'v76';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1843,6 +1869,15 @@ async function forceAppUpdate(isRetry) {
       <span style="font-size:11px;color:var(--text3)"> (set via map picker)</span>
     </div>
     <button class="btn btn-primary" style="margin-top:4px" onclick="saveSite()">Save Site</button>
+  </div>
+</div>
+
+<!-- THIS YEAR GOAL DETAIL MODAL -->
+<div class="modal-bg" id="year-goal-modal">
+  <div class="modal">
+    <div class="modal-title">This Year — Breakdown <button class="modal-close" onclick="closeYearGoalDetail()">✕</button></div>
+    <div id="year-goal-detail-body"></div>
+    <button class="btn btn-secondary" style="margin-top:14px;width:100%" onclick="closeYearGoalDetail()">Close</button>
   </div>
 </div>
 
@@ -2192,6 +2227,7 @@ const DEFAULTS={
   phone:'',email:'',bsb:'',account:'',
   client:'Muirlawn Pty Ltd',service:'Construction and Maintenance services',
   rate:55, sonrate:30, incpct:7.8, invnum:45,
+  weeklyHoursGoal:40,
   travelMode:'none', travelKmRate:0.88, travelHrRate:30,
   machineRates:{Excavator:150,Grader:180,Bobcat:120,Dozer:200,Tractor:110},
   machinesLib:[],
@@ -3923,7 +3959,165 @@ function generateInvoice(){
 }
 
 // --- Analytics ---
+// Australian financial year (1 Jul – 30 Jun). Returns {start, end, label} for the FY containing `date`.
+function auFinancialYear(date){
+  const d=date||new Date();
+  const y=d.getFullYear();
+  const startYear=d.getMonth()>=6?y:y-1; // months are 0-indexed; July = 6
+  const start=new Date(startYear,6,1);
+  const end=new Date(startYear+1,5,30,23,59,59,999);
+  const label=String(startYear).slice(-2)+'/'+String(startYear+1).slice(-2);
+  return{start,end,label,startYear};
+}
+
+// Compute YTD figures + pace + projection for a given FY. Pure data, no DOM.
+function computeYearGoal(fy){
+  const s=S();
+  const rate=parseFloat(s.rate)||0;
+  const inc=parseFloat(s.incpct||0)/100;
+  const weeklyGoal=parseFloat(s.weeklyHoursGoal||40)||40;
+  const effectiveRate=inc>0?rate*(1+inc/2):rate;
+  const projected=effectiveRate*weeklyGoal*52;
+  const startStr=fy.start.getFullYear()+'-'+String(fy.start.getMonth()+1).padStart(2,'0')+'-'+String(fy.start.getDate()).padStart(2,'0');
+  const endStr=fy.end.getFullYear()+'-'+String(fy.end.getMonth()+1).padStart(2,'0')+'-'+String(fy.end.getDate()).padStart(2,'0');
+  const ad=days().filter(d=>d.date&&d.date>=startStr&&d.date<=endStr);
+  let totalH=0,totalEarn=0;
+  ad.forEach(d=>{const t=dayTotals(d);totalH+=t.h;totalEarn+=t.total;});
+  const now=new Date();
+  const isCurrent=now>=fy.start&&now<=fy.end;
+  const referenceEnd=isCurrent?now:fy.end;
+  const msPerWeek=7*24*3600*1000;
+  const weeksElapsed=Math.max(0.001,(referenceEnd-fy.start)/msPerWeek);
+  const weeksRemaining=Math.max(0,52-weeksElapsed);
+  const avgHrsPerWeek=totalH/weeksElapsed;
+  const expectedByNow=projected*(weeksElapsed/52);
+  const aheadBehind=totalEarn-expectedByNow;
+  const projectedYearEnd=isCurrent?(totalEarn/weeksElapsed)*52:totalEarn;
+  const avgDaily=ad.length?totalEarn/ad.length:0;
+  return{
+    fy,rate,inc,weeklyGoal,effectiveRate,projected,
+    daysCount:ad.length,totalH,totalEarn,
+    weeksElapsed,weeksRemaining,avgHrsPerWeek,
+    expectedByNow,aheadBehind,projectedYearEnd,avgDaily,isCurrent
+  };
+}
+
+// Render the small "This Year" card on the Stats screen.
+function renderYearGoalCard(){
+  const fy=auFinancialYear();
+  const g=computeYearGoal(fy);
+  const fyEl=document.getElementById('ygc-fy-label');if(fyEl) fyEl.textContent=fy.label;
+  const ytdEl=document.getElementById('ygc-ytd');if(ytdEl) ytdEl.textContent=g.totalEarn>=10000?'$'+(Math.round(g.totalEarn/100)/10).toFixed(1)+'k':fmtMoney(g.totalEarn);
+  const goalEl=document.getElementById('ygc-goal');if(goalEl) goalEl.textContent=g.projected>=10000?'$'+(Math.round(g.projected/100)/10).toFixed(1)+'k':fmtMoney(g.projected);
+  const pct=g.projected>0?Math.min(100,Math.max(0,(g.totalEarn/g.projected)*100)):0;
+  const bar=document.getElementById('ygc-bar');if(bar) bar.style.width=pct.toFixed(1)+'%';
+  const pctEl=document.getElementById('ygc-pct');if(pctEl) pctEl.textContent=pct.toFixed(0)+'% of goal';
+  const paceEl=document.getElementById('ygc-pace');
+  if(paceEl){
+    if(!g.isCurrent){paceEl.textContent='FY complete';paceEl.style.color='rgba(255,255,255,.7)';}
+    else if(Math.abs(g.aheadBehind)<1){paceEl.textContent='On pace';paceEl.style.color='rgba(255,255,255,.7)';}
+    else if(g.aheadBehind>0){paceEl.textContent='+'+(g.aheadBehind>=1000?'$'+(Math.round(g.aheadBehind/100)/10).toFixed(1)+'k':fmtMoney(g.aheadBehind))+' ahead';paceEl.style.color='#7BD389';}
+    else{paceEl.textContent=(Math.abs(g.aheadBehind)>=1000?'-$'+(Math.round(Math.abs(g.aheadBehind)/100)/10).toFixed(1)+'k':'-'+fmtMoney(Math.abs(g.aheadBehind)))+' behind';paceEl.style.color='#E89F8A';}
+  }
+}
+
+// Open the breakdown modal and populate.
+function openYearGoalDetail(){
+  const fy=auFinancialYear();
+  const g=computeYearGoal(fy);
+  const s=S();
+  const fyEnd=fy.end.getFullYear();
+  const fyStart=fy.start.getFullYear();
+  // Build past-FY rows from days history
+  const ad=days();
+  const fyMap={};
+  ad.forEach(d=>{
+    if(!d.date) return;
+    const dt=new Date(d.date);
+    if(isNaN(dt)) return;
+    const f=auFinancialYear(dt);
+    const key=f.startYear;
+    if(key===fy.startYear) return; // skip current
+    if(!fyMap[key]) fyMap[key]={label:f.label,startYear:key,h:0,earn:0,days:0,start:f.start,end:f.end};
+    const t=dayTotals(d);
+    fyMap[key].h+=t.h;
+    fyMap[key].earn+=t.total;
+    fyMap[key].days+=1;
+  });
+  const pastFys=Object.values(fyMap).sort((a,b)=>b.startYear-a.startYear);
+  const aheadAbs=Math.abs(g.aheadBehind);
+  const aheadLabel=Math.abs(g.aheadBehind)<1?'On pace':(g.aheadBehind>0?'+'+fmtMoney(aheadAbs)+' ahead':'-'+fmtMoney(aheadAbs)+' behind');
+  const aheadColor=Math.abs(g.aheadBehind)<1?'var(--text2)':(g.aheadBehind>0?'var(--success,#22A85B)':'var(--red,#C0392B)');
+  const incLabel=g.inc>0?(g.inc*100).toFixed(1)+'%':'none';
+  const effRateFormula=g.inc>0?'rate × (1 + '+(g.inc*100).toFixed(1)+'%/2)':'same as rate';
+  const sectionStyle='margin-bottom:18px';
+  const headStyle='font-size:11px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)';
+  const rowStyle='display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;font-size:13px';
+  const labelStyle='color:var(--text2);flex:1;padding-right:10px';
+  const valStyle='font-weight:700;color:var(--text);font-family:"DM Mono",ui-monospace,monospace;text-align:right';
+  const subStyle='font-size:11px;color:var(--text3);margin-top:-2px;padding-bottom:6px';
+
+  let html='';
+  // Goal projection
+  html+='<div style="'+sectionStyle+'">';
+  html+='<div style="'+headStyle+'">Goal projection (FY '+fy.label+')</div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Your hourly rate</span><span style="'+valStyle+'">$'+g.rate.toFixed(2)+'/hr</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Annual rate increase</span><span style="'+valStyle+'">'+incLabel+'</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Effective avg rate this year</span><span style="'+valStyle+'">$'+g.effectiveRate.toFixed(2)+'/hr</span></div>';
+  html+='<div style="'+subStyle+'">'+effRateFormula+'</div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Weekly hours goal</span><span style="'+valStyle+'">'+g.weeklyGoal.toFixed(0)+' hrs/wk</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Projected annual earnings</span><span style="'+valStyle+';color:var(--amber);font-size:15px">'+fmtMoney(g.projected)+'</span></div>';
+  html+='<div style="'+subStyle+'">$'+g.effectiveRate.toFixed(2)+' × '+g.weeklyGoal.toFixed(0)+' hrs × 52 weeks</div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Weeks remaining in FY</span><span style="'+valStyle+'">'+(g.isCurrent?g.weeksRemaining.toFixed(1):'0')+' weeks</span></div>';
+  html+='</div>';
+
+  // Actual YTD
+  html+='<div style="'+sectionStyle+'">';
+  html+='<div style="'+headStyle+'">Actual YTD'+(g.isCurrent?'':' (final)')+'</div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Total days logged</span><span style="'+valStyle+'">'+g.daysCount+' day'+(g.daysCount===1?'':'s')+'</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Total hours worked</span><span style="'+valStyle+'">'+g.totalH.toFixed(1)+' hrs</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Avg hrs/week (weeks elapsed)</span><span style="'+valStyle+'">'+g.avgHrsPerWeek.toFixed(1)+' hrs/wk</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Total earned YTD</span><span style="'+valStyle+';color:var(--amber);font-size:15px">'+fmtMoney(g.totalEarn)+'</span></div>';
+  html+='<div style="'+subStyle+'">includes hours, machines, travel and materials from each day</div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Average daily total</span><span style="'+valStyle+'">'+(g.daysCount?fmtMoney(g.avgDaily):'—')+'</span></div>';
+  html+='</div>';
+
+  // Pace check (only meaningful for current FY)
+  if(g.isCurrent){
+    html+='<div style="'+sectionStyle+'">';
+    html+='<div style="'+headStyle+'">Pace check</div>';
+    html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Weeks elapsed in FY</span><span style="'+valStyle+'">'+g.weeksElapsed.toFixed(1)+' / 52</span></div>';
+    html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Expected earnings by now</span><span style="'+valStyle+'">'+fmtMoney(g.expectedByNow)+'</span></div>';
+    html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Actual vs expected</span><span style="'+valStyle+';color:'+aheadColor+'">'+aheadLabel+'</span></div>';
+    html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Projected year-end @ current pace</span><span style="'+valStyle+';color:var(--amber);font-size:15px">'+fmtMoney(g.projectedYearEnd)+'</span></div>';
+    html+='<div style="'+subStyle+'">earned ÷ weeks elapsed × 52</div>';
+    html+='</div>';
+  }
+
+  // Past FYs
+  if(pastFys.length){
+    html+='<div style="'+sectionStyle+'">';
+    html+='<div style="'+headStyle+'">Past financial years</div>';
+    pastFys.forEach(pf=>{
+      const wkAvg=pf.h/52;
+      html+='<div style="padding:8px 0;border-bottom:1px solid var(--border)">';
+      html+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px"><span style="font-size:13px;font-weight:700">FY '+pf.label+'</span><span style="font-weight:700;color:var(--amber);font-family:\'DM Mono\',ui-monospace,monospace">'+fmtMoney(pf.earn)+'</span></div>';
+      html+='<div style="font-size:11px;color:var(--text2)">'+pf.days+' days · '+pf.h.toFixed(1)+' hrs · avg '+wkAvg.toFixed(1)+' hrs/wk</div>';
+      html+='</div>';
+    });
+    html+='</div>';
+  }
+
+  document.getElementById('year-goal-detail-body').innerHTML=html;
+  document.getElementById('year-goal-modal').classList.add('open');
+}
+
+function closeYearGoalDetail(){
+  document.getElementById('year-goal-modal').classList.remove('open');
+}
+
 function renderAnalytics(){
+  renderYearGoalCard();
   const s=S(),ad=days(),ai=invoices(),now=new Date();
   const weeks=Array.from({length:8},(_,i)=>{const e=new Date(now);e.setDate(e.getDate()-i*7);const st=new Date(e);st.setDate(st.getDate()-6);return{start:st.toISOString().slice(0,10),end:e.toISOString().slice(0,10),label:'W'+(8-i)};}).reverse();
   const wh=weeks.map(w=>ad.filter(d=>d.date>=w.start&&d.date<=w.end).reduce((s,d)=>s+Math.max(0,timeDiffHours(d.start,d.finish||d.start)-(d.lunchMins||0)/60),0));
@@ -3977,7 +4171,7 @@ function ensureMachinesLibSeeded(){
 function loadSettings(){
   ensureMachinesLibSeeded();
   const s=S();
-  ['name','abn','address','phone','email','bsb','account','service','rate','sonrate','incpct','invnum'].forEach(k=>{
+  ['name','abn','address','phone','email','bsb','account','service','rate','sonrate','incpct','invnum','weeklyHoursGoal'].forEach(k=>{
     const el=document.getElementById('s-'+k);if(el) el.value=s[k]!==undefined?s[k]:'';
   });
   renderTradeSelector();
@@ -4021,6 +4215,8 @@ function saveSettings(){
   const _incpctStr=document.getElementById('s-incpct').value;
   if(_incpctStr!==''){const _p=parseFloat(_incpctStr);if(!isNaN(_p))s.incpct=_p;}
   s.invnum=parseInt(document.getElementById('s-invnum').value)||s.invnum;
+  const _whg=document.getElementById('s-weeklyHoursGoal');
+  if(_whg){const _w=parseFloat(_whg.value);if(!isNaN(_w)&&_w>=0)s.weeklyHoursGoal=_w;}
   // Travel settings
   const activeBtn=document.querySelector('#tm-btn-none.active,#tm-btn-km.active,#tm-btn-time.active');
   s.travelMode=activeBtn?activeBtn.id.replace('tm-btn-',''):'none';
