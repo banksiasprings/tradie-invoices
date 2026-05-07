@@ -1685,7 +1685,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v68';
+const APP_VERSION = 'v74';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -5815,19 +5815,81 @@ window.initApp = function() {
     } catch(e) { console.warn('[NativeGeo] Re-register error:', e); }
   };
 
+  // Cross-session dedup of native geo events. SharedPrefs MAY fail to clear
+  // (e.g. plugin call rejects, JS exception before the loop completes), so
+  // belt-and-suspenders: remember each event signature in localStorage and
+  // skip any replay we've already actioned within the last 24h.
+  const PROCESSED_EVENTS_KEY = 'mcn_processedGeoEvents';
+  const PROCESSED_TTL_MS = 24 * 60 * 60 * 1000;
+  function _eventSig(ev){
+    return (ev.type||'?') + '|' + (ev.site||'?') + '|' + (ev.timestamp||ev.time||'?');
+  }
+  function _loadProcessed(){
+    try { return JSON.parse(localStorage.getItem(PROCESSED_EVENTS_KEY) || '[]'); } catch(_){ return []; }
+  }
+  function _isProcessed(ev){
+    const sig = _eventSig(ev);
+    return _loadProcessed().some(e => e.sig === sig);
+  }
+  function _markProcessed(ev){
+    try {
+      const cutoff = Date.now() - PROCESSED_TTL_MS;
+      let arr = _loadProcessed().filter(e => (e.recordedAt||0) > cutoff);
+      arr.push({ sig: _eventSig(ev), recordedAt: Date.now() });
+      if (arr.length > 100) arr = arr.slice(-100);
+      localStorage.setItem(PROCESSED_EVENTS_KEY, JSON.stringify(arr));
+    } catch(_){}
+  }
+
   async function processPendingGeoEvents() {
     if (!NativeGeo) return;
+    let events = [];
+    let drained = false;
     try {
-      const { events: raw } = await NativeGeo.getPendingEvents();
-      const events = JSON.parse(raw || '[]');
-      if (events.length === 0) return;
-      console.log('[NativeGeo] Replaying', events.length, 'pending events');
-      for (const ev of events) {
-        await processGeoEvent(ev);
+      // Prefer atomic drain (read+clear in one Java call) so the receiver
+      // can't append events that get silently wiped between read and clear.
+      // Fall back to legacy get+clear if the older APK doesn't expose drain.
+      if (typeof NativeGeo.drainPendingEvents === 'function') {
+        const res = await NativeGeo.drainPendingEvents();
+        events = JSON.parse(res.events || '[]');
+        drained = true;
+      } else {
+        const res = await NativeGeo.getPendingEvents();
+        events = JSON.parse(res.events || '[]');
       }
-      await NativeGeo.clearPendingEvents();
     } catch(e) {
-      console.warn('[NativeGeo] processPendingEvents error:', e);
+      console.warn('[NativeGeo] read pending events failed:', e);
+      return;
+    }
+    if (events.length === 0) {
+      if (!drained) { try { await NativeGeo.clearPendingEvents(); } catch(_){} }
+      return;
+    }
+    console.log('[NativeGeo] Replaying', events.length, 'pending events');
+    try {
+      for (const ev of events) {
+        if (_isProcessed(ev)) {
+          console.log('[NativeGeo] Skipping already-processed event:', _eventSig(ev));
+          continue;
+        }
+        try {
+          await processGeoEvent(ev);
+          _markProcessed(ev);
+        } catch(err) {
+          console.warn('[NativeGeo] event handler threw, skipping:', ev, err);
+        }
+      }
+    } finally {
+      // GUARANTEE the queue is cleared even if processing threw mid-loop.
+      // If we used drain, SharedPrefs is already empty — but call again
+      // anyway in case a fresh event landed during processing and we'd
+      // rather replay it than not (next call to drainPendingEvents).
+      // If drain wasn't available, clearPendingEvents is mandatory.
+      if (!drained) {
+        try { await NativeGeo.clearPendingEvents(); } catch(e) {
+          console.warn('[NativeGeo] clearPendingEvents failed:', e);
+        }
+      }
     }
   }
 
@@ -5861,6 +5923,14 @@ window.initApp = function() {
       if (!ad) {
         console.log('[NativeGeo] EXIT ignored — no active day');
         GeoLog.add('ignore', 'Exit ignored — no active timer (' + ev.site + ')');
+        return;
+      }
+      // Timer already finished (review screen / awaiting save) — never re-stop
+      // a finished day from a replayed exit event. autoStopTimer would otherwise
+      // overwrite ad.finish with the replay timestamp.
+      if (ad.finish) {
+        console.log('[NativeGeo] EXIT ignored — timer already finished');
+        GeoLog.add('ignore', 'Exit ignored — timer already finished (' + ev.site + ')');
         return;
       }
       if (geoAutoStopTriggered) { GeoLog.add('ignore', 'Exit ignored — already triggered today (' + ev.site + ')'); return; }
