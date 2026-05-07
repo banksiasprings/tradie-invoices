@@ -1656,16 +1656,6 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       <div id="s-extra-worker-rate" style="display:none;margin-top:10px">
         <div class="field" style="margin:0"><label id="s-extra-label">Extra labourer rate ($/hr)</label><input type="number" id="s-sonrate" step="0.05"></div>
       </div>
-      <div class="field" style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px;margin-bottom:0">
-        <label>Weekly Hours Goal</label>
-        <input type="number" id="s-weeklyHrsGoal" step="1" min="0" placeholder="40">
-        <div style="font-size:11px;color:var(--text2);margin-top:4px">hrs / week — set to 0 to hide</div>
-      </div>
-      <div class="field" style="margin-top:14px;margin-bottom:0">
-        <label>Annual Earnings Goal ($)</label>
-        <input type="number" id="s-annualEarningsGoal" step="100" min="0" placeholder="120000">
-        <div style="font-size:11px;color:var(--text2);margin-top:4px">$ / year — set to 0 to hide</div>
-      </div>
     </div>
     <div class="card card-collapsible">
       <div class="card-title">Travel billing</div>
@@ -1745,7 +1735,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v73';
+const APP_VERSION = 'v74';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -4054,6 +4044,12 @@ function onGoalInput(src){
   } else if(src==='rate'){
     const h=parseFloat(hrsEl.value)||0;
     if(h>0&&eff>0) annEl.value = Math.round(h*eff*52);
+  } else if(src==='init'){
+    // On load: derive the missing partner so both fields are populated when the user opens Settings.
+    const h=parseFloat(hrsEl.value)||0;
+    const a=parseFloat(annEl.value)||0;
+    if(h>0&&!a&&eff>0) annEl.value = Math.round(h*eff*52);
+    else if(a>0&&!h&&eff>0) hrsEl.value = (a/(eff*52)).toFixed(1);
   }
   if(linkEl){
     linkEl.textContent = '↔ linked via $'+rate.toFixed(2)+'/hr'+(incpct>0?(' + '+incpct+'%/yr increase'):'');
