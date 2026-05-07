@@ -1443,10 +1443,10 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
 <div id="screen-analytics" class="screen">
   <div class="header"><h1>Analytics</h1><p>Your earnings at a glance</p></div>
   <div class="section">
-    <!-- This Year -->
-    <div class="card">
+    <!-- This Year (tap to expand for full breakdown) -->
+    <div class="card" onclick="openYearGoalDetail()" style="cursor:pointer">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px">
-        <div class="card-title" style="margin-bottom:0">🎯 This Year</div>
+        <div class="card-title" style="margin-bottom:0;display:flex;align-items:center;gap:6px">🎯 This Year <span style="font-size:14px;color:var(--text2);font-weight:600">›</span></div>
         <div style="font-size:11px;color:var(--text2);font-weight:700" id="ty-fy-label">FY—</div>
       </div>
       <!-- Weekly hours subsection -->
@@ -1479,6 +1479,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         <div style="font-size:12px;font-weight:700;margin-top:10px" id="ty-pace">—</div>
         <div style="font-size:11px;color:var(--text2);margin-top:2px" id="ty-projection"></div>
       </div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);text-align:center;font-size:12px;font-weight:700;color:var(--amber);letter-spacing:.2px">See full breakdown ›</div>
     </div>
     <!-- Past Financial Years -->
     <div class="card" id="ty-past-fy-card" style="display:none">
@@ -1735,7 +1736,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v75';
+const APP_VERSION = 'v76';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -1893,6 +1894,15 @@ async function forceAppUpdate(isRetry) {
       <span style="font-size:11px;color:var(--text3)"> (set via map picker)</span>
     </div>
     <button class="btn btn-primary" style="margin-top:4px" onclick="saveSite()">Save Site</button>
+  </div>
+</div>
+
+<!-- THIS YEAR GOAL DETAIL MODAL -->
+<div class="modal-bg" id="year-goal-modal">
+  <div class="modal">
+    <div class="modal-title">This Year — Breakdown <button class="modal-close" onclick="closeYearGoalDetail()">✕</button></div>
+    <div id="year-goal-detail-body"></div>
+    <button class="btn btn-secondary" style="margin-top:14px;width:100%" onclick="closeYearGoalDetail()">Close</button>
   </div>
 </div>
 
@@ -4138,6 +4148,121 @@ function renderPastFYs(allDays,curFY,rate){
       <div style="font-size:13px;color:var(--text2)">${h.toFixed(1)}h · ${fmtMoney(earnings)}</div>
     </div>`;
   }).join('');
+}
+
+// --- This Year breakdown modal (tap-to-expand from goal card) ---
+function openYearGoalDetail(){
+  const s=S(),allDays=days(),now=new Date();
+  const curFY=fyForDate(now), fy=fyRange(curFY);
+  const rate=parseFloat(s.rate)||0;
+  const incpct=parseFloat(s.incpct??0)||0;
+  const eff=effectiveAvgRate(rate,incpct);
+  const weeklyGoal=parseFloat(s.weeklyHrsGoal)||0;
+  const annualGoalRaw=parseFloat(s.annualEarningsGoal)||0;
+  const projected=weeklyGoal>0?weeklyGoal*eff*52:0;
+  const annualGoal=annualGoalRaw>0?annualGoalRaw:projected;
+
+  // YTD figures (current FY)
+  const fyDays=allDays.filter(d=>d.date>=fy.start&&d.date<=fy.end&&d.finish);
+  let totalH=0,totalEarn=0;
+  fyDays.forEach(d=>{const t=dayTotals(d);totalH+=t.h;totalEarn+=t.total;});
+  const fyStart=new Date(curFY+'-07-01T00:00:00');
+  const msPerWeek=7*24*60*60*1000;
+  const weeksElapsed=Math.max(0.001,Math.min(52,(now-fyStart)/msPerWeek));
+  const weeksRemaining=Math.max(0,52-weeksElapsed);
+  const avgHrsPerWeek=totalH/weeksElapsed;
+  const expectedByNow=annualGoal>0?annualGoal*(weeksElapsed/52):0;
+  const aheadBehind=totalEarn-expectedByNow;
+  const projectedYearEnd=(totalEarn/weeksElapsed)*52;
+  const avgDaily=fyDays.length?totalEarn/fyDays.length:0;
+
+  // Past FYs from days history
+  const fyMap={};
+  allDays.forEach(d=>{
+    if(!d.finish||!d.date) return;
+    const f=fyForDate(d.date);
+    if(f>=curFY) return;
+    if(!fyMap[f]) fyMap[f]={startYear:f,h:0,earn:0,days:0};
+    const t=dayTotals(d);
+    fyMap[f].h+=t.h;
+    fyMap[f].earn+=t.total;
+    fyMap[f].days+=1;
+  });
+  const pastFys=Object.values(fyMap).sort((a,b)=>b.startYear-a.startYear);
+
+  const aheadAbs=Math.abs(aheadBehind);
+  const aheadLabel=annualGoal<=0?'No earnings goal set':(Math.abs(aheadBehind)<1?'On pace':(aheadBehind>0?'+'+fmtMoney(aheadAbs)+' ahead':'-'+fmtMoney(aheadAbs)+' behind'));
+  const aheadColor=annualGoal<=0?'var(--text2)':(Math.abs(aheadBehind)<1?'var(--text2)':(aheadBehind>0?'var(--success)':'var(--amber)'));
+  const incLabel=incpct>0?incpct+'%':'none';
+  const effFormula=incpct>0?'rate × (1 + '+incpct+'%/2)':'same as rate';
+
+  const sectionStyle='margin-bottom:18px';
+  const headStyle='font-size:11px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)';
+  const rowStyle='display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;font-size:13px';
+  const labelStyle='color:var(--text2);flex:1;padding-right:10px';
+  const valStyle='font-weight:700;color:var(--text);font-family:"DM Mono",ui-monospace,monospace;text-align:right';
+  const subStyle='font-size:11px;color:var(--text3);margin-top:-2px;padding-bottom:6px';
+
+  let html='';
+
+  // Goal projection
+  html+='<div style="'+sectionStyle+'">';
+  html+='<div style="'+headStyle+'">Goal projection ('+fyLabel(curFY)+')</div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Your hourly rate</span><span style="'+valStyle+'">$'+rate.toFixed(2)+'/hr</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Annual rate increase</span><span style="'+valStyle+'">'+incLabel+'</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Effective avg rate this year</span><span style="'+valStyle+'">$'+eff.toFixed(2)+'/hr</span></div>';
+  html+='<div style="'+subStyle+'">'+effFormula+'</div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Weekly hours goal</span><span style="'+valStyle+'">'+(weeklyGoal>0?weeklyGoal.toFixed(1)+' hrs/wk':'not set')+'</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Projected annual earnings</span><span style="'+valStyle+';color:var(--amber);font-size:15px">'+(projected>0?fmtMoney(projected):'—')+'</span></div>';
+  if(weeklyGoal>0&&eff>0){html+='<div style="'+subStyle+'">$'+eff.toFixed(2)+' × '+weeklyGoal.toFixed(1)+' hrs × 52 weeks</div>';}
+  if(annualGoalRaw>0&&Math.abs(annualGoalRaw-projected)>1){
+    html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Earnings goal (override)</span><span style="'+valStyle+';color:var(--amber)">'+fmtMoney(annualGoalRaw)+'</span></div>';
+    html+='<div style="'+subStyle+'">Manually set in Settings — pace below uses this</div>';
+  }
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Weeks remaining in FY</span><span style="'+valStyle+'">'+weeksRemaining.toFixed(1)+' weeks</span></div>';
+  html+='</div>';
+
+  // Actual YTD
+  html+='<div style="'+sectionStyle+'">';
+  html+='<div style="'+headStyle+'">Actual YTD ('+fyLabel(curFY)+')</div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Total days logged</span><span style="'+valStyle+'">'+fyDays.length+' day'+(fyDays.length===1?'':'s')+'</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Total hours worked</span><span style="'+valStyle+'">'+totalH.toFixed(1)+' hrs</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Avg hrs/week (weeks elapsed)</span><span style="'+valStyle+'">'+avgHrsPerWeek.toFixed(1)+' hrs/wk</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Total earned YTD</span><span style="'+valStyle+';color:var(--amber);font-size:15px">'+fmtMoney(totalEarn)+'</span></div>';
+  html+='<div style="'+subStyle+'">includes hours, machines, travel and materials from each day</div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Average daily total</span><span style="'+valStyle+'">'+(fyDays.length?fmtMoney(avgDaily):'—')+'</span></div>';
+  html+='</div>';
+
+  // Pace check
+  html+='<div style="'+sectionStyle+'">';
+  html+='<div style="'+headStyle+'">Pace check</div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Weeks elapsed in FY</span><span style="'+valStyle+'">'+weeksElapsed.toFixed(1)+' / 52</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Expected earnings by now</span><span style="'+valStyle+'">'+(annualGoal>0?fmtMoney(expectedByNow):'—')+'</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Actual vs expected</span><span style="'+valStyle+';color:'+aheadColor+'">'+aheadLabel+'</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Projected year-end @ current pace</span><span style="'+valStyle+';color:var(--amber);font-size:15px">'+fmtMoney(projectedYearEnd)+'</span></div>';
+  html+='<div style="'+subStyle+'">earned ÷ weeks elapsed × 52</div>';
+  html+='</div>';
+
+  // Past FYs
+  if(pastFys.length){
+    html+='<div style="'+sectionStyle+'">';
+    html+='<div style="'+headStyle+'">Past financial years</div>';
+    pastFys.forEach(pf=>{
+      const wkAvg=pf.h/52;
+      html+='<div style="padding:8px 0;border-bottom:1px solid var(--border)">';
+      html+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px"><span style="font-size:13px;font-weight:700">'+fyLabel(pf.startYear)+'</span><span style="font-weight:700;color:var(--amber);font-family:\'DM Mono\',ui-monospace,monospace">'+fmtMoney(pf.earn)+'</span></div>';
+      html+='<div style="font-size:11px;color:var(--text2)">'+pf.days+' days · '+pf.h.toFixed(1)+' hrs · avg '+wkAvg.toFixed(1)+' hrs/wk</div>';
+      html+='</div>';
+    });
+    html+='</div>';
+  }
+
+  document.getElementById('year-goal-detail-body').innerHTML=html;
+  document.getElementById('year-goal-modal').classList.add('open');
+}
+
+function closeYearGoalDetail(){
+  document.getElementById('year-goal-modal').classList.remove('open');
 }
 
 // --- Analytics ---
