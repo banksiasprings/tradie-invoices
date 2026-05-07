@@ -1685,7 +1685,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v69';
+const APP_VERSION = 'v70';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -5885,14 +5885,59 @@ window.initApp = function() {
     } catch(e) { console.warn('[NativeGeo] Re-register error:', e); }
   };
 
+  // Java writes ev.timestamp as a numeric long (ms since epoch). JSON keeps it
+  // as a number. Older events written by other paths could be ISO strings.
+  // Coerce defensively so the dedupe + age checks always get a real ms value.
+  function _evMs(ev){
+    const t = ev && ev.timestamp;
+    if (t == null) return 0;
+    if (typeof t === 'number') return t;
+    const p = Date.parse(t); if (!isNaN(p)) return p;
+    const n = Number(t); return isNaN(n) ? 0 : n;
+  }
+
   async function processPendingGeoEvents() {
     if (!NativeGeo) return;
     try {
       const { events: raw } = await NativeGeo.getPendingEvents();
       const events = JSON.parse(raw || '[]');
       if (events.length === 0) return;
-      console.log('[NativeGeo] Replaying', events.length, 'pending events');
+
+      // Collapse the replay storm before any event reaches processGeoEvent.
+      // Native geofence flutter at the boundary records repeated enter/exit
+      // pairs that would each fire ignored/debounced events — and (worse)
+      // generate an "Open app to generate invoice" notification per replayed
+      // exit. Two passes:
+      //   1. Same (site,type) within 60s → keep only the latest.
+      //   2. Opposite-type oscillation at same site within 60s → cancel both.
+      // Order is preserved otherwise so debounce timing still applies to the
+      // surviving event.
+      const BURST_MS = 60 * 1000;
+      const collapsed = [];
       for (const ev of events) {
+        const last = collapsed[collapsed.length - 1];
+        if (last && last.site === ev.site) {
+          const dt = _evMs(ev) - _evMs(last);
+          if (dt >= 0 && dt < BURST_MS) {
+            if (last.type === ev.type) {
+              // Same direction, same site, rapid-fire — keep newest, drop older.
+              collapsed[collapsed.length - 1] = ev;
+              continue;
+            }
+            // Opposite direction within burst window — pure flutter, drop both.
+            collapsed.pop();
+            continue;
+          }
+        }
+        collapsed.push(ev);
+      }
+
+      if (collapsed.length !== events.length) {
+        GeoLog.add('info', 'Replay collapsed: ' + events.length + ' raw → ' + collapsed.length + ' actionable');
+      }
+
+      console.log('[NativeGeo] Replaying', collapsed.length, 'pending events (from', events.length, 'raw)');
+      for (const ev of collapsed) {
         await processGeoEvent(ev);
       }
       await NativeGeo.clearPendingEvents();
@@ -5957,7 +6002,7 @@ window.initApp = function() {
       // Debounce native EXIT the same way web GPS does — don't stop instantly on boundary flutter.
       // If the exit event is older than GEO_STOP_DEBOUNCE, apply immediately (user was clearly away).
       // If recent, start a debounce timer so a quick re-enter can cancel it.
-      const evMs = ev.timestamp ? Date.parse(ev.timestamp) : 0;
+      const evMs = _evMs(ev);
       const evAge = (evMs > 0) ? (Date.now() - evMs) : 0; // treat unparseable timestamps as "just now"
       if (evAge >= GEO_STOP_DEBOUNCE) {
         // Been outside long enough — but get a fresh GPS fix to verify
@@ -6029,9 +6074,11 @@ window.initApp = function() {
       },
       function(location, error) {
         if (error) {
+          // Intentionally silent — only timer start/stop notifications are
+          // allowed. The location-permission nudge is surfaced as an in-app
+          // toast in initNativeGeo(), not a system notification.
           if (error.code === 'NOT_AUTHORIZED') {
-            nativeNotify('Location permission needed',
-              'Open app settings and allow location "All the time" for site detection.');
+            console.warn('[BGGeo fallback] Location not authorized — site detection disabled');
           }
           return;
         }
