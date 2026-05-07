@@ -1736,7 +1736,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v77';
+const APP_VERSION = 'v78';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -2765,7 +2765,7 @@ const GeoLog = {
 };
 
 // --- GPS & Geofence ---
-let watchId=null,lastLat=null,lastLng=null;
+let watchId=null,lastLat=null,lastLng=null,lastLatTs=0;
 let geoAutoStartTriggered=false;
 let geoAutoStopTriggered=false;
 let geoAutoStartDate=null; // calendar date (YYYY-MM-DD) when auto-start last fired
@@ -2797,7 +2797,7 @@ function startBgPoll(){
   bgPollInterval=setInterval(()=>{
     if(!activeDay()) return;
     navigator.geolocation.getCurrentPosition(pos=>{
-      lastLat=pos.coords.latitude; lastLng=pos.coords.longitude;
+      lastLat=pos.coords.latitude; lastLng=pos.coords.longitude; lastLatTs=Date.now();
       checkNearbySites(lastLat,lastLng,pos.coords.accuracy);
     },()=>{},{ enableHighAccuracy:true, timeout:15000, maximumAge:60000 });
   }, 90000);
@@ -2812,7 +2812,7 @@ function startGPS(){
   let gotFix=false;
   watchId=navigator.geolocation.watchPosition(pos=>{
     gotFix=true;
-    lastLat=pos.coords.latitude;lastLng=pos.coords.longitude;
+    lastLat=pos.coords.latitude;lastLng=pos.coords.longitude;lastLatTs=Date.now();
     dot.className='gps-dot active';lbl.textContent='GPS actively tracking';
     checkNearbySites(lastLat,lastLng,pos.coords.accuracy);
   },()=>{dot.className='gps-dot';lbl.textContent='GPS unavailable — select site manually';},{enableHighAccuracy:true,maximumAge:30000});
@@ -5949,7 +5949,7 @@ document.addEventListener('visibilitychange',()=>{
     checkNearbySites(lastLat,lastLng);
     // Also grab a fresh position in case we've moved while backgrounded
     navigator.geolocation.getCurrentPosition(pos=>{
-      lastLat=pos.coords.latitude; lastLng=pos.coords.longitude;
+      lastLat=pos.coords.latitude; lastLng=pos.coords.longitude; lastLatTs=Date.now();
       checkNearbySites(lastLat,lastLng,pos.coords.accuracy);
     },()=>{},{enableHighAccuracy:true,timeout:15000,maximumAge:30000});
   }
@@ -6369,7 +6369,11 @@ window.initApp = function() {
       // Before acting on a queued EXIT, check if we're currently inside the geofence.
       // GPS flutter while the screen was off can fire a spurious EXIT even though the
       // user never actually left. If current position is inside, discard the event.
-      if (lastLat != null && lastLng != null) {
+      // BUT: only trust lastLat/lastLng if it was captured within the last 2 minutes.
+      // On resume after a long sleep, lastLat is stale (from before the user left) and
+      // would falsely report "inside" — discarding a legitimate EXIT.
+      const GPS_STALE_MS = 2 * 60 * 1000;
+      if (lastLat != null && lastLng != null && lastLatTs && (Date.now() - lastLatTs) < GPS_STALE_MS) {
         const activeSite = siteList.find(s => s.name === ev.site);
         if (activeSite && activeSite.lat) {
           const nowDist = dist(lastLat, lastLng, activeSite.lat, activeSite.lng);
