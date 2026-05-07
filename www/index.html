@@ -1737,7 +1737,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v71';
+const APP_VERSION = 'v72';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -4022,8 +4022,9 @@ function fmtWeekRange(start,end){
   return sm===em?`${sd}–${ed} ${sm}`:`${sd} ${sm} – ${ed} ${em}`;
 }
 function fmtMoneyWhole(n){return '$'+Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g,',')}
-function renderWeekGoal(s,ad){
+function renderWeekGoal(s,ad,ai){
   const card=document.getElementById('week-goal-card');if(!card) return;
+  if(!ai) ai=invoices();
   const hrsGoal=parseFloat(s.weeklyHrsGoal)||0;
   const earnGoal=parseFloat(s.annualEarningsGoal)||0;
   const hrsSection=document.getElementById('week-hrs-section');
@@ -4057,12 +4058,16 @@ function renderWeekGoal(s,ad){
   }
 
   // --- Earnings (calendar YTD) ---
+  // Invoiced: sum of inv.total for invoices dated this year.
+  // Uninvoiced (estimate): rate × hours of completed days this year that haven't been included in any invoice (d.invoiced flag).
   if(earnGoal){
     const yr=today.getFullYear();
     const yrStart=`${yr}-01-01`,yrEnd=`${yr}-12-31`;
     const rate=parseFloat(s.rate)||0;
-    const ytdHrs=ad.filter(d=>d.date>=yrStart&&d.date<=yrEnd&&d.finish).reduce((sum,d)=>sum+dayTotals(d).h,0);
-    const ytdEarn=ytdHrs*rate;
+    const invoicedEarn=ai.filter(i=>i.date>=yrStart&&i.date<=yrEnd).reduce((sum,i)=>sum+(parseFloat(i.total)||0),0);
+    const uninvHrs=ad.filter(d=>d.date>=yrStart&&d.date<=yrEnd&&d.finish&&!d.invoiced).reduce((sum,d)=>sum+dayTotals(d).h,0);
+    const uninvEarn=uninvHrs*rate;
+    const ytdEarn=invoicedEarn+uninvEarn;
     const pct=Math.round(ytdEarn/earnGoal*100);
     const fillPct=Math.min(100,Math.max(0,pct));
     const hit=ytdEarn>=earnGoal-0.5;
@@ -4077,7 +4082,10 @@ function renderWeekGoal(s,ad){
     document.getElementById('year-earn-range').textContent='Day '+dayOfYear+' of '+daysInYr+' · '+dayPct+'%';
     document.getElementById('year-earn-stat').textContent=fmtMoneyWhole(ytdEarn);
     document.getElementById('year-earn-bar-fill').style.width=fillPct+'%';
-    document.getElementById('year-earn-progress').textContent=fmtMoneyWhole(ytdEarn)+' of '+fmtMoneyWhole(earnGoal)+' · '+pct+'%';
+    const breakdown=(invoicedEarn>0&&uninvEarn>0)
+      ?' ('+fmtMoneyWhole(invoicedEarn)+' invoiced + '+fmtMoneyWhole(uninvEarn)+' est)'
+      :uninvEarn>0&&invoicedEarn===0?' (est)':'';
+    document.getElementById('year-earn-progress').textContent=fmtMoneyWhole(ytdEarn)+' of '+fmtMoneyWhole(earnGoal)+' · '+pct+'%'+breakdown;
     const remEl=document.getElementById('year-earn-remaining');
     remEl.classList.toggle('pace-good',!hit&&onPace);
     if(hit) remEl.textContent='Goal smashed! 🎉';
@@ -4091,7 +4099,7 @@ function renderWeekGoal(s,ad){
 }
 function renderAnalytics(){
   const s=S(),ad=days(),ai=invoices(),now=new Date();
-  renderWeekGoal(s,ad);
+  renderWeekGoal(s,ad,ai);
   const weeks=Array.from({length:8},(_,i)=>{const e=new Date(now);e.setDate(e.getDate()-i*7);const st=new Date(e);st.setDate(st.getDate()-6);return{start:st.toISOString().slice(0,10),end:e.toISOString().slice(0,10),label:'W'+(8-i)};}).reverse();
   const wh=weeks.map(w=>ad.filter(d=>d.date>=w.start&&d.date<=w.end).reduce((s,d)=>s+Math.max(0,timeDiffHours(d.start,d.finish||d.start)-(d.lunchMins||0)/60),0));
   document.getElementById('ana-avg-hrs').textContent=(wh.reduce((a,b)=>a+b,0)/8).toFixed(1);
