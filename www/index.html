@@ -1443,6 +1443,49 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
 <div id="screen-analytics" class="screen">
   <div class="header"><h1>Analytics</h1><p>Your earnings at a glance</p></div>
   <div class="section">
+    <!-- This Year (tap to expand for full breakdown) -->
+    <div class="card" onclick="openYearGoalDetail()" style="cursor:pointer">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px">
+        <div class="card-title" style="margin-bottom:0;display:flex;align-items:center;gap:6px">🎯 This Year <span style="font-size:14px;color:var(--text2);font-weight:600">›</span></div>
+        <div style="font-size:11px;color:var(--text2);font-weight:700" id="ty-fy-label">FY—</div>
+      </div>
+      <!-- Weekly hours subsection -->
+      <div style="margin-bottom:18px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+          <div style="font-size:13px;color:var(--text2);font-weight:600">Weekly hours</div>
+          <div style="font-size:11px;color:var(--text2)" id="ty-wk-goal-sub">Goal: —</div>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <div style="font-size:22px;font-weight:800;color:var(--amber);font-family:'Montserrat',system-ui,sans-serif" id="ty-wk-actual">0h</div>
+          <div style="font-size:12px;color:var(--text2)" id="ty-wk-detail">this week</div>
+        </div>
+        <div style="height:6px;background:var(--surface2);border-radius:99px;margin-top:8px;overflow:hidden">
+          <div id="ty-wk-progress" style="height:100%;background:var(--amber);border-radius:99px;width:0%;transition:width .4s ease"></div>
+        </div>
+      </div>
+      <!-- Annual earnings subsection -->
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+          <div style="font-size:13px;color:var(--text2);font-weight:600">Annual earnings</div>
+          <div style="font-size:11px;color:var(--text2)" id="ty-ann-goal-sub">Goal: —</div>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <div style="font-size:22px;font-weight:800;color:var(--amber);font-family:'Montserrat',system-ui,sans-serif" id="ty-ann-actual">$0</div>
+          <div style="font-size:12px;color:var(--text2)" id="ty-ann-detail">YTD</div>
+        </div>
+        <div style="height:6px;background:var(--surface2);border-radius:99px;margin-top:8px;overflow:hidden">
+          <div id="ty-ann-progress" style="height:100%;background:var(--amber);border-radius:99px;width:0%;transition:width .4s ease"></div>
+        </div>
+        <div style="font-size:12px;font-weight:700;margin-top:10px" id="ty-pace">—</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px" id="ty-projection"></div>
+      </div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);text-align:center;font-size:12px;font-weight:700;color:var(--amber);letter-spacing:.2px">See full breakdown ›</div>
+    </div>
+    <!-- Past Financial Years -->
+    <div class="card" id="ty-past-fy-card" style="display:none">
+      <div class="card-title">Past Financial Years</div>
+      <div id="ty-past-fy-list"></div>
+    </div>
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-label">Avg hrs/week</div><div class="stat-value" id="ana-avg-hrs">—</div><div class="stat-sub">Last 8 weeks</div></div>
       <div class="stat-card"><div class="stat-label">Avg invoice</div><div class="stat-value" id="ana-avg-inv">—</div><div class="stat-sub">Last 6 invoices</div></div>
@@ -1578,7 +1621,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       <div class="field"><label>Service description</label><input type="text" id="s-service"></div>
       <div class="field-row">
         <div class="field"><label>Next invoice #</label><input type="number" id="s-invnum"></div>
-        <div class="field"><label>Annual increase (%)</label><input type="number" id="s-incpct" step="0.1"></div>
+        <div class="field"><label>Annual increase (%)</label><input type="number" id="s-incpct" step="0.1" oninput="onGoalInput('rate')"></div>
       </div>
     </div>
     <div class="card card-collapsible" data-collapse-default="collapsed">
@@ -1593,9 +1636,17 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
     <div class="card">
       <div class="card-title">Standard Rate</div>
       <div class="field">
-        <label>My rate ($/hr)</label><input type="number" id="s-rate" step="0.05">
+        <label>My rate ($/hr)</label><input type="number" id="s-rate" step="0.05" oninput="onGoalInput('rate')">
       </div>
       <div style="font-size:11px;color:var(--text2);margin-bottom:14px">This rate appears on invoices and can be updated here.</div>
+      <div style="border-top:1px solid var(--border);padding-top:14px;margin-bottom:4px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:8px">🎯 Earnings goal</div>
+        <div class="field-row">
+          <div class="field"><label>Weekly hours goal</label><input type="number" id="s-weeklyHrsGoal" step="0.5" min="0" oninput="onGoalInput('hrs')"></div>
+          <div class="field"><label>Annual earnings ($)</label><input type="number" id="s-annualEarningsGoal" step="100" min="0" oninput="onGoalInput('annual')"></div>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-top:-6px" id="s-goal-link">↔ linked via $0/hr</div>
+      </div>
       <div class="toggle-row" style="padding:10px 0;border-top:1px solid var(--border)">
         <div>
           <div style="font-size:14px;font-weight:600">Extra worker billing</div>
@@ -1843,6 +1894,15 @@ async function forceAppUpdate(isRetry) {
       <span style="font-size:11px;color:var(--text3)"> (set via map picker)</span>
     </div>
     <button class="btn btn-primary" style="margin-top:4px" onclick="saveSite()">Save Site</button>
+  </div>
+</div>
+
+<!-- THIS YEAR GOAL DETAIL MODAL -->
+<div class="modal-bg" id="year-goal-modal">
+  <div class="modal">
+    <div class="modal-title">This Year — Breakdown <button class="modal-close" onclick="closeYearGoalDetail()">✕</button></div>
+    <div id="year-goal-detail-body"></div>
+    <button class="btn btn-secondary" style="margin-top:14px;width:100%" onclick="closeYearGoalDetail()">Close</button>
   </div>
 </div>
 
@@ -2192,6 +2252,7 @@ const DEFAULTS={
   phone:'',email:'',bsb:'',account:'',
   client:'Muirlawn Pty Ltd',service:'Construction and Maintenance services',
   rate:55, sonrate:30, incpct:7.8, invnum:45,
+  weeklyHrsGoal:40, annualEarningsGoal:0,
   travelMode:'none', travelKmRate:0.88, travelHrRate:30,
   machineRates:{Excavator:150,Grader:180,Bobcat:120,Dozer:200,Tractor:110},
   machinesLib:[],
@@ -2712,7 +2773,7 @@ const GeoLog = {
 };
 
 // --- GPS & Geofence ---
-let watchId=null,lastLat=null,lastLng=null;
+let watchId=null,lastLat=null,lastLng=null,lastLatTs=0;
 let geoAutoStartTriggered=false;
 let geoAutoStopTriggered=false;
 let geoAutoStartDate=null; // calendar date (YYYY-MM-DD) when auto-start last fired
@@ -2720,6 +2781,11 @@ let geoAutoStopDate=null;  // calendar date when auto-stop last fired
 let outsideSiteTimer=null;
 let outsideSiteTimerStart=null; // when the debounce started (for countdown display)
 let bgPollInterval=null; // backup polling when watchPosition goes quiet
+// Two-reading confirmation before EXIT — a single bad GPS fix (e.g. under a shed)
+// must not trigger the 5-min stop debounce. Resets when an "inside" reading lands
+// or when readings are too far apart (>90s) to count as consecutive.
+let outsideReadingCount=0;
+let lastOutsideReadingAt=0;
 
 function updateGeoStatusBar(state,text){
   const dot=document.getElementById('geo-status-dot');
@@ -2739,8 +2805,8 @@ function startBgPoll(){
   bgPollInterval=setInterval(()=>{
     if(!activeDay()) return;
     navigator.geolocation.getCurrentPosition(pos=>{
-      lastLat=pos.coords.latitude; lastLng=pos.coords.longitude;
-      checkNearbySites(lastLat,lastLng);
+      lastLat=pos.coords.latitude; lastLng=pos.coords.longitude; lastLatTs=Date.now();
+      checkNearbySites(lastLat,lastLng,pos.coords.accuracy);
     },()=>{},{ enableHighAccuracy:true, timeout:15000, maximumAge:60000 });
   }, 90000);
 }
@@ -2754,9 +2820,9 @@ function startGPS(){
   let gotFix=false;
   watchId=navigator.geolocation.watchPosition(pos=>{
     gotFix=true;
-    lastLat=pos.coords.latitude;lastLng=pos.coords.longitude;
+    lastLat=pos.coords.latitude;lastLng=pos.coords.longitude;lastLatTs=Date.now();
     dot.className='gps-dot active';lbl.textContent='GPS actively tracking';
-    checkNearbySites(lastLat,lastLng);
+    checkNearbySites(lastLat,lastLng,pos.coords.accuracy);
   },()=>{dot.className='gps-dot';lbl.textContent='GPS unavailable — select site manually';},{enableHighAccuracy:true,maximumAge:30000});
   // Timeout: if no GPS fix after 15s, nudge user to select site manually
   setTimeout(()=>{
@@ -2770,10 +2836,20 @@ function startGPS(){
 // Haversine great-circle distance in metres.
 function dist(la1,lo1,la2,lo2){const R=6371000,toRad=Math.PI/180,p1=la1*toRad,p2=la2*toRad,dp=(la2-la1)*toRad,dl=(lo2-lo1)*toRad,a=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))}
 
-function checkNearbySites(lat,lng){
+function checkNearbySites(lat,lng,accuracy){
   const ss=sites();
   let nearestGeo=null,ndGeo=Infinity;
   let nearestSuggest=null,ndSuggest=Infinity;
+
+  // On the APK, NativeGeo's GeofencingClient is the canonical source of enter/exit
+  // events (it fires reliably even when the app is dead). Web GPS would only
+  // duplicate those events here, so suppress the auto-start/auto-stop logic on native.
+  // Position tracking + UI suggestion still runs.
+  const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  // Discard fixes with poor horizontal accuracy for geofence decisions — under a
+  // shed or in a tin building, browser GPS can return >100m readings that look
+  // outside the fence even when the user hasn't moved.
+  const accOk = (accuracy == null) || (accuracy <= 100);
 
   ss.forEach(s=>{
     if(!s.lat) return;
@@ -2799,8 +2875,8 @@ function checkNearbySites(lat,lng){
     no.style.display=activeDay()?'none':'block';
   }
 
-  // Geofence auto-start
-  if(nearestGeo&&!activeDay()&&!geoAutoStartTriggered){
+  // Geofence auto-start (Web GPS path only — NativeGeo handles native)
+  if(!isNative&&accOk&&nearestGeo&&!activeDay()&&!geoAutoStartTriggered){
     const h=new Date().getHours();
     if(h>=5&&h<21){ // 5am–9pm only
       geoAutoStartTriggered=true;
@@ -2818,51 +2894,71 @@ function checkNearbySites(lat,lng){
       const dActive=Math.round(dist(lat,lng,activeSite.lat,activeSite.lng));
       const activeRadius=activeSite.radius||100;
       const distToBoundary=activeRadius-dActive; // positive = inside, negative = outside
-      if(dActive>activeRadius){
-        // Outside geofence — start debounce if not already counting
-        if(!outsideSiteTimer){
-          outsideSiteTimerStart=Date.now();
-          outsideSiteTimer=setTimeout(()=>{
-            outsideSiteTimer=null; outsideSiteTimerStart=null;
-            const hour=new Date().getHours();
-            if(hour>=5&&hour<21&&activeDay()&&!geoAutoStopTriggered){
-              const _ad=activeDay(), _site=sites().find(s=>s.name===_ad.site);
-              // Get a FRESH GPS fix before stopping — lastLat may be the same stale
-              // "outside" reading that started the debounce (screen off = no updates)
-              function doStop(){
-                // Set the day-flag only AFTER autoStopTimer actually wrote a finish.
-                // A false GPS blip used to set this flag without truly stopping, then
-                // the real later EXIT was blocked by the already-set flag.
-                GeoLog.add('exit','[Web GPS] Left geofence: '+(_ad?_ad.site:'?'));
-                autoStopTimer();
-                const _post=activeDay();
-                if(_post&&_post.finish){
-                  geoAutoStopTriggered=true;
-                  geoAutoStopDate=todayStr();
-                } else {
-                  GeoLog.add('ignore','[Web GPS] autoStopTimer ran but no finish recorded; flag NOT set');
-                }
-              }
-              if(_site&&_site.lat){
-                navigator.geolocation.getCurrentPosition(pos=>{
-                  const freshD=dist(pos.coords.latitude,pos.coords.longitude,_site.lat,_site.lng);
-                  if(freshD<(_site.radius||100)){
-                    GeoLog.add('ignore','[Web GPS] Debounce expired but fresh GPS shows '+Math.round(freshD)+'m inside '+_site.name+' — ignoring exit');
-                    return;
+      if(!accOk){
+        // Inaccurate fix — discard for exit decisions, don't update outside-reading counter
+        GeoLog.add('info','[Web GPS] Reading discarded for geofence — accuracy '+Math.round(accuracy)+'m (>100m)');
+        updateGeoStatusBar('searching','📡 Poor GPS · accuracy '+Math.round(accuracy)+'m');
+      } else if(dActive>activeRadius){
+        // Two-reading confirmation — a single bad fix must not start the 5-min debounce
+        const _now=Date.now();
+        if(lastOutsideReadingAt&&(_now-lastOutsideReadingAt>90000)) outsideReadingCount=0;
+        outsideReadingCount++;
+        lastOutsideReadingAt=_now;
+        const confirmed=outsideReadingCount>=2;
+        // Only the Web GPS path schedules the stop debounce here; native owns its own
+        if(!confirmed){
+          GeoLog.add('info','[Web GPS] First outside reading ('+Math.abs(distToBoundary)+'m) — waiting for confirmation');
+          updateGeoStatusBar('outside','⚠ '+Math.abs(distToBoundary)+'m outside · verifying…');
+        } else if(isNative){
+          // Native handles the actual stop; just surface state to the user
+          updateGeoStatusBar('outside','⚠ '+Math.abs(distToBoundary)+'m outside');
+        } else {
+          // Outside geofence (confirmed) — start debounce if not already counting
+          if(!outsideSiteTimer){
+            outsideSiteTimerStart=Date.now();
+            outsideSiteTimer=setTimeout(()=>{
+              outsideSiteTimer=null; outsideSiteTimerStart=null;
+              const hour=new Date().getHours();
+              if(hour>=5&&hour<21&&activeDay()&&!geoAutoStopTriggered){
+                const _ad=activeDay(), _site=sites().find(s=>s.name===_ad.site);
+                // Get a FRESH GPS fix before stopping — lastLat may be the same stale
+                // "outside" reading that started the debounce (screen off = no updates)
+                function doStop(){
+                  // Set the day-flag only AFTER autoStopTimer actually wrote a finish.
+                  // A false GPS blip used to set this flag without truly stopping, then
+                  // the real later EXIT was blocked by the already-set flag.
+                  GeoLog.add('exit','[Web GPS] Left geofence: '+(_ad?_ad.site:'?'));
+                  autoStopTimer();
+                  const _post=activeDay();
+                  if(_post&&_post.finish){
+                    geoAutoStopTriggered=true;
+                    geoAutoStopDate=todayStr();
+                  } else {
+                    GeoLog.add('ignore','[Web GPS] autoStopTimer ran but no finish recorded; flag NOT set');
                   }
-                  doStop();
-                },()=>{ GeoLog.add('ignore','[Web GPS] Debounce expired but GPS unavailable — not stopping'); },{ enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
-              } else { doStop(); }
-            }
-          },GEO_STOP_DEBOUNCE);
+                }
+                if(_site&&_site.lat){
+                  navigator.geolocation.getCurrentPosition(pos=>{
+                    const freshD=dist(pos.coords.latitude,pos.coords.longitude,_site.lat,_site.lng);
+                    if(freshD<(_site.radius||100)){
+                      GeoLog.add('ignore','[Web GPS] Debounce expired but fresh GPS shows '+Math.round(freshD)+'m inside '+_site.name+' — ignoring exit');
+                      return;
+                    }
+                    doStop();
+                  },()=>{ GeoLog.add('ignore','[Web GPS] Debounce expired but GPS unavailable — not stopping'); },{ enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
+                } else { doStop(); }
+              }
+            },GEO_STOP_DEBOUNCE);
+          }
+          // Show countdown in status bar
+          const secsLeft=outsideSiteTimerStart?Math.max(0,Math.round((GEO_STOP_DEBOUNCE-(Date.now()-outsideSiteTimerStart))/1000)):Math.round(GEO_STOP_DEBOUNCE/1000);
+          const minsLeft=Math.floor(secsLeft/60),sLeft=secsLeft%60;
+          const countdown=minsLeft>0?minsLeft+'m '+sLeft+'s':sLeft+'s';
+          updateGeoStatusBar('outside','⚠ '+Math.abs(distToBoundary)+'m outside · stops in '+countdown);
         }
-        // Show countdown in status bar
-        const secsLeft=outsideSiteTimerStart?Math.max(0,Math.round((GEO_STOP_DEBOUNCE-(Date.now()-outsideSiteTimerStart))/1000)):Math.round(GEO_STOP_DEBOUNCE/1000);
-        const minsLeft=Math.floor(secsLeft/60),sLeft=secsLeft%60;
-        const countdown=minsLeft>0?minsLeft+'m '+sLeft+'s':sLeft+'s';
-        updateGeoStatusBar('outside','⚠ '+Math.abs(distToBoundary)+'m outside · stops in '+countdown);
       } else {
-        // Inside geofence — cancel any pending debounce
+        // Inside geofence — reset outside-reading counter and cancel any pending debounce
+        outsideReadingCount=0; lastOutsideReadingAt=0;
         if(outsideSiteTimer){clearTimeout(outsideSiteTimer);outsideSiteTimer=null;outsideSiteTimerStart=null;}
         updateGeoStatusBar('inside','📍 Inside · '+Math.max(0,Math.round(distToBoundary))+'m to boundary');
       }
@@ -2919,10 +3015,13 @@ function showGeofenceNotification(siteName,startTime){
 function autoStopTimer(overrideTime){
   clearInterval(timerInterval);
   const ad=activeDay();if(!ad)return;
+  // Capture whether a timer was actually running BEFORE we mutate ad.finish.
+  // Ghost exits (no start, or already finished) process silently — no departure notification.
+  const wasRunning=!!(ad.start && !ad.finish);
   // Single stopTime variable — avoid two nowTime() calls that can straddle a minute boundary
   // and produce a mismatch between the GeoLog entry and the saved day record.
   const stopTime=overrideTime||nowTime();
-  GeoLog.add('stop', 'Auto-timer stopped at ' + stopTime + ' · ' + (ad.site||'?'));
+  GeoLog.add('stop', 'Auto-timer stopped at ' + stopTime + ' · ' + (ad.site||'?') + (wasRunning?'':' (ghost exit — no notification)'));
   if(ad.lunchStart){
     const[sh,sm]=ad.lunchStart.split(':').map(Number),now=new Date(),mins=now.getHours()*60+now.getMinutes()-sh*60-sm;
     ad.lunchMins=(ad.lunchMins||0)+Math.max(0,mins);ad.lunchStart=null;
@@ -2930,7 +3029,7 @@ function autoStopTimer(overrideTime){
   ad.finish=stopTime;
   DB.set('activeDay',ad);
   showReview(ad);
-  showGeofenceDepartureNotification(ad.site,stopTime);
+  if(wasRunning) showGeofenceDepartureNotification(ad.site,stopTime);
   toast('Auto-stopped: left '+ad.site+(overrideTime?' (replayed '+overrideTime+')':''));
 }
 
@@ -2947,6 +3046,11 @@ function showGeofenceDepartureNotification(siteName,stopTime){
       icon:'./tradie-app/icons/icon-192.png',
       badge:'./tradie-app/icons/icon-192.png',
       tag:'geofence-departure',
+      // Departure notifications must be silent — they were beeping on the phone
+      // and adding noise. The arrival notification confirms the timer started;
+      // the exit one is just a status update.
+      silent:true,
+      vibrate:[0],
       actions:[
         {action:'confirm',title:'✓ Correct'},
         {action:'adjust-stop',title:'Adjust time'}
@@ -3938,8 +4042,251 @@ function generateInvoice(){
   toast('Invoice downloaded! Rate \u2192 $'+nr.toFixed(2));renderInvoice();
 }
 
+// --- Goals & financial year helpers ---
+function effectiveAvgRate(rate, incpct){
+  const r=parseFloat(rate)||0, p=parseFloat(incpct)||0;
+  return r*(1+p/100/2); // midpoint approximation across the year
+}
+function fyForDate(d){
+  const dt=(typeof d==='string')?new Date(d+'T00:00:00'):d;
+  return (dt.getMonth()<6)?dt.getFullYear()-1:dt.getFullYear();
+}
+function fyLabel(startYear){return 'FY'+startYear+'–'+String(startYear+1).slice(-2);}
+function fyRange(startYear){return{start:startYear+'-07-01',end:(startYear+1)+'-06-30'};}
+
+function onGoalInput(src){
+  const rateEl=document.getElementById('s-rate');
+  const incEl=document.getElementById('s-incpct');
+  const hrsEl=document.getElementById('s-weeklyHrsGoal');
+  const annEl=document.getElementById('s-annualEarningsGoal');
+  const linkEl=document.getElementById('s-goal-link');
+  if(!rateEl||!hrsEl||!annEl) return;
+  const rate=parseFloat(rateEl.value)||0;
+  const incpct=incEl?(parseFloat(incEl.value)||0):0;
+  const eff=effectiveAvgRate(rate,incpct);
+  if(src==='hrs'){
+    const h=parseFloat(hrsEl.value)||0;
+    annEl.value = (h>0&&eff>0) ? Math.round(h*eff*52) : '';
+  } else if(src==='annual'){
+    const a=parseFloat(annEl.value)||0;
+    hrsEl.value = (a>0&&eff>0) ? (a/(eff*52)).toFixed(1) : '';
+  } else if(src==='rate'){
+    const h=parseFloat(hrsEl.value)||0;
+    if(h>0&&eff>0) annEl.value = Math.round(h*eff*52);
+  } else if(src==='init'){
+    // On load: derive the missing partner so both fields are populated when the user opens Settings.
+    const h=parseFloat(hrsEl.value)||0;
+    const a=parseFloat(annEl.value)||0;
+    if(h>0&&!a&&eff>0) annEl.value = Math.round(h*eff*52);
+    else if(a>0&&!h&&eff>0) hrsEl.value = (a/(eff*52)).toFixed(1);
+  }
+  if(linkEl){
+    linkEl.textContent = '↔ linked via $'+rate.toFixed(2)+'/hr'+(incpct>0?(' + '+incpct+'%/yr increase'):'');
+  }
+}
+
+function renderThisYear(){
+  const s=S(),allDays=days(),now=new Date();
+  const curFY=fyForDate(now), fy=fyRange(curFY);
+  const rate=parseFloat(s.rate)||0;
+  const incpct=parseFloat(s.incpct??0)||0;
+  const eff=effectiveAvgRate(rate,incpct);
+  const weeklyGoal=parseFloat(s.weeklyHrsGoal)||0;
+  const annualGoal=parseFloat(s.annualEarningsGoal)||(weeklyGoal>0?weeklyGoal*eff*52:0);
+  document.getElementById('ty-fy-label').textContent=fyLabel(curFY);
+
+  // Current week (Mon–Sun)
+  const todayStr=now.toISOString().slice(0,10);
+  const dow=(now.getDay()+6)%7;
+  const monday=new Date(now); monday.setDate(now.getDate()-dow);
+  const mondayStr=monday.toISOString().slice(0,10);
+  const weekHrs=allDays.filter(d=>d.date>=mondayStr&&d.date<=todayStr&&d.finish)
+    .reduce((a,d)=>a+Math.max(0,timeDiffHours(d.start,d.finish)-(d.lunchMins||0)/60),0);
+  document.getElementById('ty-wk-actual').textContent=weekHrs.toFixed(1)+'h';
+  document.getElementById('ty-wk-goal-sub').textContent=weeklyGoal>0?('Goal: '+weeklyGoal.toFixed(1)+'h/wk'):'No goal set';
+  const wkPct=weeklyGoal>0?Math.min(100,weekHrs/weeklyGoal*100):0;
+  const wkBar=document.getElementById('ty-wk-progress');
+  wkBar.style.width=wkPct+'%';
+  wkBar.style.background=wkPct>=100?'var(--success)':'var(--amber)';
+
+  // FY-to-date earnings
+  const fyDays=allDays.filter(d=>d.date>=fy.start&&d.date<=fy.end&&d.finish);
+  const ytdEarnings=fyDays.reduce((a,d)=>a+Math.max(0,timeDiffHours(d.start,d.finish)-(d.lunchMins||0)/60)*rate,0);
+  document.getElementById('ty-ann-actual').textContent=fmtMoney(ytdEarnings);
+  document.getElementById('ty-ann-goal-sub').textContent=annualGoal>0?('Goal: '+fmtMoney(annualGoal)):'No goal set';
+  const annPct=annualGoal>0?Math.min(100,ytdEarnings/annualGoal*100):0;
+  const annBar=document.getElementById('ty-ann-progress');
+  annBar.style.width=annPct+'%';
+  annBar.style.background=annPct>=100?'var(--success)':'var(--amber)';
+
+  // Pace
+  const fyStart=new Date(curFY+'-07-01T00:00:00');
+  const weeksElapsed=Math.max(0,(now-fyStart)/(7*24*60*60*1000));
+  const expectedYTD=annualGoal>0?annualGoal*Math.min(52,weeksElapsed)/52:0;
+  const paceEl=document.getElementById('ty-pace');
+  if(annualGoal<=0){
+    paceEl.textContent='Set an earnings goal in Settings to see your pace.';
+    paceEl.style.color='var(--text2)';
+  } else if(ytdEarnings>=annualGoal){
+    paceEl.textContent='Goal smashed! 🎉';
+    paceEl.style.color='var(--success)';
+  } else if(ytdEarnings>=expectedYTD){
+    paceEl.textContent='On pace ✓';
+    paceEl.style.color='var(--success)';
+  } else {
+    paceEl.textContent='Behind by '+fmtMoney(expectedYTD-ytdEarnings);
+    paceEl.style.color='var(--amber)';
+  }
+  const projEl=document.getElementById('ty-projection');
+  if(weeklyGoal>0&&rate>0){
+    projEl.textContent='Projection: '+weeklyGoal.toFixed(1)+'h/wk × $'+eff.toFixed(2)+'/hr × 52 = '+fmtMoney(weeklyGoal*eff*52);
+  } else { projEl.textContent=''; }
+
+  renderPastFYs(allDays,curFY,rate);
+}
+
+function renderPastFYs(allDays,curFY,rate){
+  const card=document.getElementById('ty-past-fy-card');
+  const list=document.getElementById('ty-past-fy-list');
+  const byFY={};
+  allDays.forEach(d=>{
+    if(!d.finish||!d.date) return;
+    const fy=fyForDate(d.date);
+    if(fy>=curFY) return;
+    if(!byFY[fy]) byFY[fy]={hrs:0};
+    byFY[fy].hrs+=Math.max(0,timeDiffHours(d.start,d.finish)-(d.lunchMins||0)/60);
+  });
+  const sorted=Object.keys(byFY).map(Number).sort((a,b)=>b-a);
+  if(!sorted.length){card.style.display='none';return;}
+  card.style.display='';
+  list.innerHTML=sorted.map((fy,i)=>{
+    const h=byFY[fy].hrs, earnings=h*rate;
+    const last=i===sorted.length-1;
+    return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;${last?'':'border-bottom:1px solid var(--border)'}">
+      <div style="font-size:14px;font-weight:700">${fyLabel(fy)}</div>
+      <div style="font-size:13px;color:var(--text2)">${h.toFixed(1)}h · ${fmtMoney(earnings)}</div>
+    </div>`;
+  }).join('');
+}
+
+// --- This Year breakdown modal (tap-to-expand from goal card) ---
+function openYearGoalDetail(){
+  const s=S(),allDays=days(),now=new Date();
+  const curFY=fyForDate(now), fy=fyRange(curFY);
+  const rate=parseFloat(s.rate)||0;
+  const incpct=parseFloat(s.incpct??0)||0;
+  const eff=effectiveAvgRate(rate,incpct);
+  const weeklyGoal=parseFloat(s.weeklyHrsGoal)||0;
+  const annualGoalRaw=parseFloat(s.annualEarningsGoal)||0;
+  const projected=weeklyGoal>0?weeklyGoal*eff*52:0;
+  const annualGoal=annualGoalRaw>0?annualGoalRaw:projected;
+
+  // YTD figures (current FY)
+  const fyDays=allDays.filter(d=>d.date>=fy.start&&d.date<=fy.end&&d.finish);
+  let totalH=0,totalEarn=0;
+  fyDays.forEach(d=>{const t=dayTotals(d);totalH+=t.h;totalEarn+=t.total;});
+  const fyStart=new Date(curFY+'-07-01T00:00:00');
+  const msPerWeek=7*24*60*60*1000;
+  const weeksElapsed=Math.max(0.001,Math.min(52,(now-fyStart)/msPerWeek));
+  const weeksRemaining=Math.max(0,52-weeksElapsed);
+  const avgHrsPerWeek=totalH/weeksElapsed;
+  const expectedByNow=annualGoal>0?annualGoal*(weeksElapsed/52):0;
+  const aheadBehind=totalEarn-expectedByNow;
+  const projectedYearEnd=(totalEarn/weeksElapsed)*52;
+  const avgDaily=fyDays.length?totalEarn/fyDays.length:0;
+
+  // Past FYs from days history
+  const fyMap={};
+  allDays.forEach(d=>{
+    if(!d.finish||!d.date) return;
+    const f=fyForDate(d.date);
+    if(f>=curFY) return;
+    if(!fyMap[f]) fyMap[f]={startYear:f,h:0,earn:0,days:0};
+    const t=dayTotals(d);
+    fyMap[f].h+=t.h;
+    fyMap[f].earn+=t.total;
+    fyMap[f].days+=1;
+  });
+  const pastFys=Object.values(fyMap).sort((a,b)=>b.startYear-a.startYear);
+
+  const aheadAbs=Math.abs(aheadBehind);
+  const aheadLabel=annualGoal<=0?'No earnings goal set':(Math.abs(aheadBehind)<1?'On pace':(aheadBehind>0?'+'+fmtMoney(aheadAbs)+' ahead':'-'+fmtMoney(aheadAbs)+' behind'));
+  const aheadColor=annualGoal<=0?'var(--text2)':(Math.abs(aheadBehind)<1?'var(--text2)':(aheadBehind>0?'var(--success)':'var(--amber)'));
+  const incLabel=incpct>0?incpct+'%':'none';
+  const effFormula=incpct>0?'rate × (1 + '+incpct+'%/2)':'same as rate';
+
+  const sectionStyle='margin-bottom:18px';
+  const headStyle='font-size:11px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)';
+  const rowStyle='display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;font-size:13px';
+  const labelStyle='color:var(--text2);flex:1;padding-right:10px';
+  const valStyle='font-weight:700;color:var(--text);font-family:"DM Mono",ui-monospace,monospace;text-align:right';
+  const subStyle='font-size:11px;color:var(--text3);margin-top:-2px;padding-bottom:6px';
+
+  let html='';
+
+  // Goal projection
+  html+='<div style="'+sectionStyle+'">';
+  html+='<div style="'+headStyle+'">Goal projection ('+fyLabel(curFY)+')</div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Your hourly rate</span><span style="'+valStyle+'">$'+rate.toFixed(2)+'/hr</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Annual rate increase</span><span style="'+valStyle+'">'+incLabel+'</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Effective avg rate this year</span><span style="'+valStyle+'">$'+eff.toFixed(2)+'/hr</span></div>';
+  html+='<div style="'+subStyle+'">'+effFormula+'</div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Weekly hours goal</span><span style="'+valStyle+'">'+(weeklyGoal>0?weeklyGoal.toFixed(1)+' hrs/wk':'not set')+'</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Projected annual earnings</span><span style="'+valStyle+';color:var(--amber);font-size:15px">'+(projected>0?fmtMoney(projected):'—')+'</span></div>';
+  if(weeklyGoal>0&&eff>0){html+='<div style="'+subStyle+'">$'+eff.toFixed(2)+' × '+weeklyGoal.toFixed(1)+' hrs × 52 weeks</div>';}
+  if(annualGoalRaw>0&&Math.abs(annualGoalRaw-projected)>1){
+    html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Earnings goal (override)</span><span style="'+valStyle+';color:var(--amber)">'+fmtMoney(annualGoalRaw)+'</span></div>';
+    html+='<div style="'+subStyle+'">Manually set in Settings — pace below uses this</div>';
+  }
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Weeks remaining in FY</span><span style="'+valStyle+'">'+weeksRemaining.toFixed(1)+' weeks</span></div>';
+  html+='</div>';
+
+  // Actual YTD
+  html+='<div style="'+sectionStyle+'">';
+  html+='<div style="'+headStyle+'">Actual YTD ('+fyLabel(curFY)+')</div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Total days logged</span><span style="'+valStyle+'">'+fyDays.length+' day'+(fyDays.length===1?'':'s')+'</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Total hours worked</span><span style="'+valStyle+'">'+totalH.toFixed(1)+' hrs</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Avg hrs/week (weeks elapsed)</span><span style="'+valStyle+'">'+avgHrsPerWeek.toFixed(1)+' hrs/wk</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Total earned YTD</span><span style="'+valStyle+';color:var(--amber);font-size:15px">'+fmtMoney(totalEarn)+'</span></div>';
+  html+='<div style="'+subStyle+'">includes hours, machines, travel and materials from each day</div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Average daily total</span><span style="'+valStyle+'">'+(fyDays.length?fmtMoney(avgDaily):'—')+'</span></div>';
+  html+='</div>';
+
+  // Pace check
+  html+='<div style="'+sectionStyle+'">';
+  html+='<div style="'+headStyle+'">Pace check</div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Weeks elapsed in FY</span><span style="'+valStyle+'">'+weeksElapsed.toFixed(1)+' / 52</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Expected earnings by now</span><span style="'+valStyle+'">'+(annualGoal>0?fmtMoney(expectedByNow):'—')+'</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Actual vs expected</span><span style="'+valStyle+';color:'+aheadColor+'">'+aheadLabel+'</span></div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Projected year-end @ current pace</span><span style="'+valStyle+';color:var(--amber);font-size:15px">'+fmtMoney(projectedYearEnd)+'</span></div>';
+  html+='<div style="'+subStyle+'">earned ÷ weeks elapsed × 52</div>';
+  html+='</div>';
+
+  // Past FYs
+  if(pastFys.length){
+    html+='<div style="'+sectionStyle+'">';
+    html+='<div style="'+headStyle+'">Past financial years</div>';
+    pastFys.forEach(pf=>{
+      const wkAvg=pf.h/52;
+      html+='<div style="padding:8px 0;border-bottom:1px solid var(--border)">';
+      html+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px"><span style="font-size:13px;font-weight:700">'+fyLabel(pf.startYear)+'</span><span style="font-weight:700;color:var(--amber);font-family:\'DM Mono\',ui-monospace,monospace">'+fmtMoney(pf.earn)+'</span></div>';
+      html+='<div style="font-size:11px;color:var(--text2)">'+pf.days+' days · '+pf.h.toFixed(1)+' hrs · avg '+wkAvg.toFixed(1)+' hrs/wk</div>';
+      html+='</div>';
+    });
+    html+='</div>';
+  }
+
+  document.getElementById('year-goal-detail-body').innerHTML=html;
+  document.getElementById('year-goal-modal').classList.add('open');
+}
+
+function closeYearGoalDetail(){
+  document.getElementById('year-goal-modal').classList.remove('open');
+}
+
 // --- Analytics ---
 function renderAnalytics(){
+  renderThisYear();
   const s=S(),ad=days(),ai=invoices(),now=new Date();
   const weeks=Array.from({length:8},(_,i)=>{const e=new Date(now);e.setDate(e.getDate()-i*7);const st=new Date(e);st.setDate(st.getDate()-6);return{start:st.toISOString().slice(0,10),end:e.toISOString().slice(0,10),label:'W'+(8-i)};}).reverse();
   const wh=weeks.map(w=>ad.filter(d=>d.date>=w.start&&d.date<=w.end).reduce((s,d)=>s+Math.max(0,timeDiffHours(d.start,d.finish||d.start)-(d.lunchMins||0)/60),0));
@@ -3993,9 +4340,12 @@ function ensureMachinesLibSeeded(){
 function loadSettings(){
   ensureMachinesLibSeeded();
   const s=S();
-  ['name','abn','address','phone','email','bsb','account','service','rate','sonrate','incpct','invnum'].forEach(k=>{
+  ['name','abn','address','phone','email','bsb','account','service','rate','sonrate','incpct','invnum','weeklyHrsGoal','annualEarningsGoal'].forEach(k=>{
     const el=document.getElementById('s-'+k);if(el) el.value=s[k]!==undefined?s[k]:'';
   });
+  const _whg=document.getElementById('s-weeklyHrsGoal'); if(_whg) _whg.value = s.weeklyHrsGoal>0 ? s.weeklyHrsGoal : '';
+  const _aeg=document.getElementById('s-annualEarningsGoal'); if(_aeg) _aeg.value = s.annualEarningsGoal>0 ? s.annualEarningsGoal : '';
+  onGoalInput('init');
   renderTradeSelector();
   loadTravelSettings();
   renderMachineRatesCard();
@@ -4037,6 +4387,10 @@ function saveSettings(){
   const _incpctStr=document.getElementById('s-incpct').value;
   if(_incpctStr!==''){const _p=parseFloat(_incpctStr);if(!isNaN(_p))s.incpct=_p;}
   s.invnum=parseInt(document.getElementById('s-invnum').value)||s.invnum;
+  const _whg=document.getElementById('s-weeklyHrsGoal');
+  if(_whg){const _v=_whg.value;s.weeklyHrsGoal=_v===''?0:(parseFloat(_v)||0);}
+  const _aeg=document.getElementById('s-annualEarningsGoal');
+  if(_aeg){const _v=_aeg.value;s.annualEarningsGoal=_v===''?0:(parseFloat(_v)||0);}
   // Travel settings
   const activeBtn=document.querySelector('#tm-btn-none.active,#tm-btn-km.active,#tm-btn-time.active');
   s.travelMode=activeBtn?activeBtn.id.replace('tm-btn-',''):'none';
@@ -5611,8 +5965,8 @@ document.addEventListener('visibilitychange',()=>{
     checkNearbySites(lastLat,lastLng);
     // Also grab a fresh position in case we've moved while backgrounded
     navigator.geolocation.getCurrentPosition(pos=>{
-      lastLat=pos.coords.latitude; lastLng=pos.coords.longitude;
-      checkNearbySites(lastLat,lastLng);
+      lastLat=pos.coords.latitude; lastLng=pos.coords.longitude; lastLatTs=Date.now();
+      checkNearbySites(lastLat,lastLng,pos.coords.accuracy);
     },()=>{},{enableHighAccuracy:true,timeout:15000,maximumAge:30000});
   }
 });
@@ -5715,19 +6069,47 @@ window.initApp = function() {
 
   // ---- Native notification helper ----
   let _notifId = 2000;
-  async function nativeNotify(title, body) {
+  // Android decides "sound vs silent" by channel importance, not by the notification itself.
+  // We create a low-importance channel once for departure (exit) notifications so they
+  // appear in the tray without making sound or vibrating.
+  let _silentChannelReady = null;
+  async function ensureSilentChannel() {
+    if (_silentChannelReady) return _silentChannelReady;
+    _silentChannelReady = (async () => {
+      if (!LocalNotifications || !LocalNotifications.createChannel) return;
+      try {
+        await LocalNotifications.createChannel({
+          id: 'geofence_silent',
+          name: 'Geofence (silent)',
+          description: 'Silent notifications for site departures — no sound or vibration',
+          importance: 2, // IMPORTANCE_LOW: visible in tray, no sound, no peek, no vibrate
+          sound: '',
+          vibration: false,
+          visibility: 1
+        });
+      } catch(e) { console.warn('[Capacitor] createChannel failed:', e); }
+    })();
+    return _silentChannelReady;
+  }
+  async function nativeNotify(title, body, opts) {
+    opts = opts || {};
     try {
       if (LocalNotifications) {
         await LocalNotifications.requestPermissions();
-        await LocalNotifications.schedule({
-          notifications: [{
-            title, body,
-            id: _notifId++,
-            schedule: { at: new Date(Date.now() + 800) },
-            sound: 'default',
-            actionTypeId: 'OPEN_APP'
-          }]
-        });
+        const notif = {
+          title, body,
+          id: _notifId++,
+          schedule: { at: new Date(Date.now() + 800) },
+          actionTypeId: 'OPEN_APP'
+        };
+        if (opts.silent) {
+          await ensureSilentChannel();
+          notif.channelId = 'geofence_silent';
+          notif.sound = '';
+        } else {
+          notif.sound = 'default';
+        }
+        await LocalNotifications.schedule({ notifications: [notif] });
       }
     } catch(e) { console.warn('[Capacitor] Notification failed:', e); }
   }
@@ -5750,7 +6132,9 @@ window.initApp = function() {
     const before = _lastDepartureNotifyDate;
     if (_webDeparture) _webDeparture(siteName, stopTime);
     if (_lastDepartureNotifyDate !== before) {
-      nativeNotify('Left ' + siteName, 'Timer stopped at ' + stopTime + '. Tap to review.');
+      // Silent — no sound, no vibration. The arrival notification confirms the
+      // timer started; departures are just informational.
+      nativeNotify('Left ' + siteName, 'Timer stopped at ' + stopTime + '. Tap to review.', { silent: true });
     }
   };
 
@@ -5836,19 +6220,124 @@ window.initApp = function() {
     } catch(e) { console.warn('[NativeGeo] Re-register error:', e); }
   };
 
+  // Java writes ev.timestamp as a numeric long (ms since epoch). JSON keeps it
+  // as a number. Older events written by other paths could be ISO strings.
+  // Coerce defensively so the dedupe + age checks always get a real ms value.
+  function _evMs(ev){
+    const t = ev && ev.timestamp;
+    if (t == null) return 0;
+    if (typeof t === 'number') return t;
+    const p = Date.parse(t); if (!isNaN(p)) return p;
+    const n = Number(t); return isNaN(n) ? 0 : n;
+  }
+
+  // Cross-session dedup of native geo events. SharedPrefs MAY fail to clear
+  // (e.g. plugin call rejects, JS exception before the loop completes), so
+  // belt-and-suspenders: remember each event signature in localStorage and
+  // skip any replay we've already actioned within the last 24h.
+  const PROCESSED_EVENTS_KEY = 'mcn_processedGeoEvents';
+  const PROCESSED_TTL_MS = 24 * 60 * 60 * 1000;
+  function _eventSig(ev){
+    return (ev.type||'?') + '|' + (ev.site||'?') + '|' + (ev.timestamp||ev.time||'?');
+  }
+  function _loadProcessed(){
+    try { return JSON.parse(localStorage.getItem(PROCESSED_EVENTS_KEY) || '[]'); } catch(_){ return []; }
+  }
+  function _isProcessed(ev){
+    const sig = _eventSig(ev);
+    return _loadProcessed().some(e => e.sig === sig);
+  }
+  function _markProcessed(ev){
+    try {
+      const cutoff = Date.now() - PROCESSED_TTL_MS;
+      let arr = _loadProcessed().filter(e => (e.recordedAt||0) > cutoff);
+      arr.push({ sig: _eventSig(ev), recordedAt: Date.now() });
+      if (arr.length > 100) arr = arr.slice(-100);
+      localStorage.setItem(PROCESSED_EVENTS_KEY, JSON.stringify(arr));
+    } catch(_){}
+  }
+
   async function processPendingGeoEvents() {
     if (!NativeGeo) return;
+    let raw = [];
+    let drained = false;
     try {
-      const { events: raw } = await NativeGeo.getPendingEvents();
-      const events = JSON.parse(raw || '[]');
-      if (events.length === 0) return;
-      console.log('[NativeGeo] Replaying', events.length, 'pending events');
-      for (const ev of events) {
-        await processGeoEvent(ev);
+      // Prefer atomic drain (read+clear in one Java call) so the receiver
+      // can't append events that get silently wiped between read and clear.
+      // Fall back to legacy get+clear if the older APK doesn't expose drain.
+      if (typeof NativeGeo.drainPendingEvents === 'function') {
+        const res = await NativeGeo.drainPendingEvents();
+        raw = JSON.parse(res.events || '[]');
+        drained = true;
+      } else {
+        const res = await NativeGeo.getPendingEvents();
+        raw = JSON.parse(res.events || '[]');
       }
-      await NativeGeo.clearPendingEvents();
     } catch(e) {
-      console.warn('[NativeGeo] processPendingEvents error:', e);
+      console.warn('[NativeGeo] read pending events failed:', e);
+      return;
+    }
+    if (raw.length === 0) {
+      if (!drained) { try { await NativeGeo.clearPendingEvents(); } catch(_){} }
+      return;
+    }
+
+    // Collapse the replay storm before any event reaches processGeoEvent.
+    // Native geofence flutter at the boundary records repeated enter/exit
+    // pairs that would each fire ignored/debounced events — and (worse)
+    // generate an "Open app to generate invoice" notification per replayed
+    // exit. Two passes:
+    //   1. Same (site,type) within 60s → keep only the latest.
+    //   2. Opposite-type oscillation at same site within 60s → cancel both.
+    // Order is preserved otherwise so debounce timing still applies to the
+    // surviving event.
+    const BURST_MS = 60 * 1000;
+    const collapsed = [];
+    for (const ev of raw) {
+      const last = collapsed[collapsed.length - 1];
+      if (last && last.site === ev.site) {
+        const dt = _evMs(ev) - _evMs(last);
+        if (dt >= 0 && dt < BURST_MS) {
+          if (last.type === ev.type) {
+            // Same direction, same site, rapid-fire — keep newest, drop older.
+            collapsed[collapsed.length - 1] = ev;
+            continue;
+          }
+          // Opposite direction within burst window — pure flutter, drop both.
+          collapsed.pop();
+          continue;
+        }
+      }
+      collapsed.push(ev);
+    }
+
+    if (collapsed.length !== raw.length) {
+      GeoLog.add('info', 'Replay collapsed: ' + raw.length + ' raw → ' + collapsed.length + ' actionable');
+    }
+
+    console.log('[NativeGeo] Replaying', collapsed.length, 'pending events (from', raw.length, 'raw)');
+    try {
+      for (const ev of collapsed) {
+        if (_isProcessed(ev)) {
+          console.log('[NativeGeo] Skipping already-processed event:', _eventSig(ev));
+          continue;
+        }
+        try {
+          await processGeoEvent(ev);
+          _markProcessed(ev);
+        } catch(err) {
+          console.warn('[NativeGeo] event handler threw, skipping:', ev, err);
+        }
+      }
+    } finally {
+      // GUARANTEE the queue is cleared even if processing threw mid-loop.
+      // If we used drain, SharedPrefs is already empty — otherwise this is
+      // mandatory or we'd replay the same events on the next app open.
+      if (!drained) {
+        try { await NativeGeo.clearPendingEvents(); } catch(e) {
+          console.warn('[NativeGeo] clearPendingEvents failed:', e);
+        }
+      }
     }
   }
 
@@ -5884,6 +6373,14 @@ window.initApp = function() {
         GeoLog.add('ignore', 'Exit ignored — no active timer (' + ev.site + ')');
         return;
       }
+      // Timer already finished (review screen / awaiting save) — never re-stop
+      // a finished day from a replayed exit event. autoStopTimer would otherwise
+      // overwrite ad.finish with the replay timestamp.
+      if (ad.finish) {
+        console.log('[NativeGeo] EXIT ignored — timer already finished');
+        GeoLog.add('ignore', 'Exit ignored — timer already finished (' + ev.site + ')');
+        return;
+      }
       if (geoAutoStopTriggered) { GeoLog.add('ignore', 'Exit ignored — already triggered today (' + ev.site + ')'); return; }
       if (ad.site !== ev.site) {
         console.log('[NativeGeo] EXIT ignored — active site is', ad.site, 'not', ev.site);
@@ -5893,7 +6390,11 @@ window.initApp = function() {
       // Before acting on a queued EXIT, check if we're currently inside the geofence.
       // GPS flutter while the screen was off can fire a spurious EXIT even though the
       // user never actually left. If current position is inside, discard the event.
-      if (lastLat != null && lastLng != null) {
+      // BUT: only trust lastLat/lastLng if it was captured within the last 2 minutes.
+      // On resume after a long sleep, lastLat is stale (from before the user left) and
+      // would falsely report "inside" — discarding a legitimate EXIT.
+      const GPS_STALE_MS = 2 * 60 * 1000;
+      if (lastLat != null && lastLng != null && lastLatTs && (Date.now() - lastLatTs) < GPS_STALE_MS) {
         const activeSite = siteList.find(s => s.name === ev.site);
         if (activeSite && activeSite.lat) {
           const nowDist = dist(lastLat, lastLng, activeSite.lat, activeSite.lng);
@@ -5908,7 +6409,7 @@ window.initApp = function() {
       // Debounce native EXIT the same way web GPS does — don't stop instantly on boundary flutter.
       // If the exit event is older than GEO_STOP_DEBOUNCE, apply immediately (user was clearly away).
       // If recent, start a debounce timer so a quick re-enter can cancel it.
-      const evMs = ev.timestamp ? Date.parse(ev.timestamp) : 0;
+      const evMs = _evMs(ev);
       const evAge = (evMs > 0) ? (Date.now() - evMs) : 0; // treat unparseable timestamps as "just now"
       if (evAge >= GEO_STOP_DEBOUNCE) {
         // Been outside long enough — but get a fresh GPS fix to verify
@@ -5995,9 +6496,11 @@ window.initApp = function() {
       },
       function(location, error) {
         if (error) {
+          // Intentionally silent — only timer start/stop notifications are
+          // allowed. The location-permission nudge is surfaced as an in-app
+          // toast in initNativeGeo(), not a system notification.
           if (error.code === 'NOT_AUTHORIZED') {
-            nativeNotify('Location permission needed',
-              'Open app settings and allow location "All the time" for site detection.');
+            console.warn('[BGGeo fallback] Location not authorized — site detection disabled');
           }
           return;
         }
@@ -6017,15 +6520,19 @@ window.initApp = function() {
   // opens the app — which they may never do until hours later. The native
   // receiver also LocalBroadcasts each event; the plugin forwards it to JS via
   // `notifyListeners('geoEvent', ...)`, and we run the same processGeoEvent
-  // pipeline immediately. We then drain the pending queue so resume doesn't
-  // replay the same event we just processed.
+  // pipeline immediately. processPendingGeoEvents() on next resume is then a
+  // no-op because _isProcessed() short-circuits anything we already handled.
   if (NativeGeo && typeof NativeGeo.addListener === 'function') {
     try {
       NativeGeo.addListener('geoEvent', async (data) => {
         try {
           console.log('[NativeGeo] Real-time geoEvent received:', data);
+          if (_isProcessed(data)) {
+            console.log('[NativeGeo] Real-time event already processed — skipping');
+            return;
+          }
           await processGeoEvent(data);
-          try { await NativeGeo.clearPendingEvents(); } catch(_) {}
+          _markProcessed(data);
         } catch (e) {
           console.warn('[NativeGeo] Real-time geoEvent handler error:', e);
         }

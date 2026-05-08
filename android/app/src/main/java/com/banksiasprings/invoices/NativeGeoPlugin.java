@@ -246,6 +246,25 @@ public class NativeGeoPlugin extends Plugin {
     }
 
     /**
+     * Atomically read and clear pending events in one call.
+     * Eliminates the read-clear race where the receiver can append between
+     * JS's getPendingEvents() and clearPendingEvents() — which would otherwise
+     * cause those new events to be silently lost on the next clear.
+     */
+    @PluginMethod
+    public void drainPendingEvents(PluginCall call) {
+        SharedPreferences prefs = getContext().getSharedPreferences(PREFS_NAME, 0);
+        String eventsJson;
+        synchronized (NativeGeoPlugin.class) {
+            eventsJson = prefs.getString(EVENTS_KEY, "[]");
+            prefs.edit().putString(EVENTS_KEY, "[]").apply();
+        }
+        JSObject result = new JSObject();
+        result.put("events", eventsJson);
+        call.resolve(result);
+    }
+
+    /**
      * Remove all registered geofences (used when sites list changes).
      */
     @PluginMethod
