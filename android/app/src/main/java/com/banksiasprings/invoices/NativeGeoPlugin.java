@@ -2,12 +2,20 @@ package com.banksiasprings.invoices;
 
 import android.Manifest;
 import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.net.Uri;
+import android.os.Build;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.util.Log;
 
 import androidx.core.content.ContextCompat;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -52,9 +60,49 @@ public class NativeGeoPlugin extends Plugin {
     private GeofencingClient geofencingClient;
     private PendingIntent geofencePendingIntent;
 
+    // Receiver for the LOCAL broadcast sent by GeofenceBroadcastReceiver after it
+    // saves a fence transition to SharedPreferences. Forwards the event to JS in
+    // real-time so the app can react while in foreground/background — otherwise
+    // events sit unread in SharedPreferences until the next app cold open.
+    private final BroadcastReceiver localGeoReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String eventJson = intent.getStringExtra("eventJson");
+            if (eventJson == null) return;
+            try {
+                JSONObject ev = new JSONObject(eventJson);
+                JSObject data = new JSObject();
+                data.put("site", ev.optString("site"));
+                data.put("type", ev.optString("type"));
+                data.put("time", ev.optString("time"));
+                data.put("date", ev.optString("date"));
+                data.put("timestamp", ev.optLong("timestamp"));
+                notifyListeners("geoEvent", data);
+                Log.d(TAG, "Forwarded real-time geoEvent to JS: " + data.toString());
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to forward geoEvent", e);
+            }
+        }
+    };
+
     @Override
     public void load() {
         geofencingClient = LocationServices.getGeofencingClient(getActivity());
+        // Subscribe to local broadcasts emitted by GeofenceBroadcastReceiver so we
+        // can deliver events to JS as they happen (not just on next cold open).
+        LocalBroadcastManager.getInstance(getContext()).registerReceiver(
+                localGeoReceiver,
+                new IntentFilter("com.banksiasprings.invoices.GEO_EVENT"));
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        try {
+            LocalBroadcastManager.getInstance(getContext()).unregisterReceiver(localGeoReceiver);
+        } catch (Exception e) {
+            Log.w(TAG, "unregisterReceiver failed: " + e.getMessage());
+        }
+        super.handleOnDestroy();
     }
 
     /**
@@ -224,6 +272,48 @@ public class NativeGeoPlugin extends Plugin {
         geofencingClient.removeGeofences(getGeofencePendingIntent())
                 .addOnSuccessListener(v -> call.resolve())
                 .addOnFailureListener(e -> call.reject("Remove failed: " + e.getMessage()));
+    }
+
+    /**
+     * Open Android's "Ignore battery optimisation" prompt for this app.
+     * Without this, aggressive battery management (e.g. Motorola "Restricted")
+     * can defer or drop GeofencingClient transitions entirely — the very
+     * background reliability we depend on. This plugin method opens the
+     * system settings page that lets the user opt this app out of the
+     * default optimisation policy.
+     */
+    @PluginMethod
+    public void requestBatteryOptimizationExemption(PluginCall call) {
+        try {
+            Context ctx = getContext();
+            String pkg = ctx.getPackageName();
+            JSObject result = new JSObject();
+
+            // On Android 6+ (M) check the current state so JS can know whether the
+            // prompt is still needed. On older Android the optimisation framework
+            // doesn't apply — return granted so the caller skips the prompt.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
+                boolean alreadyExempt = pm != null && pm.isIgnoringBatteryOptimizations(pkg);
+                result.put("alreadyExempt", alreadyExempt);
+                if (!alreadyExempt) {
+                    Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                    intent.setData(Uri.parse("package:" + pkg));
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    ctx.startActivity(intent);
+                    result.put("opened", true);
+                } else {
+                    result.put("opened", false);
+                }
+            } else {
+                result.put("alreadyExempt", true);
+                result.put("opened", false);
+            }
+            call.resolve(result);
+        } catch (Exception e) {
+            Log.e(TAG, "requestBatteryOptimizationExemption error", e);
+            call.reject("Could not open battery optimisation settings: " + e.getMessage());
+        }
     }
 
     private PendingIntent getGeofencePendingIntent() {
