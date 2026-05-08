@@ -10,6 +10,7 @@ import android.os.Build;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.google.android.gms.location.Geofence;
 import com.google.android.gms.location.GeofencingEvent;
@@ -73,6 +74,15 @@ public class GeofenceBroadcastReceiver extends BroadcastReceiver {
                 ev.put("timestamp", now);
                 events.put(ev);
                 Log.d(TAG, "Saved geo event: " + type + " @ " + siteName + " at " + timeStr);
+
+                // Real-time delivery: send a local broadcast so NativeGeoPlugin can
+                // forward the event to JS immediately when the app process is alive
+                // (foreground or background). When the process is dead this broadcast
+                // is a no-op and the event is recovered from SharedPreferences on next
+                // app open via processPendingGeoEvents().
+                Intent localIntent = new Intent("com.banksiasprings.invoices.GEO_EVENT");
+                localIntent.putExtra("eventJson", ev.toString());
+                LocalBroadcastManager.getInstance(context).sendBroadcast(localIntent);
             }
 
             prefs.edit().putString(EVENTS_KEY, events.toString()).apply();

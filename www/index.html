@@ -1685,7 +1685,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v68';
+const APP_VERSION = 'v79';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -2688,12 +2688,20 @@ const GeoLog = {
           </div>
         </div>`;
       }).join('');
+      // Stash entries on the button via a properly HTML-escaped data-attribute.
+      // The previous version interpolated JSON.stringify(dayEntries) directly into
+      // a double-quoted onclick attribute — any embedded `"` (every key/value in
+      // the JSON has them) prematurely terminated the attribute and dumped the
+      // remainder of the handler into the visible DOM as raw text. Days with many
+      // events made this unreadable. Trim down to the fields the copy text uses.
+      const slim = dayEntries.map(e => ({ time: e.time, type: e.type, detail: e.detail }));
+      const entriesAttr = escHtml(JSON.stringify(slim));
       return `<div style="border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden">
         <div onclick="(function(btn){var c=document.getElementById('${dayId}');var open=c.style.display!=='none';c.style.display=open?'none':'block';btn.querySelector('.geo-arrow').textContent=open?'▶':'▼';})(this)" style="display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;background:var(--card);user-select:none">
           <span class="geo-arrow" style="font-size:10px;color:var(--text2);width:12px">${isOpen?'▼':'▶'}</span>
           <span style="font-weight:700;font-size:13px;flex:1">${date}${errBadge}</span>
           <span style="font-size:11px;color:var(--text2);margin-right:4px">${dayEntries.length} event${dayEntries.length!==1?'s':''}</span>
-          <button onclick="event.stopPropagation();(function(){var txt='=== GEO LOG ${date} ===\\n'+${JSON.stringify(dayEntries)}.map(function(e){return e.time+' '+e.type.toUpperCase()+': '+e.detail;}).join('\\n');navigator.clipboard.writeText(txt).then(function(){var b=event.target;var orig=b.textContent;b.textContent='Copied!';setTimeout(function(){b.textContent=orig;},1500);}).catch(function(){});})();" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer">Copy</button>
+          <button data-entries="${entriesAttr}" data-date="${date}" onclick="event.stopPropagation();(function(b){try{var arr=JSON.parse(b.dataset.entries);var txt='=== GEO LOG '+b.dataset.date+' ===\\n'+arr.map(function(e){return e.time+' '+(e.type||'').toUpperCase()+': '+e.detail;}).join('\\n');navigator.clipboard.writeText(txt).then(function(){var orig=b.textContent;b.textContent='Copied!';setTimeout(function(){b.textContent=orig;},1500);}).catch(function(){});}catch(err){console.warn('GeoLog copy failed',err);}})(this)" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer">Copy</button>
         </div>
         <div id="${dayId}" style="display:${isOpen?'block':'none'};padding:0 12px 4px">
           ${rows}
@@ -2822,10 +2830,18 @@ function checkNearbySites(lat,lng){
               // Get a FRESH GPS fix before stopping — lastLat may be the same stale
               // "outside" reading that started the debounce (screen off = no updates)
               function doStop(){
-                geoAutoStopTriggered=true;
-                geoAutoStopDate=todayStr();
+                // Set the day-flag only AFTER autoStopTimer actually wrote a finish.
+                // A false GPS blip used to set this flag without truly stopping, then
+                // the real later EXIT was blocked by the already-set flag.
                 GeoLog.add('exit','[Web GPS] Left geofence: '+(_ad?_ad.site:'?'));
                 autoStopTimer();
+                const _post=activeDay();
+                if(_post&&_post.finish){
+                  geoAutoStopTriggered=true;
+                  geoAutoStopDate=todayStr();
+                } else {
+                  GeoLog.add('ignore','[Web GPS] autoStopTimer ran but no finish recorded; flag NOT set');
+                }
               }
               if(_site&&_site.lat){
                 navigator.geolocation.getCurrentPosition(pos=>{
@@ -5799,6 +5815,11 @@ window.initApp = function() {
     } catch(e) {
       console.warn('[NativeGeo] Geofence registration error:', e);
     }
+
+    // Prompt the user (once) to whitelist this app from battery optimisation —
+    // the dialog is fired AFTER the location flow so we don't double-prompt at
+    // first launch. Internal guard ensures it only ever shows once.
+    try { maybePromptBatteryOptimisation(); } catch(_) {}
   }
 
   // Re-register geofences whenever the user saves/edits sites (the app calls
@@ -5906,9 +5927,18 @@ window.initApp = function() {
             return;
           }
         }
-        geoAutoStopTriggered = true;
-        geoAutoStopDate = todayStr();
+        // Only mark "stop already triggered today" AFTER autoStopTimer actually ran
+        // and the day record now has a finish time. A false GPS blip slipped past the
+        // proximity gate once and set the flag without truly stopping the timer,
+        // blocking the real later departure.
         autoStopTimer(ev.time);
+        const _post = activeDay();
+        if (_post && _post.finish) {
+          geoAutoStopTriggered = true;
+          geoAutoStopDate = todayStr();
+        } else {
+          GeoLog.add('ignore', 'Native EXIT — autoStopTimer ran but no finish recorded; flag NOT set');
+        }
       } else {
         // Recent exit — debounce before stopping
         const delay = GEO_STOP_DEBOUNCE - evAge;
@@ -5921,9 +5951,15 @@ window.initApp = function() {
             if (hour >= 5 && hour < 21 && activeDay() && !geoAutoStopTriggered) {
               const _ad=activeDay(), _site=(typeof sites==='function'?sites():[]).find(s=>s.name===_ad.site);
               function _doNativeStop(){
-                geoAutoStopTriggered = true;
-                geoAutoStopDate = todayStr();
+                // Same scope fix as above: set flag only after autoStopTimer succeeded.
                 autoStopTimer();
+                const _post = activeDay();
+                if (_post && _post.finish) {
+                  geoAutoStopTriggered = true;
+                  geoAutoStopDate = todayStr();
+                } else {
+                  GeoLog.add('ignore','[Native] Debounce stop ran but no finish recorded; flag NOT set');
+                }
               }
               if(_site&&_site.lat){
                 navigator.geolocation.getCurrentPosition(pos=>{
@@ -5976,11 +6012,71 @@ window.initApp = function() {
     }).catch(e => console.warn('[BGGeo fallback] Failed:', e));
   }
 
+  // ── Real-time geofence event listener ───────────────────────────────────────
+  // Without this, EXIT events sit in SharedPreferences until the user next
+  // opens the app — which they may never do until hours later. The native
+  // receiver also LocalBroadcasts each event; the plugin forwards it to JS via
+  // `notifyListeners('geoEvent', ...)`, and we run the same processGeoEvent
+  // pipeline immediately. We then drain the pending queue so resume doesn't
+  // replay the same event we just processed.
+  if (NativeGeo && typeof NativeGeo.addListener === 'function') {
+    try {
+      NativeGeo.addListener('geoEvent', async (data) => {
+        try {
+          console.log('[NativeGeo] Real-time geoEvent received:', data);
+          await processGeoEvent(data);
+          try { await NativeGeo.clearPendingEvents(); } catch(_) {}
+        } catch (e) {
+          console.warn('[NativeGeo] Real-time geoEvent handler error:', e);
+        }
+      });
+      console.log('[NativeGeo] Real-time geoEvent listener registered');
+    } catch (e) {
+      console.warn('[NativeGeo] Failed to register geoEvent listener:', e);
+    }
+  }
+
+  // ── Battery optimisation prompt ─────────────────────────────────────────────
+  // Aggressive battery management (e.g. Motorola "Restricted") silently drops
+  // background GeofencingClient transitions. Prompt the user once to opt this
+  // app out of the default optimisation policy. Stored in localStorage so we
+  // don't nag — user can re-enable later via Settings if they ever change phone.
+  async function maybePromptBatteryOptimisation() {
+    try {
+      if (!NativeGeo || typeof NativeGeo.requestBatteryOptimizationExemption !== 'function') return;
+      if (DB.get('batteryPromptShown')) return;
+      DB.set('batteryPromptShown', true);
+      // Small delay so the location-permission dialog has fully cleared.
+      setTimeout(() => {
+        const ok = confirm(
+          'Enable reliable location tracking\n\n' +
+          'To automatically start and stop your timer when you arrive and leave site, ' +
+          'this app needs unrestricted battery access.\n\n' +
+          'Tap OK to open battery settings.'
+        );
+        if (ok) {
+          try {
+            NativeGeo.requestBatteryOptimizationExemption()
+              .then(r => { GeoLog.add('info', 'Battery optimisation prompt: ' + JSON.stringify(r)); })
+              .catch(e => { GeoLog.add('error', 'Battery optimisation prompt failed: ' + (e && e.message || e)); });
+          } catch (e) {
+            GeoLog.add('error', 'Battery optimisation call threw: ' + e.message);
+          }
+        } else {
+          GeoLog.add('info', 'Battery optimisation prompt dismissed by user');
+        }
+      }, 1500);
+    } catch (e) {
+      console.warn('[NativeGeo] maybePromptBatteryOptimisation error:', e);
+    }
+  }
+
   // ── Wire up ─────────────────────────────────────────────────────────────────
   // initNativeGeo is called by initApp() after the UI is visible (with a 1.5s delay)
   // rather than on DOMContentLoaded — this prevents the permission dialog from
   // appearing while the loading screen is up and potentially locking the WebView.
   window.initNativeGeo = initNativeGeo;
+  window.maybePromptBatteryOptimisation = maybePromptBatteryOptimisation;
   document.addEventListener('resume', function() {
     // Only reset geo flags on a NEW calendar day — not on every app resume.
     // Resetting on every resume caused repeated auto-start/stop when the user
