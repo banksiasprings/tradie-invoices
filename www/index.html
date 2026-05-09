@@ -1736,7 +1736,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v79';
+const APP_VERSION = 'v80';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -6326,7 +6326,10 @@ window.initApp = function() {
           await processGeoEvent(ev);
           _markProcessed(ev);
         } catch(err) {
+          // Surface to GeoLog — without this the v54 siteList ReferenceError
+          // crashed every EXIT silently for a week, blocking auto-start.
           console.warn('[NativeGeo] event handler threw, skipping:', ev, err);
+          try { GeoLog.add('error', 'processGeoEvent crashed for ' + (ev.type||'?') + ' ' + (ev.site||'?') + ' at ' + (ev.time||'?') + ': ' + (err && err.message || err)); } catch(_){}
         }
       }
     } finally {
@@ -6348,6 +6351,12 @@ window.initApp = function() {
     GeoLog.add(ev.type, (ev.type==='enter'?'Arrived at ':'Left ') + ev.site + ' at ' + (ev.time||'?') + (outOfHours?' [outside hours — ignored]':''));
     if (outOfHours) return; // outside working hours
 
+    // Hoisted to function scope — both ENTER and EXIT branches reference siteList.
+    // Was previously declared only inside the ENTER block, so every EXIT event
+    // threw a silent ReferenceError, leaving the timer running and activeDay set.
+    // That blocked the next day's auto-start ("Enter ignored — timer already running").
+    const siteList = (typeof sites === 'function') ? sites() : [];
+
     if (ev.type === 'enter') {
       // Only auto-start if there's no active day already
       if (activeDay()) {
@@ -6356,7 +6365,6 @@ window.initApp = function() {
         return;
       }
       if (geoAutoStartTriggered) { GeoLog.add('ignore', 'Enter ignored — already triggered today (' + ev.site + ')'); return; }
-      const siteList = (typeof sites === 'function') ? sites() : [];
       const site = siteList.find(s => s.name === ev.site);
       if (!site) {
         console.warn('[NativeGeo] Site not found for enter event:', ev.site);
