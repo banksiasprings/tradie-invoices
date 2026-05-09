@@ -1736,7 +1736,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v79';
+const APP_VERSION = 'v81';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -2799,11 +2799,14 @@ function updateGeoStatusBar(state,text){
 }
 
 // Start background poll — fires getCurrentPosition every 90s as fallback
-// for when watchPosition goes quiet with screen off
+// for when watchPosition goes quiet with screen off.
+// Runs whether or not a timer is active: pre-start it lets the Web GPS
+// auto-start fallback fire when the user opens the app at a job site and
+// the native GeofencingClient hasn't (or won't) deliver an ENTER. Post-start
+// it provides exit detection if watchPosition stalls.
 function startBgPoll(){
   if(bgPollInterval) return;
   bgPollInterval=setInterval(()=>{
-    if(!activeDay()) return;
     navigator.geolocation.getCurrentPosition(pos=>{
       lastLat=pos.coords.latitude; lastLng=pos.coords.longitude; lastLatTs=Date.now();
       checkNearbySites(lastLat,lastLng,pos.coords.accuracy);
@@ -2875,8 +2878,17 @@ function checkNearbySites(lat,lng,accuracy){
     no.style.display=activeDay()?'none':'block';
   }
 
-  // Geofence auto-start (Web GPS path only — NativeGeo handles native)
-  if(!isNative&&accOk&&nearestGeo&&!activeDay()&&!geoAutoStartTriggered){
+  // Geofence auto-start — Web GPS now also runs on native as a fallback.
+  // Native ENTER (GeofencingClient) is canonical when the app is dead, but it
+  // doesn't always fire while the app is foreground: the geofence may already
+  // be registered from a prior session (no INITIAL_TRIGGER), the Android
+  // OS may delay/drop the transition, or LocalBroadcast may not reach a
+  // paused WebView. Without a Web GPS fallback the user opens the app at
+  // site, sees "GPS actively tracking" — and waits forever for the timer.
+  // Both paths share geoAutoStartTriggered + activeDay() guards, so whichever
+  // fires first wins and the other no-ops. The native path's processGeoEvent
+  // ENTER branch checks both guards before calling autoStartTimer.
+  if(accOk&&nearestGeo&&!activeDay()&&!geoAutoStartTriggered){
     const h=new Date().getHours();
     if(h>=5&&h<21){ // 5am–9pm only
       geoAutoStartTriggered=true;
@@ -3096,6 +3108,12 @@ function initCheckinScreen(){
   if(ad && ad.finish) showReview(ad);
   else if(ad) showActiveTimer(ad);
   startGPS();
+  // Pre-start the 90s background poll so the Web GPS auto-start fallback
+  // keeps getting fixes even if watchPosition stalls (Android WebView often
+  // throttles watchPosition while the screen is on but idle). Without this,
+  // a user opening the app at site sees "GPS actively tracking" but no
+  // checkNearbySites fires until they tap or move.
+  startBgPoll();
   requestNotificationPermission();
 }
 
@@ -6326,7 +6344,10 @@ window.initApp = function() {
           await processGeoEvent(ev);
           _markProcessed(ev);
         } catch(err) {
+          // Surface to GeoLog — without this the v54 siteList ReferenceError
+          // crashed every EXIT silently for a week, blocking auto-start.
           console.warn('[NativeGeo] event handler threw, skipping:', ev, err);
+          try { GeoLog.add('error', 'processGeoEvent crashed for ' + (ev.type||'?') + ' ' + (ev.site||'?') + ' at ' + (ev.time||'?') + ': ' + (err && err.message || err)); } catch(_){}
         }
       }
     } finally {
@@ -6348,6 +6369,12 @@ window.initApp = function() {
     GeoLog.add(ev.type, (ev.type==='enter'?'Arrived at ':'Left ') + ev.site + ' at ' + (ev.time||'?') + (outOfHours?' [outside hours — ignored]':''));
     if (outOfHours) return; // outside working hours
 
+    // Hoisted to function scope — both ENTER and EXIT branches reference siteList.
+    // Was previously declared only inside the ENTER block, so every EXIT event
+    // threw a silent ReferenceError, leaving the timer running and activeDay set.
+    // That blocked the next day's auto-start ("Enter ignored — timer already running").
+    const siteList = (typeof sites === 'function') ? sites() : [];
+
     if (ev.type === 'enter') {
       // Only auto-start if there's no active day already
       if (activeDay()) {
@@ -6356,7 +6383,6 @@ window.initApp = function() {
         return;
       }
       if (geoAutoStartTriggered) { GeoLog.add('ignore', 'Enter ignored — already triggered today (' + ev.site + ')'); return; }
-      const siteList = (typeof sites === 'function') ? sites() : [];
       const site = siteList.find(s => s.name === ev.site);
       if (!site) {
         console.warn('[NativeGeo] Site not found for enter event:', ev.site);
