@@ -4,9 +4,25 @@ Full review of `www/index.html` (~6800 lines) across correctness, data integrity
 prompted by Steven's request to "test everything thoroughly… and review anything that could
 be improved." Two independent review passes (correctness + UX) plus live on-device geo testing.
 
-**Already fixed this session (v83):**
-- ✅ **Log entries can now have their DATE edited** (was time-only). [U1]
-- ✅ **Edit now rejects finish-before-start** instead of silently saving a $0 day. [C3, partial]
+**RESOLVED (v83–v85) — most of this review is now shipped:**
+- ✅ **U1** date editable on log entries (v83) · ✅ **C3** finish-after-start guard on log edit (v83) + active edit (v85)
+- ✅ **OTA-405** fixed — app-driven updater, verified over-the-air on device (v84)
+- ✅ **C1** auto-stop survives app kill via persisted pending-stop (v84)
+- ✅ **C2** invoice send awaits delivery + confirms before archiving/rate-bump (v84)
+- ✅ **U2** editable site on log edit · ✅ **U5** machines in Manual Entry · ✅ **U6** +New Job on Manual Entry (v85)
+- ✅ **C4** discard re-arms the geofence · ✅ **C5** delete invoice by id not number (v85)
+
+**Still open (lower priority / needs Steven's input):**
+- ⚪ **C6** Stats "total invoiced" excludes GST when GST on — needs intent decision (ex- vs inc-GST).
+- ⚪ **C7** re-entrant double-stop race on old-exit path (largely mitigated by existing guards).
+- ⚪ **C8** a startup settings-migration write can lose to older cloud data on first restore (self-heals).
+- ⚪ **U7** Manual-entry "Notes" are write-only (not shown in Log / editable / on invoice).
+- ⚪ **U8** invoice Preview doesn't refresh after changing the day selection.
+- ⚠ **Data:** the 2026-06-09 duplicate day (invoiced 08:30–17:30 vs uninvoiced 08:00–17:00) — Steven's call.
+
+---
+
+*Original review detail below (kept for reference).*
 
 **Live-verified on Steven's phone (v82):** auto-start on accurate GPS inside fence, auto-stop on
 accurate GPS outside fence (5.25h recorded correctly, log shows `acc · distance`), accuracy gate

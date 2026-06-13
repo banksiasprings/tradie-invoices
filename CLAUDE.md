@@ -22,10 +22,10 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v82 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v85 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.82.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.85.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
 
 **Single source of truth: `APP_VERSION` in `www/index.html`.** Just bump that — the GitHub Pages deploy workflow (`.github/workflows/deploy.yml`) rewrites the other two automatically:
 
@@ -212,20 +212,15 @@ zip -r ../updates/bundle.zip tradie-app/
 
 **WARNING — never use `zip -r bundle.zip www/`.** That puts `index.html` at `www/index.html` inside the zip; Capgo silently fails to find it and the OTA update never applies. The `-j` (junk paths) flag on the first command strips the directory prefix; the second command preserves the `tradie-app/` subdirectory because its relative paths matter.
 
-**⚠️ OTA IS CURRENTLY BROKEN (discovered 2026-06-13) — JS changes need an APK install until fixed.**
-`@capgo/capacitor-updater@8.45.3` **POSTs** to the update manifest, but GitHub Pages is static
-(GET-only) and returns **HTTP 405** on every check (`getLatest failed … Server error: 405` →
-`downloadFailed`, both auto and manual paths). So no bundle past the builtin ever downloads. The
-device CAN fetch `latest.json` via GET (verified HTTP 200) — only Capgo's own POST fails.
-**Until fixed, ship JS via a new APK** (`adb install -r` over wireless works cleanly now that the
-SW is network-first — the APK's builtin assets load without cache-clearing).
-**Fix options (queued, high priority):** (A) set `autoUpdate:false` and drive updates from app JS —
-GET `latest.json`, compare semver vs `CapacitorUpdater.current()`, then `download({url,checksum,version})`
-→ `set()` → reload (bundle.zip is a GET, so it works); (B) host the manifest on something that
-accepts POST in Capgo's expected schema (e.g. a Firebase Function); (C) pin a Capgo version that
-GETs a static manifest. Option A keeps it single-file and infra-free.
-
-Once OTA is fixed: do NOT need to rebuild the APK for web-only changes — OTA handles it.
+**✅ OTA WORKS as of v84 (app-driven updater) — verified v84→v85 over the air on device.**
+Capgo's *own* auto-update POSTs to the manifest and 405s on static GitHub Pages (see v84 bug
+below). So `autoUpdate` is OFF and the app drives updates itself via `otaCheck()` (in
+www/index.html): on each cold launch it GETs `latest.json` (works), semver-compares vs
+`CapacitorUpdater.current()`, and if newer calls `download({url,checksum,version})` → `set()` →
+reload. The Settings "Check for Update" button calls the same `otaCheck(false)`. `notifyAppReady()`
+on every load preserves Capgo's crash-rollback. So again: **do NOT rebuild the APK for web-only
+changes — bump APP_VERSION, push, and devices pull it on next launch.** Rebuild the APK only for
+native (Java) changes or a `capacitor.config.json` change.
 
 **⚠ Three things must agree on the version or a device gets stuck (see v82 bug below):**
 1. `www/sw.js` serves the app shell **network-first** — never revert to cache-first for HTML,
@@ -419,6 +414,24 @@ signed-in app session — test manually, or read the GeoLog (Settings → Geo Di
 ---
 
 ## Known Bugs Fixed (Don't Reintroduce)
+
+### Capgo OTA 405 — auto-update POSTs to a static host [FIXED v84]
+`@capgo/capacitor-updater@8.45.3`'s `autoUpdate` POSTs to the update manifest; static GitHub
+Pages returns HTTP 405, so it silently never downloaded past the builtin. **Fix:** `autoUpdate:false`
++ app-driven `otaCheck()` that GETs the manifest, semver-compares, then `download()/set()/reload()`.
+Verified v84→v85 over the air on the emulator AND Steven's phone. **Don't reintroduce** `autoUpdate:true`
+(it'll resume 405-ing and the silent failure looks identical to "no update available").
+
+### Geofence/invoice batch [FIXED v84–v85] — see www/AUDIT-review-2026-06-13.md
+- **C1 (v84):** native EXIT debounce was marked processed before its in-memory 5-min timer fired →
+  an app-kill lost the auto-stop, day ran forever. Now persists `mcn_pendingStop`; `recoverPendingStop()`
+  (run on every cold open/resume) applies a missed stop. Don't mark a debounced stop processed early.
+- **C2 (v84):** `generateInvoice` archived days + bumped rate without awaiting the PDF/share → phantom
+  invoices on failure/cancel. Now: confirm (states the rate rise), `await generatePDF` (returns a
+  delivered flag), gate all side-effects on success, await the IndexedDB save. Keep it awaited.
+- **U2/U5/U6 + C3/C4/C5 (v85):** editable site on log edit; machines in Manual Entry; "+New Job" on
+  Manual Entry; finish-after-start guard in `saveEdit`; discard re-arms the geofence; delete invoice
+  by `id` not `num`.
 
 ### "Stuck on an old version" — three-layer cache trap [FIXED v82]
 Steven's phone ran **v79 JS for over a month** while APKs and OTA bundles for v80/v81
