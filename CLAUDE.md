@@ -22,9 +22,10 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v81 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v82 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.82.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
 
 **Single source of truth: `APP_VERSION` in `www/index.html`.** Just bump that — the GitHub Pages deploy workflow (`.github/workflows/deploy.yml`) rewrites the other two automatically:
 
@@ -213,6 +214,18 @@ zip -r ../updates/bundle.zip tradie-app/
 
 Do NOT need to rebuild the APK for web-only changes — OTA handles it.
 
+**⚠ Three things must agree on the version or a device gets stuck (see v82 bug below):**
+1. `www/sw.js` serves the app shell **network-first** — never revert to cache-first for HTML,
+   or new code can't load over a cached shell.
+2. `capacitor.config.json` → `CapacitorUpdater.resetWhenUpdate: true` (APK install wins).
+3. `capacitor.config.json` → `CapacitorUpdater.version` must equal `1.<APP_VERSION>.0` at
+   build time, so Capgo's builtin isn't seen as older than a stale download. Bump it with
+   APP_VERSION when you cut an APK. When pushing an OTA-only update, also bump it next APK.
+
+When shipping a paired native+JS change: push to Pages FIRST (so OTA latest == the new
+version), THEN distribute the APK — otherwise autoUpdate re-pulls the older deployed bundle
+over the freshly-installed APK.
+
 ---
 
 ## Data Model
@@ -393,6 +406,29 @@ signed-in app session — test manually, or read the GeoLog (Settings → Geo Di
 ---
 
 ## Known Bugs Fixed (Don't Reintroduce)
+
+### "Stuck on an old version" — three-layer cache trap [FIXED v82]
+Steven's phone ran **v79 JS for over a month** while APKs and OTA bundles for v80/v81
+were installed — none took effect. Root cause was THREE stacked stale-serving layers:
+1. **Service worker served `index.html` cache-first.** Once v79's HTML was cached, every
+   launch returned it before any newer code could load. Worse, the cached shell referenced
+   an unchanged `sw.js`, so no new SW ever installed to break the loop. **Fix:** the SW now
+   serves the app shell (HTML/navigation) **network-first** (fresh code when online, cached
+   fallback offline); static assets stay cache-first. This is the load-bearing fix.
+2. **Capgo `resetWhenUpdate: false`** — installing a new APK did NOT reset Capgo to the
+   APK's bundled web assets, so a previously-downloaded OTA bundle kept winning. **Fix:**
+   `resetWhenUpdate: true` in capacitor.config.json — APK install now wins.
+3. **Capgo builtin `version: "1.0.0"`** — Capgo thought every downloaded bundle (e.g.
+   1.79.0) was newer than the builtin, so it always preferred the download. **Fix:** builtin
+   `version` now tracks the release (1.<N>.0). **KEEP IT IN STEP WITH APP_VERSION on every
+   APK release** or this returns (the deploy workflow does NOT manage this field).
+**Forcing a stuck device to update (field recovery):** connect via wireless adb, open the
+WebView via Chrome DevTools Protocol (`adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>`),
+and run `navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister()))` +
+`caches.keys().then(ks=>ks.forEach(k=>caches.delete(k)))`, then reload. Ensure Pages/OTA is
+already on the target version first, or autoUpdate re-pulls the older deployed bundle.
+**Don't reintroduce:** cache-first for HTML/navigations; `resetWhenUpdate:false`; a hardcoded
+builtin `version` that lags APP_VERSION.
 
 ### Geo reliability batch [FIXED v81] — see www/AUDIT-geo-reliability-v81.md
 Five root causes behind "random notifications / fake GPS / inconsistent start-stop":

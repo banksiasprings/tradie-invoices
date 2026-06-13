@@ -1,5 +1,5 @@
 
-const CACHE = 'invoice-pdf-v79';
+const CACHE = 'invoice-pdf-v82';
 // Resources that must survive a fresh SW install so the app can boot offline.
 // Anything fetched at runtime gets cached by the fetch handler too, but that
 // only helps if the user happens to be online when it's first requested.
@@ -58,7 +58,33 @@ self.addEventListener('fetch', e => {
   // Firestore, auth, and OTA URLs always hit the network — caching them
   // either serves stale data across users or pins old OTA versions forever.
   if (NEVER_CACHE.some(p => req.url.includes(p))) return;
-  // Cache-first for everything else (app shell, fonts, icons).
+
+  // NETWORK-FIRST for the app shell (HTML / top-level navigation). This is the
+  // fix for the v79 "stuck on old version" trap: cache-first HTML pinned the
+  // old app code forever — a new index.html (from OTA or a fresh APK) could
+  // never load while the old SW was active, and because the cached shell
+  // referenced an unchanged sw.js, no new SW ever installed to break the loop.
+  // Now: when online, always fetch fresh HTML (code updates land immediately);
+  // when offline, fall back to the cached shell so launch still works.
+  let isShell = false;
+  try {
+    isShell = req.mode === 'navigate' || req.destination === 'document'
+      || /\/(index\.html)?$/.test(new URL(req.url).pathname);
+  } catch (_) {}
+  if (isShell) {
+    e.respondWith(
+      fetch(req).then(response => {
+        if (response && response.status === 200 && response.type !== 'opaque') {
+          const clone = response.clone();
+          caches.open(CACHE).then(cache => cache.put(req, clone));
+        }
+        return response;
+      }).catch(() => caches.match(req).then(c => c || caches.match('./index.html')))
+    );
+    return;
+  }
+
+  // Cache-first for everything else (fonts, icons, libs) — speed + offline.
   e.respondWith(
     caches.match(req).then(cached =>
       cached || fetch(req).then(response => {

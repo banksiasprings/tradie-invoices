@@ -60,3 +60,6 @@ coverage/
 # Misc
 .env.production.local
 .pem
+
+# Graphify code-graph artifacts (local only)
+graphify-out/
