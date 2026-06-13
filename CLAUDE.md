@@ -212,7 +212,20 @@ zip -r ../updates/bundle.zip tradie-app/
 
 **WARNING — never use `zip -r bundle.zip www/`.** That puts `index.html` at `www/index.html` inside the zip; Capgo silently fails to find it and the OTA update never applies. The `-j` (junk paths) flag on the first command strips the directory prefix; the second command preserves the `tradie-app/` subdirectory because its relative paths matter.
 
-Do NOT need to rebuild the APK for web-only changes — OTA handles it.
+**⚠️ OTA IS CURRENTLY BROKEN (discovered 2026-06-13) — JS changes need an APK install until fixed.**
+`@capgo/capacitor-updater@8.45.3` **POSTs** to the update manifest, but GitHub Pages is static
+(GET-only) and returns **HTTP 405** on every check (`getLatest failed … Server error: 405` →
+`downloadFailed`, both auto and manual paths). So no bundle past the builtin ever downloads. The
+device CAN fetch `latest.json` via GET (verified HTTP 200) — only Capgo's own POST fails.
+**Until fixed, ship JS via a new APK** (`adb install -r` over wireless works cleanly now that the
+SW is network-first — the APK's builtin assets load without cache-clearing).
+**Fix options (queued, high priority):** (A) set `autoUpdate:false` and drive updates from app JS —
+GET `latest.json`, compare semver vs `CapacitorUpdater.current()`, then `download({url,checksum,version})`
+→ `set()` → reload (bundle.zip is a GET, so it works); (B) host the manifest on something that
+accepts POST in Capgo's expected schema (e.g. a Firebase Function); (C) pin a Capgo version that
+GETs a static manifest. Option A keeps it single-file and infra-free.
+
+Once OTA is fixed: do NOT need to rebuild the APK for web-only changes — OTA handles it.
 
 **⚠ Three things must agree on the version or a device gets stuck (see v82 bug below):**
 1. `www/sw.js` serves the app shell **network-first** — never revert to cache-first for HTML,
