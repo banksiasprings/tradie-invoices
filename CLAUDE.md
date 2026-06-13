@@ -316,7 +316,7 @@ Each tab is a `<div class="screen">` shown/hidden by `showScreen(id)`.
 - **Package:** `com.banksiasprings.invoices`
 - **Capacitor version:** 8.x
 - **Min SDK:** Android 8.0 (API 26)
-- **Target SDK:** Android 14 (API 34)
+- **Target SDK:** Android 16 (API 36) — set in `android/variables.gradle` (clears Play's API 35 floor)
 - **Signing keystore:** `~/Documents/mcnichol-invoices/mcnichol-release.keystore`
   - Password: stored in `keystore.properties` (gitignored)
   - Alias: `mcnichol-key`
@@ -573,7 +573,7 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ## Play Store
 
 - **Package name:** `com.banksiasprings.invoices`
-- **Signed AAB versionCode 2 / v1.1:** `android/build/android/app/outputs/bundle/release/app-release.aab`
+- **Signed AAB — current versionCode 3 / v1.2** (build.gradle): `android/app/build/outputs/bundle/release/app-release.aab` via `bash run_gradle_release.sh`. Bump versionCode every release. Store readiness checklist: `STORE-READINESS.md`.
 - **Play Store icon 512px:** `play-store-assets/icon-512-playstore.png`
 - **Feature graphic 1024×500:** `play-store-assets/feature-graphic-1024x500.png`
 - **Store listing:** `play-store-listing.md`
@@ -581,9 +581,18 @@ look for `REJECTED` entries in the mirrored GeoLog.
 
 ---
 
+## Built & shipped (was "future")
+- **Employee timesheets** — SHIPPED and verified end-to-end (2026-06-14): boss `generateBusinessCode()`
+  → employee (tradeType `employee`) `linkToEmployer(code)` writes profile+days to the boss's
+  `employeeHours` subcollection → boss `fetchTeam()` reads them. Firestore rules gate the cross-user
+  write/read. NOTE for Play: this crosses a user-data boundary — frame the store submission as *self*
+  time-tracking, and keep the Data-safety form's "sharing" section accurate.
+- **Xero integration** — feasibility done, plan in `XERO-INTEGRATION-PLAN.md` (needs Firebase Blaze +
+  a Xero dev app; ~2-4 days; not started — awaiting Steven's go).
+
 ## Future Plans (Don't Build These Without Being Asked)
 
-- **Employee timesheets** — employees on own phones, hours sync to owner's invoice
+- **Xero invoice push** — see XERO-INTEGRATION-PLAN.md (don't start without Steven's go + Blaze upgrade)
 - **Xero integration** — push invoices to Xero
 - **Geo flag persistence** — FIX-3 and FIX-4 above
 - **Background event UX** — toast on app open showing what was detected in background

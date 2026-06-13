@@ -1086,6 +1086,20 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
 <!-- Backup warning: shows when the app is running on cached data but the cloud
      session is dead (signed out) so saves aren't syncing. Tap to sign back in. -->
 <div id="backup-warning" onclick="showLoginForReauth()" style="display:none;position:sticky;top:0;z-index:500;background:#C1583A;color:#fff;font-size:13px;font-weight:700;text-align:center;padding:9px 12px;cursor:pointer">⚠ Not backing up to cloud — tap to sign in</div>
+<!-- Google Play prominent-disclosure for background location: shown IN-APP before
+     the OS permission prompt, naming the feature, with a real decline option.
+     Required for Play approval of ACCESS_BACKGROUND_LOCATION. -->
+<div id="bg-loc-disclosure" style="display:none;position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:24px">
+  <div style="background:var(--surface);color:var(--text);border-radius:16px;max-width:420px;width:100%;padding:24px;box-shadow:0 12px 48px rgba(0,0,0,.35)">
+    <div style="font-size:18px;font-weight:800;margin-bottom:12px">📍 Auto start/stop your work timer?</div>
+    <div style="font-size:14px;line-height:1.55;color:var(--text2);margin-bottom:18px">
+      Invoice &amp; PDF can use your location <strong>in the background — even when the app is closed</strong> — to automatically start and stop your work timer when you arrive at or leave a saved job site, so your billable hours are captured without tapping anything.<br><br>
+      This is only for your own time tracking. Your location is <strong>never used for ads and never shared</strong>. You can skip this and start/stop the timer yourself — the app works fine either way.
+    </div>
+    <button onclick="window._resolveBgLocDisclosure&&window._resolveBgLocDisclosure(true)" class="btn btn-primary" style="width:100%;margin-bottom:8px">Turn on auto-timer</button>
+    <button onclick="window._resolveBgLocDisclosure&&window._resolveBgLocDisclosure(false)" class="btn btn-secondary" style="width:100%">Not now</button>
+  </div>
+</div>
 <!-- CHECKIN SCREEN -->
 <div id="screen-checkin" class="screen active">
   <div class="header">
@@ -1828,7 +1842,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v87';
+const APP_VERSION = 'v88';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -6464,11 +6478,34 @@ window.initApp = function() {
   // them the next time the app opens or comes to the foreground.
   // ────────────────────────────────────────────────────────────────────────────
 
+  // Play-compliant prominent disclosure — resolves true (accept) / false (decline).
+  function showLocationDisclosure(){
+    return new Promise(resolve=>{
+      const el=document.getElementById('bg-loc-disclosure');
+      if(!el){ resolve(true); return; }
+      window._resolveBgLocDisclosure=function(ok){ el.style.display='none'; window._resolveBgLocDisclosure=null; resolve(!!ok); };
+      el.style.display='flex';
+    });
+  }
+
   async function initNativeGeo() {
     if (!NativeGeo) {
       console.warn('[NativeGeo] Plugin not found — falling back to BackgroundGeolocation');
       initBackgroundGeoFallback();
       return;
+    }
+
+    // Step 0 (Play requirement): show the in-app prominent disclosure BEFORE the OS
+    // permission prompt. Only once — accepted/declined is remembered. If declined,
+    // we never request location; the app runs in manual check-in mode.
+    const _disc = DB.get('bgLocDisclosed');
+    if (_disc !== 'accepted') {
+      const accepted = await showLocationDisclosure();
+      DB.set('bgLocDisclosed', accepted ? 'accepted' : 'declined');
+      if (!accepted) {
+        GeoLog.add('info', 'Background location declined — auto-timer off (manual check-in still works)');
+        return;
+      }
     }
 
     // Step 1: Request permissions — foreground first, then background ("Allow all the time").
