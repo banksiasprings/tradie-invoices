@@ -34,12 +34,15 @@
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
 
-        <!-- Restart background geolocation after device reboot -->
+        <!-- Re-register geofences after reboot AND app update — Android drops
+             them in both cases. MY_PACKAGE_REPLACED also gives the emulator
+             test harness a permission-free trigger (adb install -r fires it). -->
         <receiver
             android:name=".BootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 

@@ -5,17 +5,21 @@ import android.content.Context;
 import android.content.Intent;
 
 /**
- * Restarts the app's main activity after the device reboots.
- * This ensures background geolocation monitoring resumes automatically.
- * Declared in AndroidManifest.xml with BOOT_COMPLETED intent filter.
+ * Re-registers all geofences after the device reboots OR the app is updated —
+ * Android drops them in both cases. Declared in AndroidManifest.xml with
+ * BOOT_COMPLETED + MY_PACKAGE_REPLACED intent filters.
+ *
+ * The pre-v81 version tried to launch MainActivity instead — Android 10+
+ * blocks background activity starts, so it silently did nothing and geofences
+ * stayed dead until the user next opened the app.
  */
 public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
-            Intent launch = new Intent(context, MainActivity.class);
-            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            context.startActivity(launch);
+        String action = intent.getAction();
+        if (Intent.ACTION_BOOT_COMPLETED.equals(action)
+                || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
+            GeoRegistrar.registerFromPrefs(context);
         }
     }
 }

@@ -688,6 +688,42 @@ const CloudSync = {
 // Expose CloudSync globally so inline scripts can call pushAll()
 window.CloudSync = CloudSync;
 
+// == GeoLogMirror: best-effort copy of the GeoLog to Firestore ===============
+// Why: the GeoLog is the only field-debugging tool, but it lives in
+// localStorage on the phone — useless without the phone in hand. Mirroring
+// each day's entries to users/{uid}/geolog/{date} makes real workdays
+// readable remotely (Mac, admin tooling) — telemetry instead of guesswork.
+// Best-effort by design: never blocks or gates the local GeoLog write;
+// offline writes queue in Firestore's persistent cache and flush later.
+const GeoLogMirror = {
+  _t: null,
+  schedule() {
+    // Debounce 5s — geo events arrive in bursts (replay storms, flutter).
+    if (this._t) clearTimeout(this._t);
+    this._t = setTimeout(() => { this._t = null; this.push(); }, 5000);
+  },
+  async push() {
+    try {
+      if (!CloudSync.uid) return;
+      const all = JSON.parse(localStorage.getItem('mcn_geoLog') || '[]');
+      if (!all.length) return;
+      // Entries are newest-first; push the two most recent dates (covers
+      // around-midnight stragglers). Each day doc holds that day's full set.
+      const dates = [...new Set(all.map(e => e.date))].slice(0, 2);
+      for (const d of dates) {
+        const entries = all.filter(e => e.date === d);
+        await setDoc(doc(firestoreDb, 'users', CloudSync.uid, 'geolog', d), {
+          entries,
+          count: entries.length,
+          appVersion: (typeof APP_VERSION !== 'undefined' ? APP_VERSION : '?'),
+          updatedAt: serverTimestamp()
+        });
+      }
+    } catch(e) { console.warn('GeoLogMirror.push failed:', e); }
+  }
+};
+window.GeoLogMirror = GeoLogMirror;
+
 // Patch DB.set once DOM + inline scripts are ready
 document.addEventListener('DOMContentLoaded', () => {
   if (window.DB && window.DB.set) {
@@ -738,6 +774,9 @@ onAuthStateChanged(auth, async (user) => {
   if (user) {
     CloudSync.uid = user.uid;
     try { localStorage.setItem('mcn_last_uid', user.uid); } catch(_){}
+    // Flush any GeoLog entries recorded before sign-in resolved (e.g. geo
+    // events replayed during startup) now that we have a uid to write under.
+    try { GeoLogMirror.schedule(); } catch(_){}
     if (accountEl) accountEl.textContent = user.email;
     const isAdmin = user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
     if (adminTab) adminTab.style.display = isAdmin ? 'flex' : 'none';
@@ -1736,7 +1775,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v80';
+const APP_VERSION = 'v81';
 document.getElementById('app-version').textContent = APP_VERSION;
 
 // Capacitor live updater — notify that this bundle loaded successfully.
@@ -2713,6 +2752,12 @@ const GeoLog = {
     });
     if (entries.length > this.MAX) entries.length = this.MAX;
     localStorage.setItem(this._key, JSON.stringify(entries));
+    // Echo to console → visible in adb logcat (Capacitor/Console) — the
+    // emulator test harness asserts on these lines.
+    try { console.log('[GeoLog] ' + type + ': ' + detail); } catch(_){}
+    // Mirror to Firestore (best-effort, debounced) so field logs are readable
+    // from the Mac without the phone in hand. Never gates the local write.
+    try { if (window.GeoLogMirror) window.GeoLogMirror.schedule(); } catch(_){}
   },
   clear() { localStorage.removeItem(this._key); },
   render() {
@@ -2841,9 +2886,12 @@ function checkNearbySites(lat,lng,accuracy){
   let nearestSuggest=null,ndSuggest=Infinity;
 
   // On the APK, NativeGeo's GeofencingClient is the canonical source of enter/exit
-  // events (it fires reliably even when the app is dead). Web GPS would only
-  // duplicate those events here, so suppress the auto-start/auto-stop logic on native.
-  // Position tracking + UI suggestion still runs.
+  // events (it fires reliably even when the app is dead). Auto-STOP stays
+  // suppressed on native (native owns stops — debounce + fresh-GPS verify).
+  // Auto-START (v81) also runs here as a foreground fallback: if the native
+  // enter never fired (fences dropped, registration raced, GMS flake), opening
+  // the app at the site still starts the timer. The persisted
+  // geoAutoStartTriggered flag + activeDay() guard make both paths idempotent.
   const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
   // Discard fixes with poor horizontal accuracy for geofence decisions — under a
   // shed or in a tin building, browser GPS can return >100m readings that look
@@ -2874,13 +2922,14 @@ function checkNearbySites(lat,lng,accuracy){
     no.style.display=activeDay()?'none':'block';
   }
 
-  // Geofence auto-start (Web GPS path only — NativeGeo handles native)
-  if(!isNative&&accOk&&nearestGeo&&!activeDay()&&!geoAutoStartTriggered){
+  // Geofence auto-start (Web GPS primary in browser; foreground fallback on native)
+  if(accOk&&nearestGeo&&!activeDay()&&!geoAutoStartTriggered){
     const h=new Date().getHours();
     if(h>=5&&h<21){ // 5am–9pm only
       geoAutoStartTriggered=true;
       geoAutoStartDate=todayStr();
-      GeoLog.add('enter','[Web GPS] Entered geofence: '+nearestGeo.name+' ('+Math.round(ndGeo)+'m)');
+      _saveGeoFlags();
+      GeoLog.add('enter','['+(isNative?'Web GPS fallback':'Web GPS')+'] Entered geofence: '+nearestGeo.name+' ('+Math.round(ndGeo)+'m · acc '+(accuracy!=null?Math.round(accuracy)+'m':'?')+')');
       autoStartTimer(nearestGeo);
     }
   }
@@ -2932,6 +2981,7 @@ function checkNearbySites(lat,lng,accuracy){
                   if(_post&&_post.finish){
                     geoAutoStopTriggered=true;
                     geoAutoStopDate=todayStr();
+                    _saveGeoFlags();
                   } else {
                     GeoLog.add('ignore','[Web GPS] autoStopTimer ran but no finish recorded; flag NOT set');
                   }
@@ -2988,11 +3038,36 @@ function autoStartTimer(site, overrideTime){
 
 let _lastArrivalNotifyDate=null;
 let _lastDepartureNotifyDate=null;
+
+// FIX-3/FIX-4 (v81): geo trigger flags + notification guards survive app kills.
+// In-memory-only flags reset whenever Android killed the process, so a same-day
+// relaunch could re-start the timer or re-fire arrival/departure notifications.
+// Persisted to mcn_geoFlags after every mutation. saveDay()'s intentional
+// same-day reset (multi-job days) persists too — lifecycle identical, just
+// kill-proof. Only restored when the saved date is today.
+function _saveGeoFlags(){
+  try{ localStorage.setItem('mcn_geoFlags', JSON.stringify({
+    startTrig:geoAutoStartTriggered,startDate:geoAutoStartDate,
+    stopTrig:geoAutoStopTriggered,stopDate:geoAutoStopDate,
+    arrivalNotifyDate:_lastArrivalNotifyDate,departureNotifyDate:_lastDepartureNotifyDate
+  })); }catch(_){}
+}
+(function _restoreGeoFlags(){
+  try{
+    const f=JSON.parse(localStorage.getItem('mcn_geoFlags')||'{}'), _today=todayStr();
+    if(f.startDate===_today){ geoAutoStartTriggered=!!f.startTrig; geoAutoStartDate=f.startDate; }
+    if(f.stopDate===_today){ geoAutoStopTriggered=!!f.stopTrig; geoAutoStopDate=f.stopDate; }
+    if(f.arrivalNotifyDate===_today) _lastArrivalNotifyDate=f.arrivalNotifyDate;
+    if(f.departureNotifyDate===_today) _lastDepartureNotifyDate=f.departureNotifyDate;
+  }catch(_){}
+})();
+
 function showGeofenceNotification(siteName,startTime){
   // Only one arrival notification per day
   const today=todayStr();
   if(_lastArrivalNotifyDate===today) return;
   _lastArrivalNotifyDate=today;
+  _saveGeoFlags();
   if(!('Notification' in window)||Notification.permission!=='granted') return;
   if(!('serviceWorker' in navigator)) return;
   navigator.serviceWorker.ready.then(reg=>{
@@ -3037,6 +3112,7 @@ function showGeofenceDepartureNotification(siteName,stopTime){
   const today=todayStr();
   if(_lastDepartureNotifyDate===today) return;
   _lastDepartureNotifyDate=today;
+  _saveGeoFlags();
   if(!('Notification' in window)||Notification.permission!=='granted') return;
   if(!('serviceWorker' in navigator)) return;
   navigator.serviceWorker.ready.then(reg=>{
@@ -3326,6 +3402,7 @@ function saveDay(){
   if(window.CloudSync) window.CloudSync.pushAll().then(()=>toast('☁ Synced to cloud ✓')).catch(()=>{});
   geoAutoStartTriggered=false;geoAutoStopTriggered=false;
   geoAutoStartDate=null;geoAutoStopDate=null; // allow fresh triggers for next job entry
+  _saveGeoFlags();
   if(outsideSiteTimer){clearTimeout(outsideSiteTimer);outsideSiteTimer=null;outsideSiteTimerStart=null;}
   stopBgPoll();
   toast('Day saved! ✓');
@@ -6290,9 +6367,16 @@ window.initApp = function() {
     //   2. Opposite-type oscillation at same site within 60s → cancel both.
     // Order is preserved otherwise so debounce timing still applies to the
     // surviving event.
+    // Rejected events (accuracy gate, v81) must NOT participate in the
+    // flutter-collapse below — a garbage-fix "enter" could otherwise pair with
+    // a REAL exit in the opposite-type rule and silently drop both. They still
+    // flow through processGeoEvent (which logs and ignores them).
+    const rejectedEvs = raw.filter(e => e && e.rejected);
+    const cleanRaw = raw.filter(e => e && !e.rejected);
+
     const BURST_MS = 60 * 1000;
     const collapsed = [];
-    for (const ev of raw) {
+    for (const ev of cleanRaw) {
       const last = collapsed[collapsed.length - 1];
       if (last && last.site === ev.site) {
         const dt = _evMs(ev) - _evMs(last);
@@ -6310,13 +6394,13 @@ window.initApp = function() {
       collapsed.push(ev);
     }
 
-    if (collapsed.length !== raw.length) {
-      GeoLog.add('info', 'Replay collapsed: ' + raw.length + ' raw → ' + collapsed.length + ' actionable');
+    if (collapsed.length !== cleanRaw.length || rejectedEvs.length) {
+      GeoLog.add('info', 'Replay collapsed: ' + raw.length + ' raw → ' + collapsed.length + ' actionable' + (rejectedEvs.length ? ' (' + rejectedEvs.length + ' rejected)' : ''));
     }
 
     console.log('[NativeGeo] Replaying', collapsed.length, 'pending events (from', raw.length, 'raw)');
     try {
-      for (const ev of collapsed) {
+      for (const ev of [...rejectedEvs, ...collapsed]) {
         if (_isProcessed(ev)) {
           console.log('[NativeGeo] Skipping already-processed event:', _eventSig(ev));
           continue;
@@ -6341,10 +6425,26 @@ window.initApp = function() {
   }
 
   async function processGeoEvent(ev) {
-    // ev = { site, type: 'enter'|'exit', time, date, timestamp }
+    // ev = { site, type: 'enter'|'exit', time, date, timestamp,
+    //        evLat?, evLng?, acc?, distM?, fixAgeMs?, rejected?, reason? }
+    // Since v81 Java attaches the triggering location — the GeoLog finally
+    // records WHERE the phone thought it was, not just that a fence fired.
+    const meta = [];
+    if (ev.acc != null && ev.acc >= 0) meta.push('acc ' + Math.round(ev.acc) + 'm');
+    if (ev.distM != null) meta.push(Math.round(ev.distM) + 'm from centre');
+    if (ev.fixAgeMs != null && ev.fixAgeMs > 60000) meta.push('fix ' + Math.round(ev.fixAgeMs/60000) + 'min stale');
+    const metaStr = meta.length ? ' [' + meta.join(' · ') + ']' : (ev.acc === -1 ? ' [no trig location]' : '');
+
+    // Java marks events triggered by garbage-accuracy fixes as rejected —
+    // log them (visibility is the whole point) but never act on them.
+    if (ev.rejected) {
+      GeoLog.add('ignore', 'REJECTED ' + ev.type + ' @ ' + ev.site + ' at ' + (ev.time||'?') + ' — ' + (ev.reason||'failed validation') + metaStr);
+      return;
+    }
+
     const hour = parseInt((ev.time || '00:00').substring(0, 2), 10);
     const outOfHours = hour < 5 || hour >= 21;
-    GeoLog.add(ev.type, (ev.type==='enter'?'Arrived at ':'Left ') + ev.site + ' at ' + (ev.time||'?') + (outOfHours?' [outside hours — ignored]':''));
+    GeoLog.add(ev.type, (ev.type==='enter'?'Arrived at ':'Left ') + ev.site + ' at ' + (ev.time||'?') + metaStr + (outOfHours?' [outside hours — ignored]':''));
     if (outOfHours) return; // outside working hours
 
     // Read sites() once at top of function — both enter and exit branches need it.
@@ -6369,6 +6469,7 @@ window.initApp = function() {
       }
       geoAutoStartTriggered = true;
       geoAutoStartDate = todayStr();
+      _saveGeoFlags();
       autoStartTimer(site, ev.time);
 
     } else if (ev.type === 'exit') {
@@ -6442,6 +6543,7 @@ window.initApp = function() {
         if (_post && _post.finish) {
           geoAutoStopTriggered = true;
           geoAutoStopDate = todayStr();
+          _saveGeoFlags();
         } else {
           GeoLog.add('ignore', 'Native EXIT — autoStopTimer ran but no finish recorded; flag NOT set');
         }
@@ -6463,6 +6565,7 @@ window.initApp = function() {
                 if (_post && _post.finish) {
                   geoAutoStopTriggered = true;
                   geoAutoStopDate = todayStr();
+                  _saveGeoFlags();
                 } else {
                   GeoLog.add('ignore','[Native] Debounce stop ran but no finish recorded; flag NOT set');
                 }
@@ -6596,6 +6699,7 @@ window.initApp = function() {
     const _today = todayStr();
     if (geoAutoStartDate !== _today) { geoAutoStartTriggered = false; geoAutoStartDate = null; }
     if (geoAutoStopDate !== _today) { geoAutoStopTriggered = false; geoAutoStopDate = null; }
+    _saveGeoFlags();
     processPendingGeoEvents();
   });
 

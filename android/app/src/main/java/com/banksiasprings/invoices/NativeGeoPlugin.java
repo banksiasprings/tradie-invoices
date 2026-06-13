@@ -170,25 +170,16 @@ public class NativeGeoPlugin extends Plugin {
         }
 
         try {
+            // Fence construction, transition types (DWELL|EXIT since v81), and
+            // initial-trigger policy live in GeoRegistrar — shared with the
+            // boot-time re-registration path so the two can never drift.
             List<Geofence> geofences = new ArrayList<>();
             JSONArray sitesJson = new JSONArray(sitesArr.toString());
 
             for (int i = 0; i < sitesJson.length(); i++) {
                 JSONObject site = sitesJson.getJSONObject(i);
-                String name = site.getString("name");
-                double lat = site.getDouble("lat");
-                double lng = site.getDouble("lng");
-                float radius = (float) site.optDouble("radius", 150.0);
-
-                geofences.add(new Geofence.Builder()
-                        .setRequestId(name)
-                        .setCircularRegion(lat, lng, radius)
-                        .setTransitionTypes(
-                                Geofence.GEOFENCE_TRANSITION_ENTER |
-                                Geofence.GEOFENCE_TRANSITION_EXIT)
-                        .setExpirationDuration(Geofence.NEVER_EXPIRE)
-                        .setLoiteringDelay(30000) // 30s dwell before ENTER fires
-                        .build());
+                if (!site.has("lat") || site.isNull("lat")) continue;
+                geofences.add(GeoRegistrar.buildGeofence(site));
             }
 
             if (geofences.isEmpty()) {
@@ -196,10 +187,7 @@ public class NativeGeoPlugin extends Plugin {
                 return;
             }
 
-            GeofencingRequest request = new GeofencingRequest.Builder()
-                    .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
-                    .addGeofences(geofences)
-                    .build();
+            GeofencingRequest request = GeoRegistrar.buildRequest(geofences);
 
             geofencingClient.addGeofences(request, getGeofencePendingIntent())
                     .addOnSuccessListener(aVoid -> {
@@ -318,10 +306,7 @@ public class NativeGeoPlugin extends Plugin {
 
     private PendingIntent getGeofencePendingIntent() {
         if (geofencePendingIntent != null) return geofencePendingIntent;
-        Intent intent = new Intent(getContext(), GeofenceBroadcastReceiver.class);
-        geofencePendingIntent = PendingIntent.getBroadcast(
-                getContext(), 0, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
+        geofencePendingIntent = GeoRegistrar.getPendingIntent(getContext());
         return geofencePendingIntent;
     }
 }

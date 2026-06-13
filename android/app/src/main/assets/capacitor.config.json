@@ -1,22 +1,22 @@
 {
-  "appId": "com.banksiasprings.invoices",
-  "appName": "Invoice & PDF",
-  "webDir": "www",
-  "android": {},
-  "plugins": {
-    "LocalNotifications": {
-      "smallIcon": "ic_stat_icon",
-      "iconColor": "#3B4A2F"
-    },
-    "BackgroundGeolocation": {
-      "locationAuthorizationRequest": "Always"
-    },
-    "CapacitorUpdater": {
-      "autoUpdate": true,
-      "updateUrl": "https://banksiasprings.github.io/tradie-invoices/updates/latest.json",
-      "statsUrl": "",
-      "resetWhenUpdate": false,
-      "version": "1.0.0"
-    }
-  }
+	"appId": "com.banksiasprings.invoices",
+	"appName": "Invoice & PDF",
+	"webDir": "www",
+	"android": {},
+	"plugins": {
+		"LocalNotifications": {
+			"smallIcon": "ic_stat_icon",
+			"iconColor": "#3B4A2F"
+		},
+		"BackgroundGeolocation": {
+			"locationAuthorizationRequest": "Always"
+		},
+		"CapacitorUpdater": {
+			"autoUpdate": true,
+			"updateUrl": "https://banksiasprings.github.io/tradie-invoices/updates/latest.json",
+			"statsUrl": "",
+			"resetWhenUpdate": false,
+			"version": "1.0.0"
+		}
+	}
 }
