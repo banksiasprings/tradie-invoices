@@ -17,11 +17,11 @@
       "locationAuthorizationRequest": "Always"
     },
     "CapacitorUpdater": {
-      "autoUpdate": true,
+      "autoUpdate": false,
       "updateUrl": "https://banksiasprings.github.io/tradie-invoices/updates/latest.json",
       "statsUrl": "",
       "resetWhenUpdate": true,
-      "version": "1.83.0"
+      "version": "1.84.0"
     }
   }
 }

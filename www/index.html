@@ -1775,7 +1775,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v83';
+const APP_VERSION = 'v84';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -1797,94 +1797,97 @@ document.getElementById('app-version').textContent = APP_VERSION;
   }catch(e){ console.warn('[Updater] notifyAppReady failed:',e); }
 })();
 
-async function forceAppUpdate(isRetry) {
+// ── App-driven OTA (v84) ─────────────────────────────────────────────────────
+// WHY this exists: @capgo/capacitor-updater's own auto-update POSTs to the
+// update manifest, but the manifest is on static GitHub Pages (GET-only) which
+// returns HTTP 405 — so Capgo's autoUpdate silently failed on every launch and
+// no bundle past the builtin ever downloaded. autoUpdate is now OFF in
+// capacitor.config.json; we do the version check ourselves over GET (which
+// works fine), then use Capgo's download()/set() to hot-swap the bundle.
+// notifyAppReady() (called on every load above) preserves Capgo's crash-rollback.
+const OTA_MANIFEST = 'https://banksiasprings.github.io/tradie-invoices/updates/latest.json';
+const OTA_BUNDLE_FALLBACK = 'https://banksiasprings.github.io/tradie-invoices/updates/bundle.zip';
+
+// Numeric "a > b" over dotted versions like "1.84.0".
+function _verGt(a, b){
+  const pa = String(a||'0').split('.').map(n=>parseInt(n,10)||0);
+  const pb = String(b||'0').split('.').map(n=>parseInt(n,10)||0);
+  for (let i=0;i<3;i++){ const x=pa[i]||0, y=pb[i]||0; if(x>y)return true; if(x<y)return false; }
+  return false;
+}
+function _otaBtn(txt, disabled){
   const btn = document.getElementById('update-btn');
-  btn.textContent = 'Checking…';
-  btn.disabled = true;
-  try {
-    const updater = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorUpdater;
+  if(!btn) return;
+  if(txt!==undefined) btn.textContent = txt;
+  if(disabled!==undefined) btn.disabled = disabled;
+}
 
-    if (updater) {
-      // ── Native app: hot-swap the web bundle without reinstalling the APK ──
-      // Use getLatest() — native HTTP request (avoids WebView fetch restrictions on Android)
-      let latest = null;
-      try {
-        latest = await updater.getLatest();
-      } catch(e) {
-        // getLatest() not available in this plugin version — fall back to direct download
-        console.warn('[Updater] getLatest() failed, falling back:', e);
-      }
+// silent=true → background auto-check (no toasts/button, used on launch).
+// silent=false → user tapped "Check for Update" (shows progress).
+async function otaCheck(silent){
+  const updater = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorUpdater;
 
-      // If getLatest() didn't work, fetch the manifest directly as fallback
-      if (!latest || !latest.url) {
-        try {
-          const mRes = await fetch('https://banksiasprings.github.io/tradie-invoices/updates/latest.json?_=' + Date.now());
-          latest = await mRes.json();
-        } catch(e) {
-          console.warn('[Updater] manifest fetch failed:', e);
-          latest = { version: '1.50.0', url: 'https://banksiasprings.github.io/tradie-invoices/updates/bundle.zip' };
-        }
-      }
+  if(!updater){
+    // PWA path: just bust SW caches + hard reload (manual only).
+    if(silent) return;
+    _otaBtn('Updating…', true);
+    try{
+      if('serviceWorker' in navigator){ const rs=await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map(r=>r.unregister())); }
+      if('caches' in window){ const ks=await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); }
+    }catch(e){}
+    location.reload(true);
+    return;
+  }
 
-      // Get current bundle version to avoid re-downloading the same version
-      let currentVersion = null;
-      try {
-        const result = await updater.getCurrentBundle();
-        currentVersion = (result.bundle && result.bundle.version)
-          || (result.current && result.current.version)
-          || null;
-      } catch(e) {
-        console.warn('[Updater] getCurrentBundle failed:', e);
-        currentVersion = null;
-      }
-
-      if (currentVersion && latest.version === currentVersion) {
-        toast('Already on the latest version (' + latest.version + ') ✓');
-        btn.textContent = 'Up to date ✓';
-        setTimeout(() => { btn.textContent = 'Check for Update'; btn.disabled = false; }, 2500);
-        return;
-      }
-
-      toast('Update ' + latest.version + ' found — downloading…');
-      btn.textContent = 'Downloading…';
-
-      const bundle = await updater.download({ url: latest.url, version: latest.version });
-
-      btn.textContent = 'Installing…';
-      toast('Installing — app will reload…');
-
-      await updater.set({ id: bundle.id });
-      // set() should reload the app, but add a fallback in case it doesn't
-      setTimeout(() => { window.location.reload(true); }, 1500);
-
-    } else {
-      // ── Web / PWA fallback: clear SW cache and hard-reload ──
-      btn.textContent = 'Updating…';
-      if ('serviceWorker' in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map(r => r.unregister()));
-      }
-      if ('caches' in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map(k => caches.delete(k)));
-      }
-      window.location.reload(true);
-    }
-  } catch(e) {
-    console.error('[Update] error:', e);
-    const msg = e && e.message ? e.message : 'Unknown error';
-    // Auto-retry once — plugin init can fail on first call
-    if (!isRetry) {
-      console.log('[Update] Retrying in 1s…');
-      btn.textContent = 'Retrying…';
-      setTimeout(() => forceAppUpdate(true), 1000);
+  if(!silent) _otaBtn('Checking…', true);
+  try{
+    // GET the manifest directly — Capgo's getLatest() POSTs and 405s on static Pages.
+    let latest=null;
+    try{
+      const r = await fetch(OTA_MANIFEST + '?_=' + Date.now(), {cache:'no-store'});
+      if(r.ok) latest = await r.json();
+    }catch(e){ console.warn('[OTA] manifest fetch failed:', e); }
+    if(!latest || !latest.version || !latest.url){
+      if(!silent){ toast('Update check failed — no connection?'); _otaBtn('Check for Update', false); }
       return;
     }
-    toast('Update failed: ' + msg);
-    btn.textContent = 'Check for Update';
-    btn.disabled = false;
+
+    let cur=null;
+    try{ cur = (await updater.current()).bundle.version; }catch(e){ console.warn('[OTA] current() failed:', e); }
+
+    if(cur && !_verGt(latest.version, cur)){
+      if(!silent){ toast('Already up to date ('+cur+') ✓'); _otaBtn('Up to date ✓'); setTimeout(()=>_otaBtn('Check for Update', false), 2500); }
+      return;
+    }
+
+    if(!silent){ toast('Update '+latest.version+' found — downloading…'); _otaBtn('Downloading…', true); }
+    const dl = { version: latest.version, url: latest.url || OTA_BUNDLE_FALLBACK };
+    if(latest.checksum) dl.checksum = latest.checksum;
+    const bundle = await updater.download(dl);
+    if(!silent) _otaBtn('Installing…', true);
+    await updater.set({ id: bundle.id });
+    // set() usually reloads; force it as a fallback. After reload the new bundle
+    // loads, otaCheck runs again, current()===latest → no-op (no reload loop).
+    setTimeout(()=>location.reload(true), 1200);
+  }catch(e){
+    console.warn('[OTA] check/apply failed:', e);
+    if(!silent){ toast('Update failed: ' + ((e&&e.message)||e)); _otaBtn('Check for Update', false); }
   }
 }
+
+// Settings "Check for Update" button.
+function forceAppUpdate(){ return otaCheck(false); }
+
+// Auto-check ONCE per cold launch (native only), a few seconds after load so it
+// doesn't compete with init. Deliberately NOT on resume — applying a bundle
+// reloads the WebView, which would discard an in-progress entry mid-session.
+(function _scheduleOtaAutoCheck(){
+  try{
+    const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+    if(!isNative) return;
+    setTimeout(()=>{ otaCheck(true); }, 4000);
+  }catch(e){}
+})();
 </script>
 
 
@@ -3017,6 +3020,7 @@ function checkNearbySites(lat,lng,accuracy){
         // Inside geofence — reset outside-reading counter and cancel any pending debounce
         outsideReadingCount=0; lastOutsideReadingAt=0;
         if(outsideSiteTimer){clearTimeout(outsideSiteTimer);outsideSiteTimer=null;outsideSiteTimerStart=null;}
+        _clearPendingStop(); // back inside → cancel any persisted pending stop (FIX-C1)
         updateGeoStatusBar('inside','📍 Inside · '+Math.max(0,Math.round(distToBoundary))+'m to boundary');
       }
     } else {
@@ -3060,6 +3064,43 @@ function _saveGeoFlags(){
     arrivalNotifyDate:_lastArrivalNotifyDate,departureNotifyDate:_lastDepartureNotifyDate
   })); }catch(_){}
 }
+
+// FIX-C1 (v84): persist a pending auto-stop so it survives an app kill.
+// The native EXIT debounce schedules an in-memory setTimeout (5 min). If Android
+// kills the backgrounded app during that window, the timer dies and the event
+// won't replay (already marked processed) — the day would run forever and
+// over-bill. We record {site, exitTime, fireAt} here; recoverPendingStop()
+// (run on every cold open / resume via processPendingGeoEvents) applies a
+// missed stop if the deadline passed and we're confirmed outside.
+function _setPendingStop(site, exitTime, fireAt){
+  try{ localStorage.setItem('mcn_pendingStop', JSON.stringify({site, exitTime, fireAt})); }catch(_){}
+}
+function _clearPendingStop(){ try{ localStorage.removeItem('mcn_pendingStop'); }catch(_){} }
+function _getPendingStop(){ try{ return JSON.parse(localStorage.getItem('mcn_pendingStop')||'null'); }catch(_){ return null; } }
+
+// Apply (or re-arm) a stop that the in-memory debounce timer may have lost to an
+// app kill. Called on every cold open / resume. Trusts the elapsed native EXIT:
+// the day is closed at the recorded exit time (over-billing across a dead app is
+// the harm we're preventing; a flutter-only exit would have been cancelled by a
+// re-enter while the app was alive, which clears mcn_pendingStop).
+function recoverPendingStop(){
+  const ps=_getPendingStop(); if(!ps) return;
+  const ad=activeDay();
+  if(!ad || ad.finish || ad.site!==ps.site){ _clearPendingStop(); return; } // stale → drop
+  if(Date.now() < (ps.fireAt||0)){
+    // Opened before the deadline — the original setTimeout is gone if the app was
+    // killed, so re-arm one for the remaining time.
+    const remain = Math.max(0, ps.fireAt - Date.now());
+    setTimeout(()=>{ try{ recoverPendingStop(); }catch(_){} }, remain + 500);
+    return;
+  }
+  GeoLog.add('info','Recovering missed auto-stop: '+ps.site+' at '+ps.exitTime+' (debounce elapsed while app was closed)');
+  autoStopTimer(ps.exitTime);
+  const post=activeDay();
+  if(post && post.finish){ geoAutoStopTriggered=true; geoAutoStopDate=todayStr(); _saveGeoFlags(); }
+  _clearPendingStop();
+}
+window.recoverPendingStop = recoverPendingStop;
 (function _restoreGeoFlags(){
   try{
     const f=JSON.parse(localStorage.getItem('mcn_geoFlags')||'{}'), _today=todayStr();
@@ -3096,6 +3137,7 @@ function showGeofenceNotification(siteName,startTime){
 
 function autoStopTimer(overrideTime){
   clearInterval(timerInterval);
+  _clearPendingStop(); // any stop attempt clears the persisted pending-stop (FIX-C1)
   const ad=activeDay();if(!ad)return;
   // Capture whether a timer was actually running BEFORE we mutate ad.finish.
   // Ghost exits (no start, or already finished) process silently — no departure notification.
@@ -3411,6 +3453,7 @@ function saveDay(){
   geoAutoStartTriggered=false;geoAutoStopTriggered=false;
   geoAutoStartDate=null;geoAutoStopDate=null; // allow fresh triggers for next job entry
   _saveGeoFlags();
+  _clearPendingStop();
   if(outsideSiteTimer){clearTimeout(outsideSiteTimer);outsideSiteTimer=null;outsideSiteTimerStart=null;}
   stopBgPoll();
   toast('Day saved! ✓');
@@ -4089,48 +4132,66 @@ async function generatePDF(html, filename, emailOpts) {
         setTimeout(() => { window.location.href = 'mailto:' + emailOpts.to + '?subject=' + subject + '&body=' + body; }, 600);
       }
     }
+    return true; // delivered (PDF shared / emailed / downloaded)
   } catch(err) {
     console.error('generatePDF:', err);
     toast('PDF error – sharing HTML instead');
-    const blob = new Blob([html], { type: 'text/html' });
-    await shareOrDownload(blob, filename);
+    try {
+      const blob = new Blob([html], { type: 'text/html' });
+      await shareOrDownload(blob, filename);
+      return true; // HTML fallback delivered
+    } catch(e2) {
+      console.error('generatePDF HTML fallback failed:', e2);
+      return false; // nothing delivered — caller must NOT archive/bump
+    }
   }
 }
 
-function generateInvoice(){
+async function generateInvoice(){
   const s=S();
   const ui=_getSelectedInvoiceDays();
   if(!ui.length){toast('No days selected \u2014 tick at least one day');return;}
-  // Read invoice number from editable input
   const numInput=document.getElementById('inv-num-input');
   const invNumOverride=numInput&&numInput.value?parseInt(numInput.value)||s.invnum:s.invnum;
-  s.invnum=invNumOverride; // use the user-edited number
-  const html=buildInvoiceHTML();
   const ic=getSelectedClient();
   const invNum=String(invNumOverride).padStart(4,'0');
+  // Rate auto-rises per invoice (annual increment spread). Compute up front so the
+  // confirm can state it \u2014 this used to happen silently.
+  const ap=parseFloat(s.incpct??7.8),pi=(parseFloat(s.rate)*ap/100)/26,nr=Math.round((parseFloat(s.rate)+pi)*20)/20;
+  // This is irreversible: it archives the selected days out of the working set AND
+  // raises your saved rate. Confirm with the consequences (was silent + fired even
+  // when the PDF failed or the send was cancelled \u2014 leaving a "phantom invoice").
+  if(!confirm('Send invoice #'+invNum+' for '+(ic.company||s.client||'client')+'?\n\n'+
+              'This marks '+ui.length+' day'+(ui.length!==1?'s':'')+' as invoiced and raises your rate from $'+
+              parseFloat(s.rate).toFixed(2)+' to $'+nr.toFixed(2)+'/hr.')) return;
+  s.invnum=invNumOverride;
+  const html=buildInvoiceHTML();
   const filename='Invoice_'+invNum+'_'+(ic.company||s.client||'Client').replace(/\s/g,'_')+'.html';
-  generatePDF(html, filename, {to:ic.email||'',clientName:ic.contact||ic.company||'',invoiceNum:invNum,senderName:s.name||''});
-  // Mark only the selected days as invoiced
+  // AWAIT delivery and only commit side-effects if something was actually produced.
+  // Previously generatePDF was not awaited: days were archived + rate bumped
+  // synchronously while the PDF was still rendering, so a hard failure or cancel
+  // left days hidden + rate raised with nothing sent.
+  let delivered=false;
+  try{ delivered = await generatePDF(html, filename, {to:ic.email||'',clientName:ic.contact||ic.company||'',invoiceNum:invNum,senderName:s.name||''}); }
+  catch(e){ delivered=false; }
+  if(!delivered){ toast('Invoice not sent \u2014 nothing was archived. Try again.'); return; }
+  // Delivered \u2192 commit: archive days, record summary, save full HTML, bump number + rate.
   const selectedIds=new Set(ui.map(d=>d.id||d.date));
   const ad=days();
   const it=ui.reduce((sum,d)=>{const{total}=dayTotals(d);return sum+total;},0);
   const totalHours=ui.reduce((sum,d)=>{const{h}=dayTotals(d);return sum+h;},0);
   ad.forEach(d=>{if(selectedIds.has(d.id||d.date)){d.invoiced=true;if(typeof ArchivedSync!=='undefined')ArchivedSync.setArchived(d.id||d.date,true).catch(()=>{});}});DB.set('days',ad);
   const invoiceId=Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-  const il=invoices();il.push({id:invoiceId,num:invNumOverride,invoiceNum:String(invNumOverride).padStart(4,'0'),date:todayStr(),clientName:ic.company||'',total:it,days:ui.length,hours:totalHours});DB.set('invoices',il);
-  const ap=parseFloat(s.incpct??7.8),pi=(parseFloat(s.rate)*ap/100)/26,nr=Math.round((parseFloat(s.rate)+pi)*20)/20;
-  // Save to IndexedDB
-  const savedNum=String(invNumOverride).padStart(4,'0');
-  const savedFilename='Invoice #'+savedNum+' \u2014 '+(ic.company||'Client')+' \u2014 '+todayStr()+'.html';
+  const il=invoices();il.push({id:invoiceId,num:invNumOverride,invoiceNum:invNum,date:todayStr(),clientName:ic.company||'',total:it,days:ui.length,hours:totalHours});DB.set('invoices',il);
+  // Await the full-HTML save so Stats (mcn_invoices) and the re-download store don't diverge silently.
+  const savedFilename='Invoice #'+invNum+' \u2014 '+(ic.company||'Client')+' \u2014 '+todayStr()+'.html';
   const rawData={days:ui,client:ic,invoiceNum:invNumOverride,rate:s.rate};
-  InvoiceDB.save({filename:savedFilename,date:todayStr(),clientName:ic.company||'',html:html,rawData:rawData})
-    .then(()=>setTimeout(()=>toast('Saved to Saved Invoices \u2713'),800))
-    .catch(()=>{});
+  try{ await InvoiceDB.save({filename:savedFilename,date:todayStr(),clientName:ic.company||'',html:html,rawData:rawData}); }
+  catch(e){ console.warn('InvoiceDB.save failed:',e); toast('\u26a0 Invoice recorded but its PDF wasn\u2019t saved for re-download'); }
   s.invnum=invNumOverride+1;s.rate=nr;DB.set('settings',s);
-  // Reset selection state
   resetInvoiceDaySelection();
   if(numInput) numInput.dataset.userEdited='';
-  toast('Invoice downloaded! Rate \u2192 $'+nr.toFixed(2));renderInvoice();
+  toast('Invoice sent! Rate \u2192 $'+nr.toFixed(2));renderInvoice();
 }
 
 // --- Goals & financial year helpers ---
@@ -6349,6 +6410,7 @@ window.initApp = function() {
   }
 
   async function processPendingGeoEvents() {
+    try { recoverPendingStop(); } catch(_) {} // FIX-C1: apply any auto-stop lost to an app kill
     if (!NativeGeo) return;
     let raw = [];
     let drained = false;
@@ -6566,6 +6628,9 @@ window.initApp = function() {
         // Recent exit — debounce before stopping
         const delay = GEO_STOP_DEBOUNCE - evAge;
         GeoLog.add('info', 'Native EXIT — debouncing ' + Math.round(delay/1000) + 's before stopping');
+        // Persist the pending stop so an app-kill during the debounce window
+        // doesn't lose it — recoverPendingStop() applies it on next open (FIX-C1).
+        _setPendingStop(ev.site, ev.time, Date.now() + delay);
         if (!outsideSiteTimer) {
           outsideSiteTimerStart = Date.now();
           outsideSiteTimer = setTimeout(() => {
