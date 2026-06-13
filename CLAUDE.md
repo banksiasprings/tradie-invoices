@@ -22,10 +22,10 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v85 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v86 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.85.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.86.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
 
 **Single source of truth: `APP_VERSION` in `www/index.html`.** Just bump that — the GitHub Pages deploy workflow (`.github/workflows/deploy.yml`) rewrites the other two automatically:
 
@@ -212,15 +212,25 @@ zip -r ../updates/bundle.zip tradie-app/
 
 **WARNING — never use `zip -r bundle.zip www/`.** That puts `index.html` at `www/index.html` inside the zip; Capgo silently fails to find it and the OTA update never applies. The `-j` (junk paths) flag on the first command strips the directory prefix; the second command preserves the `tradie-app/` subdirectory because its relative paths matter.
 
-**✅ OTA WORKS as of v84 (app-driven updater) — verified v84→v85 over the air on device.**
+**⚠️ OTA — PARTIALLY working (as of v86). Treat the phone as needing an APK until proven.**
 Capgo's *own* auto-update POSTs to the manifest and 405s on static GitHub Pages (see v84 bug
-below). So `autoUpdate` is OFF and the app drives updates itself via `otaCheck()` (in
-www/index.html): on each cold launch it GETs `latest.json` (works), semver-compares vs
-`CapacitorUpdater.current()`, and if newer calls `download({url,checksum,version})` → `set()` →
-reload. The Settings "Check for Update" button calls the same `otaCheck(false)`. `notifyAppReady()`
-on every load preserves Capgo's crash-rollback. So again: **do NOT rebuild the APK for web-only
-changes — bump APP_VERSION, push, and devices pull it on next launch.** Rebuild the APK only for
-native (Java) changes or a `capacitor.config.json` change.
+below), so `autoUpdate` is OFF and the app drives updates via `otaCheck()` (www/index.html): on
+cold launch it GETs `latest.json` (works), semver-compares vs `CapacitorUpdater.current()`, and if
+newer calls `download({url,checksum,version})` → `set()` → reload. The Settings "Check for Update"
+button calls the same `otaCheck(false)`.
+- **Emulator:** clean v84→v85 auto-pull verified. The GET/manifest path works.
+- **Steven's phone (Moto Edge 50 Neo): NOT reliably auto-pulling.** v85→v86 never downloaded a new
+  bundle despite repeated cold launches + 60s waits (bundle list stayed 1.81+1.85). Logcat shows an
+  `Uncaught TypeError: Cannot read properties of undefined (reading 'triggerEvent')` at startup and
+  `download()` starting but no 1.86.0 bundle ever persisting. **An earlier "v85 OTA pull worked on
+  the phone" claim was wrong** — that v85 was a leftover bundle from manual `download()/set()`
+  driving the day before, not a fresh `otaCheck` pull. checksum matches (manifest == bundle.zip
+  sha256), so it's not that.
+- **Until the phone OTA path is fixed, ship JS to the phone via APK** (`adb install -r` over wireless,
+  then `CapacitorUpdater.reset()` + clear SW so builtin loads — same-versionCode reinstalls don't
+  auto-reset Capgo). **NEXT-SESSION TASK:** isolate the `triggerEvent` error + why `download()`
+  doesn't persist a bundle when current is already an OTA bundle (vs builtin, where the emulator
+  worked). Suspect a Capgo 8.45.3 event-listener quirk or a missing `addListener('download',…)`.
 
 **⚠ Three things must agree on the version or a device gets stuck (see v82 bug below):**
 1. `www/sw.js` serves the app shell **network-first** — never revert to cache-first for HTML,
@@ -415,12 +425,13 @@ signed-in app session — test manually, or read the GeoLog (Settings → Geo Di
 
 ## Known Bugs Fixed (Don't Reintroduce)
 
-### Capgo OTA 405 — auto-update POSTs to a static host [FIXED v84]
+### Capgo OTA 405 — auto-update POSTs to a static host [PARTIAL — v84]
 `@capgo/capacitor-updater@8.45.3`'s `autoUpdate` POSTs to the update manifest; static GitHub
 Pages returns HTTP 405, so it silently never downloaded past the builtin. **Fix:** `autoUpdate:false`
 + app-driven `otaCheck()` that GETs the manifest, semver-compares, then `download()/set()/reload()`.
-Verified v84→v85 over the air on the emulator AND Steven's phone. **Don't reintroduce** `autoUpdate:true`
-(it'll resume 405-ing and the silent failure looks identical to "no update available").
+Verified clean v84→v85 auto-pull on the **emulator**. **NOT yet reliable on Steven's phone** — see
+the ⚠️ OTA status in the OTA Updates section above (residual `triggerEvent` error + `download()`
+not persisting a bundle there). **Don't reintroduce** `autoUpdate:true` (it'll resume 405-ing).
 
 ### Geofence/invoice batch [FIXED v84–v85] — see www/AUDIT-review-2026-06-13.md
 - **C1 (v84):** native EXIT debounce was marked processed before its in-memory 5-min timer fired →
