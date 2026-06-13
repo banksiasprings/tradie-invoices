@@ -1285,7 +1285,10 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         <input type="date" id="me-date" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
       </div>
       <div class="field" style="margin-bottom:12px">
-        <label>Site</label>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <label style="margin:0">Site</label>
+          <button onclick="openNewJobSheet()" style="background:none;border:none;color:var(--amber);font-size:13px;font-weight:600;cursor:pointer;padding:0">＋ New Job</button>
+        </div>
         <select id="me-site" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)"><option value="">Select site…</option></select>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
@@ -1315,6 +1318,19 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
           <input type="number" id="me-son-hours" placeholder="Same as mine" step="0.25" min="0" onchange="mePreview()" style="margin-top:5px;width:100%;padding:11px 14px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
         </div>
         <div style="font-size:12px;color:var(--text2);margin-top:6px">Rate: <strong id="me-son-rate-label">$30/hr</strong></div>
+      </div>
+    </div>
+
+    <!-- Machine hire (manual entry) — only shown for trades with equipment.
+         U5: Manual Entry previously couldn't record plant — the core earthmoving
+         billable — forcing a save-then-edit. Reuses the shared machine UI ('me'). -->
+    <div class="card" id="me-machine-row" style="display:none">
+      <div class="toggle-row">
+        <span style="font-size:14px;font-weight:600">🚜 Machine hire?</span>
+        <label class="toggle"><input type="checkbox" id="me-machine-toggle" onchange="document.getElementById('me-machine-section').style.display=this.checked?'block':'none';if(this.checked&&!(_machineLines['me']&&_machineLines['me'].length))renderMachineUI('machine-me-list',[],'me')"><span class="toggle-slider"></span></label>
+      </div>
+      <div id="me-machine-section" style="display:none;margin-top:10px">
+        <div id="machine-me-list"></div>
       </div>
     </div>
 
@@ -1775,7 +1791,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v84';
+const APP_VERSION = 'v85';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -2081,6 +2097,7 @@ function forceAppUpdate(){ return otaCheck(false); }
   <div class="modal">
     <div class="modal-title">Edit Day<button class="modal-close" onclick="closeLogEditModal()">✕</button></div>
     <div class="field"><label>Date</label><input type="date" id="le-date"></div>
+    <div class="field"><label>Site</label><select id="le-site" style="width:100%;padding:11px 14px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)"><option value="">— Select site —</option></select></div>
     <div class="field"><label>Start time</label><input type="time" id="le-start"></div>
     <div class="field"><label>Finish time</label><input type="time" id="le-finish"></div>
     <div class="field"><label>Lunch break (minutes)</label><input type="number" id="le-lunch" placeholder="0 — no lunch" min="0" step="5"></div>
@@ -2491,6 +2508,8 @@ function applyTradeVisibility(){
   ['idle-extra-worker-row'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=showExtra?'block':'none';});
   // Active screen
   ['active-machine-row'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=hasMachines?'block':'none';});
+  // Manual entry machine row (U5)
+  ['me-machine-row'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=hasMachines?'block':'none';});
   ['active-extra-worker-row'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=showExtra?'block':'none';});
   // Manual entry
   const meCard=document.getElementById('me-extra-worker-card');
@@ -3413,8 +3432,12 @@ function saveEdit(){
     return;
   }
   try {
-    ad.start=document.getElementById('edit-start').value;
-    ad.finish=document.getElementById('edit-finish').value;
+    const _es=document.getElementById('edit-start').value, _ef=document.getElementById('edit-finish').value;
+    // Guard finish-after-start (same as manual + log edit) — a finish-before-start
+    // otherwise saved a clamped $0 day.
+    if(_es&&_ef&&_es>=_ef){toast('Finish time must be after start time');return;}
+    ad.start=_es;
+    ad.finish=_ef;
     ad.lunchMins=parseInt(document.getElementById('edit-lunch').value)||0;
     ad.sonWorking=document.getElementById('edit-son-toggle').checked;
     const sv=document.getElementById('edit-son-hours').value;
@@ -3530,6 +3553,15 @@ window.editLogDay = function(entryKey){
   const dl=days(),d=dl.find(x=>(x.id&&x.id===entryKey)||(!x.id&&x.date===entryKey));if(!d)return;
   _logEditDate=d.id||d.date;
   document.getElementById('le-date').value=d.date;
+  // Populate site dropdown (U2) — include the day's current site even if it's no
+  // longer in the sites list, so editing an old entry never silently blanks it.
+  const _leSite=document.getElementById('le-site');
+  if(_leSite){
+    const names=sites().map(st=>st.name);
+    if(d.site && names.indexOf(d.site)===-1) names.unshift(d.site);
+    _leSite.innerHTML='<option value="">— Select site —</option>'+names.map(n=>`<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('');
+    _leSite.value=d.site||'';
+  }
   document.getElementById('le-start').value=d.start||'';
   document.getElementById('le-finish').value=d.finish||'';
   document.getElementById('le-lunch').value=d.lunchMins||0;
@@ -3572,6 +3604,9 @@ window.saveLogEdit = function(){
   // does Math.max(0,…)). Manual entry already guards this; edit now does too.
   if(ns&&nf&&ns>=nf){toast('Finish time must be after start time');return;}
   d.date=newDate;
+  // Site (U2): a wrong site silently bills the day to the wrong client — now editable.
+  const _leSiteEl=document.getElementById('le-site');
+  if(_leSiteEl && _leSiteEl.value) d.site=_leSiteEl.value;
   d.start=ns;
   d.finish=nf;
   d.lunchMins=parseInt(document.getElementById('le-lunch').value)||0;
@@ -3601,7 +3636,14 @@ window.confirmDiscardDay = function(){
   // Clear active day and return to idle state
   DB.set('activeDay',null);
   clearInterval(timerInterval);
-  if(outsideSiteTimer){clearTimeout(outsideSiteTimer);outsideSiteTimer=null;}
+  if(outsideSiteTimer){clearTimeout(outsideSiteTimer);outsideSiteTimer=null;outsideSiteTimerStart=null;}
+  // C4: re-arm the geofence for the rest of today. Without this reset, a discarded
+  // false-start left geoAutoStartTriggered=true, so auto-start wouldn't fire again
+  // that day at the same site. Mirror saveDay's flag reset.
+  geoAutoStartTriggered=false;geoAutoStopTriggered=false;
+  geoAutoStartDate=null;geoAutoStopDate=null;
+  _saveGeoFlags();
+  _clearPendingStop();
   // Reset UI to idle checkin state
   document.getElementById('checkin-idle').style.display='block';
   document.getElementById('checkin-active').style.display='none';
@@ -4460,12 +4502,16 @@ function renderAnalytics(){
   rateChangeEl.style.color=rateChange>0?'var(--success)':rateChange<0?'var(--red)':'var(--text2)';
   const il=document.getElementById('ana-invoice-list');
   if(!ai.length){il.innerHTML='<div style="color:var(--text2);font-size:13px">No invoices yet</div>';return;}
-  il.innerHTML=ai.slice().reverse().slice(0,8).map(inv=>`<div class="day-item"><div class="day-item-left"><div class="date">Invoice #${String(inv.num).padStart(4,'0')}</div><div class="detail">${fmtDate(inv.date)} · ${inv.days} day${inv.days!==1?'s':''}</div></div><div class="day-item-right" style="display:flex;align-items:center;gap:8px"><div class="amount">${fmtMoney(inv.total)}</div><button onclick="deleteInvoiceRecord(${inv.num})" style="background:none;border:1.5px solid var(--border);border-radius:8px;padding:4px 10px;font-size:12px;font-weight:700;color:var(--text2);cursor:pointer" title="Delete record">✕</button></div></div>`).join('');
+  il.innerHTML=ai.slice().reverse().slice(0,8).map(inv=>`<div class="day-item"><div class="day-item-left"><div class="date">Invoice #${String(inv.num).padStart(4,'0')}</div><div class="detail">${fmtDate(inv.date)} · ${inv.days} day${inv.days!==1?'s':''}</div></div><div class="day-item-right" style="display:flex;align-items:center;gap:8px"><div class="amount">${fmtMoney(inv.total)}</div><button onclick="deleteInvoiceRecord('${inv.id||''}',${inv.num})" style="background:none;border:1.5px solid var(--border);border-radius:8px;padding:4px 10px;font-size:12px;font-weight:700;color:var(--text2);cursor:pointer" title="Delete record">✕</button></div></div>`).join('');
 }
 
-function deleteInvoiceRecord(num){
+function deleteInvoiceRecord(id, num){
   if(!confirm('Delete invoice #'+String(num).padStart(4,'0')+' record?\n\nThis removes it from the history list. It does not delete any saved PDF file.')) return;
-  const il=invoices().filter(inv=>inv.num!==num);
+  // Delete the exact record by its unique id — invoice NUMBERS can repeat (the
+  // number is user-editable), so filtering by num could wipe several records.
+  let il=invoices();
+  if(id){ il=il.filter(inv=>inv.id!==id); }
+  else { const i=il.findIndex(inv=>inv.num===num); if(i>=0) il.splice(i,1); } // legacy no-id: remove first match only
   DB.set('invoices',il);
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
   renderAnalytics();
@@ -5524,6 +5570,10 @@ function saveNewJob(){
   ss.forEach(s=>{sel.innerHTML+=`<option value="${escHtml(s.name)}">${escHtml(s.name)}</option>`;});
   sel.value=siteName;
   updateClientIndicator(siteName);
+
+  // If Manual Entry is open, refresh its site dropdown + select the new site (U6).
+  const meSel=document.getElementById('me-site');
+  if(meSel){ meSel.innerHTML='<option value="">Select site…</option>'; ss.forEach(s=>{meSel.innerHTML+=`<option value="${escHtml(s.name)}">${escHtml(s.name)}</option>`;}); meSel.value=siteName; }
 
   closeNewJobSheet();
   toast('Job set up — site "'+siteName+'"'+(clientCompany?' for '+clientCompany:'')+' ✓');
@@ -6889,7 +6939,7 @@ function saveManualEntry(){
     id: Date.now().toString(36)+Math.random().toString(36).slice(2,7),
     date, site, start, finish, lunchMins,
     rate: s.rate, sonWorking, sonHours,
-    sonrate: s.sonrate||30, machines: [],
+    sonrate: s.sonrate||30, machines: readMachinesFromUI('me'),
     invoiced: false, manual: true,
     notes: notes||undefined,
     ...readTravelFromUI('me'),
@@ -6909,7 +6959,16 @@ function saveManualEntry(){
   document.getElementById('me-son-section').style.display = 'none';
   document.getElementById('me-son-hours').value = '';
   document.getElementById('me-notes').value = '';
+  _resetManualMachines();
   document.getElementById('me-preview').style.display = 'none';
+}
+
+// Reset the manual-entry machine UI so the next entry starts clean (U5).
+function _resetManualMachines(){
+  const t=document.getElementById('me-machine-toggle'); if(t) t.checked=false;
+  const sec=document.getElementById('me-machine-section'); if(sec) sec.style.display='none';
+  if(typeof _machineLines!=='undefined') _machineLines['me']=[];
+  const list=document.getElementById('machine-me-list'); if(list) list.innerHTML='';
 }
 
 function resetManualEntry(){
@@ -6922,6 +6981,7 @@ function resetManualEntry(){
   document.getElementById('me-son-section').style.display = 'none';
   document.getElementById('me-son-hours').value = '';
   document.getElementById('me-notes').value = '';
+  _resetManualMachines();
   document.getElementById('me-preview').style.display = 'none';
   // Clear travel inputs
   const kmEl=document.getElementById('travel-me-km');
