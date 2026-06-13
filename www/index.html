@@ -849,7 +849,32 @@ onAuthStateChanged(auth, async (user) => {
     if (loginScreen)   { loginScreen.style.display = 'flex'; }
     if (appWrapper)    appWrapper.style.display     = 'none';
   }
+  updateBackupBanner();
 });
+
+// Backup-warning banner: the app can run on cached local data while the cloud
+// session is dead (e.g. the token expired, or auth fired null during a brief
+// offline-at-boot so we never bounced to login). In that state every save
+// silently fails to sync (Firestore rejects the write). Surface it so backups
+// can't go quietly stale — tapping re-opens the login screen (re-signing in the
+// same account merges by last-write-wins, so local-newer data is preserved).
+function updateBackupBanner(){
+  try {
+    const b = document.getElementById('backup-warning');
+    if (!b) return;
+    const signedIn = !!auth.currentUser;
+    const hasData = !!localStorage.getItem('mcn_settings');
+    b.style.display = (!signedIn && hasData && navigator.onLine) ? 'block' : 'none';
+  } catch(_){}
+}
+window.showLoginForReauth = function(){
+  const ls = document.getElementById('screen-login');
+  if (ls) ls.style.display = 'flex';
+};
+// Safety-net poll: the stuck state can arise without an auth event firing, so
+// re-check periodically and on resume rather than relying on onAuthStateChanged.
+try { setInterval(updateBackupBanner, 20000); } catch(_){}
+try { document.addEventListener('resume', updateBackupBanner); } catch(_){}
 
 // Admin: load user list
 window.loadAdminUsers = async function(location) {
@@ -1058,6 +1083,9 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
 
 <!-- MAIN APP (hidden until authenticated) -->
 <div id="main-app-wrapper" style="display:none">
+<!-- Backup warning: shows when the app is running on cached data but the cloud
+     session is dead (signed out) so saves aren't syncing. Tap to sign back in. -->
+<div id="backup-warning" onclick="showLoginForReauth()" style="display:none;position:sticky;top:0;z-index:500;background:#C1583A;color:#fff;font-size:13px;font-weight:700;text-align:center;padding:9px 12px;cursor:pointer">⚠ Not backing up to cloud — tap to sign in</div>
 <!-- CHECKIN SCREEN -->
 <div id="screen-checkin" class="screen active">
   <div class="header">
@@ -1486,6 +1514,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
     </div>
     <button class="btn btn-primary" style="margin-bottom:10px" onclick="generateInvoice()">Generate Invoice PDF</button>
     <button class="btn btn-secondary" onclick="previewInvoice()">Preview Invoice</button>
+    <button class="btn btn-secondary" onclick="undoLastInvoice()" style="margin-top:10px;font-size:13px;color:var(--amber)">↩ Undo last invoice</button>
   </div>
   <div id="invoice-preview-section" class="section" style="display:none">
     <div class="card-title" style="padding:0 0 8px">Preview</div>
@@ -1762,6 +1791,14 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         <button class="btn btn-secondary" onclick="cloudPullNow()" style="font-size:13px;padding:10px">↓ Pull from Cloud</button>
       </div>
       <button class="btn btn-secondary" onclick="firebaseSignOut()" style="width:100%;margin-bottom:14px">Sign Out</button>
+      <div style="border-top:1px solid var(--border);padding-top:14px;margin-bottom:14px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px">📤 Export / Backup</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <button class="btn btn-secondary" onclick="exportDaysCSV()" style="font-size:13px;padding:10px">Days → CSV</button>
+          <button class="btn btn-secondary" onclick="exportFullBackup()" style="font-size:13px;padding:10px">Full backup (JSON)</button>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-top:6px">CSV for your accountant/Xero · JSON is a complete restorable backup</div>
+      </div>
       <div style="border-top:1px solid var(--border);padding-top:14px;display:flex;align-items:center;justify-content:space-between;gap:12px">
         <div style="font-size:13px;color:var(--text2)">Version <span id="app-version">—</span></div>
         <button id="update-btn" onclick="forceAppUpdate()" style="font-size:12px;font-weight:600;padding:8px 16px;border-radius:8px;border:none;background:var(--navy);color:#fff;cursor:pointer;letter-spacing:.3px">Check for Update</button>
@@ -1791,7 +1828,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v86';
+const APP_VERSION = 'v87';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -4089,6 +4126,36 @@ async function shareOrDownload(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
+// --- Data export / backup (#2) — off-app safety net + accountant/Xero feed ---
+function _csvCell(v){ v=(v==null?'':String(v)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+function exportDaysCSV(){
+  try{
+    const ss=sites(); const clientOf=n=>{const s=ss.find(x=>x.name===n);return (s&&s.client)||'';};
+    const hdr=['Date','Site','Client','Start','Finish','Lunch (min)','Hours','Rate','Day total','Extra hrs','Machines','Travel','Materials','Invoiced','Notes'];
+    const rows=days().slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(d=>{
+      const t=dayTotals(d);
+      return [d.date,d.site,clientOf(d.site),d.start,d.finish||'',d.lunchMins||0,
+        (t.h||0).toFixed(2),d.rate||'',(t.total||0).toFixed(2),
+        d.sonWorking?(t.sonH||0).toFixed(2):'',
+        (d.machines||[]).map(m=>m.name).join('; '),
+        (t.travelTotal||0).toFixed(2),(t.materialsTotal||0).toFixed(2),
+        d.invoiced?'yes':'no',d.notes||''].map(_csvCell).join(',');
+    });
+    const blob=new Blob([hdr.join(',')+'\n'+rows.join('\n')],{type:'text/csv'});
+    shareOrDownload(blob,'McNichol-days-'+todayStr()+'.csv');
+    toast('Exported '+days().length+' days to CSV');
+  }catch(e){ console.warn('exportDaysCSV',e); toast('Export failed'); }
+}
+function exportFullBackup(){
+  try{
+    const dump={app:'mcnichol-invoices',version:(typeof APP_VERSION!=='undefined'?APP_VERSION:'?'),exported:new Date().toISOString(),data:{}};
+    for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i); if(k&&k.indexOf('mcn_')===0) dump.data[k]=localStorage.getItem(k);}
+    const blob=new Blob([JSON.stringify(dump,null,2)],{type:'application/json'});
+    shareOrDownload(blob,'McNichol-backup-'+todayStr()+'.json');
+    toast('Full backup exported ('+Object.keys(dump.data).length+' keys)');
+  }catch(e){ console.warn('exportFullBackup',e); toast('Backup failed'); }
+}
+
 // Generate a real PDF from invoice HTML, then email or share it.
 // emailOpts (optional): { to, clientName, invoiceNum, senderName }
 // On Capacitor Android: if emailOpts.to is set, opens email composer with PDF attached.
@@ -4233,7 +4300,9 @@ async function generateInvoice(){
   const totalHours=ui.reduce((sum,d)=>{const{h}=dayTotals(d);return sum+h;},0);
   ad.forEach(d=>{if(selectedIds.has(d.id||d.date)){d.invoiced=true;if(typeof ArchivedSync!=='undefined')ArchivedSync.setArchived(d.id||d.date,true).catch(()=>{});}});DB.set('days',ad);
   const invoiceId=Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-  const il=invoices();il.push({id:invoiceId,num:invNumOverride,invoiceNum:invNum,date:todayStr(),clientName:ic.company||'',total:it,days:ui.length,hours:totalHours});DB.set('invoices',il);
+  // dayIds + rateBefore let "Undo last invoice" (#5) restore exactly what this
+  // send changed. s.rate is still the pre-bump rate here (bump happens below).
+  const il=invoices();il.push({id:invoiceId,num:invNumOverride,invoiceNum:invNum,date:todayStr(),clientName:ic.company||'',total:it,days:ui.length,hours:totalHours,dayIds:ui.map(d=>d.id||d.date),rateBefore:parseFloat(s.rate)});DB.set('invoices',il);
   // Await the full-HTML save so Stats (mcn_invoices) and the re-download store don't diverge silently.
   const savedFilename='Invoice #'+invNum+' \u2014 '+(ic.company||'Client')+' \u2014 '+todayStr()+'.html';
   const rawData={days:ui,client:ic,invoiceNum:invNumOverride,rate:s.rate};
@@ -4244,6 +4313,41 @@ async function generateInvoice(){
   if(numInput) numInput.dataset.userEdited='';
   toast('Invoice sent! Rate \u2192 $'+nr.toFixed(2));renderInvoice();
 }
+
+// #5: reverse the most recent invoice \u2014 un-archive its days, restore the rate +
+// invoice number, remove the record. The PDF already sent to the client is NOT
+// recalled (can't be); this just undoes the local side-effects of "Generate".
+async function undoLastInvoice(){
+  const il=invoices();
+  if(!il.length){ toast('No invoice to undo'); return; }
+  const last=il[il.length-1]; // newest pushed
+  const numStr=String(last.num).padStart(4,'0');
+  const dayCount=last.dayIds?last.dayIds.length:(last.days||0);
+  if(!confirm('Undo invoice #'+numStr+'?\n\nUn-archives its '+dayCount+' day'+(dayCount!==1?'s':'')+
+              (last.rateBefore!=null?', restores your rate to $'+last.rateBefore.toFixed(2)+'/hr':'')+
+              ', and removes the record.\n\n(The PDF already sent to the client is NOT recalled.)')) return;
+  // 1. Un-archive the exact days this invoice claimed.
+  if(last.dayIds&&last.dayIds.length){
+    const dl=days(), idset=new Set(last.dayIds);
+    dl.forEach(d=>{ if(idset.has(d.id||d.date)){ d.invoiced=false; if(typeof ArchivedSync!=='undefined') ArchivedSync.setArchived(d.id||d.date,false).catch(()=>{}); } });
+    DB.set('days',dl);
+  } else {
+    toast('\u26a0 Older invoice \u2014 un-archive its days manually in the Log');
+  }
+  // 2. Restore the pre-send rate + reuse this invoice number next time.
+  const s=S();
+  if(last.rateBefore!=null) s.rate=last.rateBefore;
+  s.invnum=last.num;
+  DB.set('settings',s);
+  // 3. Remove the summary record.
+  DB.set('invoices', il.filter(x=> last.id ? x.id!==last.id : x!==last));
+  // 4. Best-effort: drop the matching saved PDF so Saved Invoices stays clean.
+  try{ const recs=await InvoiceDB.list(); const m=recs.find(r=>r.rawData&&String(r.rawData.invoiceNum)===String(last.num)); if(m&&m.id!=null) await InvoiceDB.remove(m.id); }catch(_){}
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+  toast('Invoice #'+numStr+' undone'+(last.rateBefore!=null?' \u00b7 rate back to $'+last.rateBefore.toFixed(2):''));
+  renderInvoice(); try{ renderAnalytics(); }catch(_){}
+}
+window.undoLastInvoice=undoLastInvoice;
 
 // --- Goals & financial year helpers ---
 function effectiveAvgRate(rate, incpct){
