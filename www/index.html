@@ -1545,7 +1545,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       <div class="stat-card"><div class="stat-label">Avg hrs/week</div><div class="stat-value" id="ana-avg-hrs">—</div><div class="stat-sub">Last 8 weeks</div></div>
       <div class="stat-card"><div class="stat-label">Avg invoice</div><div class="stat-value" id="ana-avg-inv">—</div><div class="stat-sub">Last 6 invoices</div></div>
       <div class="stat-card"><div class="stat-label">Effective rate</div><div class="stat-value" id="ana-eff-rate">—</div><div class="stat-sub">All days</div></div>
-      <div class="stat-card"><div class="stat-label">Total invoiced</div><div class="stat-value" id="ana-total">—</div><div class="stat-sub">All time</div></div>
+      <div class="stat-card"><div class="stat-label">Total invoiced</div><div class="stat-value" id="ana-total">—</div><div class="stat-sub" id="ana-total-sub">All time</div></div>
     </div>
     <div class="card">
       <div class="card-title">Hours by week (last 8)</div>
@@ -1791,7 +1791,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v85';
+const APP_VERSION = 'v86';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -2129,6 +2129,7 @@ function forceAppUpdate(){ return otaCheck(false); }
       </div>
       <div id="materials-le-lines"></div>
     </div>
+    <div class="field"><label>Notes</label><textarea id="le-notes" rows="2" placeholder="Optional note for this day" style="width:100%;padding:11px 14px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text);resize:vertical"></textarea></div>
     <button class="btn btn-primary" style="margin-top:8px" onclick="saveLogEdit()">Save Changes ✓</button>
     <button id="le-unarchive-btn" class="btn btn-secondary" style="margin-top:8px;display:none" onclick="unarchiveLogEntry()">🔓 Move back to uninvoiced</button>
     <button class="btn btn-danger" style="margin-top:8px" onclick="promptDeleteLogEntry()">Delete Entry</button>
@@ -2850,6 +2851,7 @@ const GeoLog = {
 let watchId=null,lastLat=null,lastLng=null,lastLatTs=0;
 let geoAutoStartTriggered=false;
 let geoAutoStopTriggered=false;
+let _nativeStopInFlight=false; // C7: claim before the fresh-GPS await so two exit events can't both stop
 let geoAutoStartDate=null; // calendar date (YYYY-MM-DD) when auto-start last fired
 let geoAutoStopDate=null;  // calendar date when auto-stop last fired
 let outsideSiteTimer=null;
@@ -3568,6 +3570,7 @@ window.editLogDay = function(entryKey){
   document.getElementById('le-son-toggle').checked=!!d.sonWorking;
   document.getElementById('le-son-section').style.display=d.sonWorking?'block':'none';
   document.getElementById('le-son-hours').value=d.sonHours!==null&&d.sonHours!==undefined?d.sonHours:'';
+  const _leNotes=document.getElementById('le-notes'); if(_leNotes) _leNotes.value=d.notes||'';
   initTravelSection('le',d);
   initMaterialsSection('le',d);
   const unarchBtn=document.getElementById('le-unarchive-btn');
@@ -3613,6 +3616,7 @@ window.saveLogEdit = function(){
   d.sonWorking=document.getElementById('le-son-toggle').checked;
   const sv=document.getElementById('le-son-hours').value;
   d.sonHours=sv?parseFloat(sv):null;
+  const _leN=document.getElementById('le-notes'); if(_leN) d.notes=_leN.value.trim()||undefined;
   Object.assign(d,readTravelFromUI('le'));
   Object.assign(d,readMaterialsFromUI('le'));
   d.updatedAt=Date.now();
@@ -3752,6 +3756,7 @@ function renderLog(){
       <div class="day-item-left">
         <div class="date">${fmtDate(d.date)}</div>
         <div class="detail">${escHtml(d.site)} · ${escHtml(d.start)}–${escHtml(d.finish||'?')} · ${d.lunchMins?d.lunchMins+'min lunch':'no lunch'}</div>
+        ${d.notes?`<div style="font-size:12px;font-style:italic;color:var(--text2);margin-top:3px">“${escHtml(d.notes)}”</div>`:''}
         <div style="margin-top:4px">
           <span class="badge badge-green">${currentTradeProfile().label}</span>
           ${d.sonWorking?`<span class="badge badge-blue" style="margin-left:4px">Extra ${formatHours(sonH)} @$${sonrate}</span>`:''}
@@ -3884,6 +3889,10 @@ function renderInvoice(){
   } else {
     sc.style.display='none';
   }
+  // U8: if the full invoice preview is already open, keep it in sync with the
+  // current day selection (it used to go stale until re-tapped).
+  const _pv=document.getElementById('invoice-preview-section');
+  if(_pv && _pv.style.display==='block'){ try{ previewInvoice(); }catch(_){} }
 }
 
 // Get the list of days selected for invoicing
@@ -4490,6 +4499,9 @@ function renderAnalytics(){
   let te=0,th=0;ad.forEach(d=>{const{h,total}=dayTotals(d);th+=h;te+=total;});
   document.getElementById('ana-eff-rate').textContent='$'+(th>0?te/th:0).toFixed(0);
   const ti=ai.reduce((s,i)=>s+i.total,0);document.getElementById('ana-total').textContent=ti>=10000?'$'+Math.round(ti/100)/10+'k':fmtMoney(ti);
+  // C6: invoice summaries store the ex-GST total. Label it honestly when GST is on
+  // so the figure isn't mistaken for the GST-inclusive amount billed to clients.
+  const _tsub=document.getElementById('ana-total-sub'); if(_tsub) _tsub.textContent='All time'+(DB.get('gst_on')?' · ex GST':'');
   const mh=Math.max(...wh,1);
   const rate=parseFloat(s.rate)||0;
   document.getElementById('hours-chart').innerHTML=weeks.map((w,i)=>{const h=wh[i],p=Math.max(4,Math.round(h/mh*100)),earn=h*rate;return`<div class="bar-col" onclick="toast('${w.label}: ${h.toFixed(1)}h — ${fmtMoney(earn).replace("'","")}')"><div class="bar-val">${h>0?h.toFixed(1)+'h':''}</div><div class="bar ${i===7?'current':''}" style="height:${p}%"></div><div class="bar-label">${w.label}</div></div>`;}).join('');
@@ -6645,34 +6657,42 @@ window.initApp = function() {
       const evMs = _evMs(ev);
       const evAge = (evMs > 0) ? (Date.now() - evMs) : 0; // treat unparseable timestamps as "just now"
       if (evAge >= GEO_STOP_DEBOUNCE) {
-        // Been outside long enough — but get a fresh GPS fix to verify
-        const _site2 = siteList.find(s => s.name === ev.site);
-        if (_site2 && _site2.lat) {
-          const freshPos = await new Promise(resolve => {
-            navigator.geolocation.getCurrentPosition(p => resolve(p), () => resolve(null), { enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
-          });
-          if (!freshPos) {
-            GeoLog.add('ignore', 'Native EXIT (old) — GPS unavailable, not stopping');
-            return;
+        // C7: claim a synchronous in-flight slot before the async GPS verify, so a
+        // second exit event delivered during the await can't also reach autoStopTimer.
+        if (_nativeStopInFlight) { GeoLog.add('ignore', 'Native EXIT — a stop is already being applied'); return; }
+        _nativeStopInFlight = true;
+        try {
+          // Been outside long enough — but get a fresh GPS fix to verify
+          const _site2 = siteList.find(s => s.name === ev.site);
+          if (_site2 && _site2.lat) {
+            const freshPos = await new Promise(resolve => {
+              navigator.geolocation.getCurrentPosition(p => resolve(p), () => resolve(null), { enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
+            });
+            if (!freshPos) {
+              GeoLog.add('ignore', 'Native EXIT (old) — GPS unavailable, not stopping');
+              return;
+            }
+            const _d2 = dist(freshPos.coords.latitude, freshPos.coords.longitude, _site2.lat, _site2.lng);
+            if (_d2 < (_site2.radius || 100)) {
+              GeoLog.add('ignore', 'Native EXIT (old) discarded — fresh GPS shows ' + Math.round(_d2) + 'm inside ' + ev.site);
+              return;
+            }
           }
-          const _d2 = dist(freshPos.coords.latitude, freshPos.coords.longitude, _site2.lat, _site2.lng);
-          if (_d2 < (_site2.radius || 100)) {
-            GeoLog.add('ignore', 'Native EXIT (old) discarded — fresh GPS shows ' + Math.round(_d2) + 'm inside ' + ev.site);
-            return;
+          // Only mark "stop already triggered today" AFTER autoStopTimer actually ran
+          // and the day record now has a finish time. A false GPS blip slipped past the
+          // proximity gate once and set the flag without truly stopping the timer,
+          // blocking the real later departure.
+          autoStopTimer(ev.time);
+          const _post = activeDay();
+          if (_post && _post.finish) {
+            geoAutoStopTriggered = true;
+            geoAutoStopDate = todayStr();
+            _saveGeoFlags();
+          } else {
+            GeoLog.add('ignore', 'Native EXIT — autoStopTimer ran but no finish recorded; flag NOT set');
           }
-        }
-        // Only mark "stop already triggered today" AFTER autoStopTimer actually ran
-        // and the day record now has a finish time. A false GPS blip slipped past the
-        // proximity gate once and set the flag without truly stopping the timer,
-        // blocking the real later departure.
-        autoStopTimer(ev.time);
-        const _post = activeDay();
-        if (_post && _post.finish) {
-          geoAutoStopTriggered = true;
-          geoAutoStopDate = todayStr();
-          _saveGeoFlags();
-        } else {
-          GeoLog.add('ignore', 'Native EXIT — autoStopTimer ran but no finish recorded; flag NOT set');
+        } finally {
+          _nativeStopInFlight = false;
         }
       } else {
         // Recent exit — debounce before stopping
