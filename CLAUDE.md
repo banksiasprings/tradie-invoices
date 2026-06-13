@@ -22,10 +22,10 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v86 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v87 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.86.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.87.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
 
 **Single source of truth: `APP_VERSION` in `www/index.html`.** Just bump that — the GitHub Pages deploy workflow (`.github/workflows/deploy.yml`) rewrites the other two automatically:
 
@@ -420,6 +420,19 @@ bash test-geo-scenarios.sh
 `test-geo-scenarios.sh` covers: boot re-registration, DWELL→enter, exit, and the
 v81 telemetry fields on persisted events. The JS replay/debounce layer needs a
 signed-in app session — test manually, or read the GeoLog (Settings → Geo Diagnostics).
+
+```bash
+# Money-path regression tests (the only automated tests — money bugs cost $$):
+bash test-money-math.sh        # asserts dayTotals/lunch/extra-labourer/GST/invoice math
+```
+`test-money-math.js` drives the live app over CDP and checks the real money
+functions against hand-computed values (8h@$60=$480, lunch deduction, extra
+labourer, finish-before-start clamps to $0, GST=10%, invoice=sum). Run it after
+touching `dayTotals`, `generateInvoice`, or anything money-related. Needs the
+`ws` node module — the wrapper sets `NODE_PATH` to a global install (override
+with `WS_NODE_PATH=…`). General-purpose CDP debugging of the live app (read/seed
+localStorage, call functions, force OTA) uses the same `adb forward … webview_devtools_remote_<pid>`
++ Runtime.evaluate pattern — invaluable this session for verifying on-device.
 
 ---
 
