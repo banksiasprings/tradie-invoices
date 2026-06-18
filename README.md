@@ -54,6 +54,35 @@ python3 -m http.server 8000
 # Open http://localhost:8000 in your browser
 ```
 
+## 🔭 Remote Phone Monitoring (dev tooling)
+
+When the app is running on the real phone (e.g. in the 12V cradle on the drive to a
+worksite), you can watch it live from the Mac — screen mirror **and** every log line
+the app prints — over an encrypted [Tailscale](https://tailscale.com) tunnel that works
+on WiFi *or* LTE.
+
+```bash
+./scripts/monitor-phone.sh        # opens scrcpy mirror + streams the app's logcat
+```
+
+- **scrcpy** mirrors the phone screen in real time.
+- **logcat** streams `com.banksiasprings.invoices`'s output (auto-scoped to the app's
+  PID — this is where `[GeoLog]` and `Capacitor/Console` lines show up).
+- **Tailscale** carries it end-to-end encrypted; only Steven's signed-in devices can see
+  each other.
+
+First-time phone setup (install Tailscale, sign in, grab the phone's `100.x.y.z` IP) is a
+~3-minute, phone-followable guide: **[`scripts/setup-tailscale-debug.md`](scripts/setup-tailscale-debug.md)**.
+Once set up, override the target inline without editing the script:
+
+```bash
+PHONE_IP=100.x.y.z PHONE_PORT=42385 ./scripts/monitor-phone.sh
+```
+
+> Keep the phone on the 12V charger while monitoring — mirror + Tailscale + logcat drain
+> the battery noticeably. If the Mac is ever lost/stolen, remove it from
+> [the Tailscale admin console](https://login.tailscale.com) to instantly cut its access.
+
 ## 📸 Screenshots
 
 - Time tracking dashboard with map view
