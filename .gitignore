@@ -63,3 +63,6 @@ coverage/
 
 # Graphify code-graph artifacts (local only)
 graphify-out/
+
+# Remote-monitoring session logs
+logs/

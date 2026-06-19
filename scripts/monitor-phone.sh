@@ -1,123 +1,167 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# monitor-phone.sh — Live remote monitoring of Steven's phone over Tailscale
+# monitor-phone.sh — Pair with, then live-monitor, Steven's phone over Tailscale
 #
-#   • scrcpy   → real-time mirror of the phone screen
-#   • logcat   → live stream of every log line the invoicing app emits
-#   • over     → Tailscale's encrypted tunnel (works on home WiFi OR LTE)
+#   MODES
+#     pair <PAIR_PORT> <CODE> [CONNECT_PORT]   one-time pairing over the tunnel
+#     (no args)                                connect + mirror + log
 #
-# Usage:
-#   ./scripts/monitor-phone.sh
+#   • scrcpy → low-bandwidth screen mirror (no audio, 15fps — cellular friendly)
+#   • logcat → live stream of the invoicing app's output, to screen + rolling log
+#   • over   → Tailscale; the phone's 100.x IP is STABLE across WiFi ↔ LTE, so
+#              pairing/connecting works even now that Steven is on cellular.
 #
-# Override on the fly (env vars):
-#   PHONE_IP=100.x.y.z PHONE_PORT=42385 ./scripts/monitor-phone.sh   # Tailscale
-#   PHONE_IP=192.168.1.125 PHONE_PORT=5555 ./scripts/monitor-phone.sh # home WiFi
-#   SCRCPY_EXTRA="--stay-awake --turn-screen-off" ./scripts/monitor-phone.sh
+#   EXAMPLES
+#     ./scripts/monitor-phone.sh pair 37123 482913        # pair (no connect port yet)
+#     ./scripts/monitor-phone.sh pair 37123 482913 41555  # pair AND connect in one go
+#     PHONE_PORT=41555 ./scripts/monitor-phone.sh         # monitor on a known port
+#     ./scripts/monitor-phone.sh                          # monitor (5555 + fallbacks)
 #
-# Setup (phone side): see scripts/setup-tailscale-debug.md
+#   Phone-side setup: scripts/setup-tailscale-debug.md
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 # ── Config ───────────────────────────────────────────────────────────────────
-# Filled in after Steven completes the phone-side Tailscale setup.
-# PHONE_IP  = the phone's Tailscale IP (starts with 100.), shown in the Tailscale app.
-# PHONE_PORT= the Wireless-debugging "connect" port shown at the top of
-#             Settings → Developer options → Wireless debugging (CHANGES EACH REBOOT).
-PHONE_IP="${PHONE_IP:-PHONE_TAILSCALE_IP_TBD}"     # e.g. 100.x.y.z   (TODO: fill in)
-PHONE_PORT="${PHONE_PORT:-5555}"                    # e.g. 42385       (TODO: confirm)
+PHONE_IP="${PHONE_IP:-100.122.43.30}"               # steven-phone (Tailscale) — stable on WiFi or LTE
+PHONE_PORT="${PHONE_PORT:-41767}"                    # live Wireless-debugging CONNECT port (verified
+                                                     # 2026-06-19). CHANGES on phone reboot / WiFi-debug
+                                                     # toggle — re-discover on LAN with 'adb mdns services',
+                                                     # or read it off the Wireless-debugging screen.
+APP_PKG="${APP_PKG:-com.banksiasprings.invoices}"    # invoicing app — verified package name
+ADB="${ADB:-$(command -v adb || echo /Users/openclaw/Library/Android/sdk/platform-tools/adb)}"
+SCRCPY_EXTRA="${SCRCPY_EXTRA:-}"                      # extra scrcpy flags (optional)
+FALLBACK_PORTS=(41767 5555 44143 37000 39000 41000)  # connect-port fallbacks
 
-APP_PKG="${APP_PKG:-com.banksiasprings.invoices}"   # invoicing app — verified package name
-ADB="${ADB:-/Users/openclaw/Library/Android/sdk/platform-tools/adb}"
-SCRCPY_EXTRA="${SCRCPY_EXTRA:-}"                     # extra scrcpy flags (optional)
+export ADB                                            # scrcpy locates adb via PATH or $ADB
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_DIR="$SCRIPT_DIR/../logs"; mkdir -p "$LOG_DIR"
 
-# Fallback ports tried in order if the primary connect fails.
-# 44143 = the dynamic port seen in an earlier pairing; 5555 = classic adb-tcpip.
-FALLBACK_PORTS=(5555 44143 37000 39000)
-
-PHONE_ADDR="$PHONE_IP:$PHONE_PORT"
-
-# scrcpy locates adb via the ADB env var (adb is NOT on PATH on this Mac).
-export ADB
-
-# ── Sanity ───────────────────────────────────────────────────────────────────
-[ -x "$ADB" ] || { echo "❌ adb not found at: $ADB  (set \$ADB)"; exit 1; }
-command -v scrcpy >/dev/null 2>&1 || { echo "❌ scrcpy not installed — run: brew install scrcpy"; exit 1; }
-if [ "$PHONE_IP" = "PHONE_TAILSCALE_IP_TBD" ]; then
-  echo "❌ PHONE_IP not set yet. Either edit this script (PHONE_IP=...) once Steven"
-  echo "   sends his phone's Tailscale IP, or run with it inline:"
-  echo "     PHONE_IP=100.x.y.z PHONE_PORT=42385 $0"
-  exit 1
-fi
-
-# ── Connect (with port fallback) ─────────────────────────────────────────────
-connect_phone() {
-  echo "🔌 Connecting to $PHONE_ADDR ..."
-  if "$ADB" connect "$PHONE_ADDR" 2>&1 | grep -qiE "connected|already"; then
-    return 0
+# ── Shared helpers ───────────────────────────────────────────────────────────
+require_tools() {
+  [ -x "$ADB" ] || { echo "❌ adb not found ($ADB). Run: brew install --cask android-platform-tools"; exit 1; }
+}
+tunnel_up() {
+  echo "📡 Pinging phone over Tailscale ($PHONE_IP) ..."
+  if ping -c 1 -t 4 "$PHONE_IP" >/dev/null 2>&1; then
+    echo "✅ Tunnel up (phone responds to ping)."; return 0
   fi
-  echo "   primary port failed — trying fallback ports: ${FALLBACK_PORTS[*]}"
-  for p in "${FALLBACK_PORTS[@]}"; do
-    [ "$p" = "$PHONE_PORT" ] && continue
-    echo "   trying $PHONE_IP:$p ..."
-    if "$ADB" connect "$PHONE_IP:$p" 2>&1 | grep -qiE "connected|already"; then
-      PHONE_ADDR="$PHONE_IP:$p"
-      echo "   ✅ connected on fallback port $p"
-      return 0
-    fi
-  done
+  echo "❌ Phone not reachable at $PHONE_IP."
+  echo "   • Tailscale ON on BOTH phone (🔑 in status bar) and Mac?"
+  echo "   • Phone awake (screen on / charging)? A dozing phone drops the tunnel."
   return 1
 }
 
-if ! connect_phone; then
-  echo ""
-  echo "❌ ADB connection failed. Checklist:"
-  echo "   • Tailscale ON on BOTH phone and Mac (key icon 🔑 on phone)"
-  echo "   • Phone's Wireless Debugging is ON (Developer options)"
-  echo "   • PHONE_PORT matches the port shown on the Wireless-debugging screen"
-  echo "     (it changes every phone reboot)"
-  echo "   • If never paired from this Mac: run 'adb pair $PHONE_IP:<pair-port>' first"
-  exit 1
-fi
+# ── MODE: pair ───────────────────────────────────────────────────────────────
+# Android's wireless-debug pairing service binds all interfaces, so the pairing
+# PORT shown on the phone is reachable via the Tailscale IP (the IP on the phone's
+# dialog doesn't matter — we route through 100.x). The code+port EXPIRE when the
+# popup closes, so the phone must keep it open until this succeeds.
+do_pair() {
+  local pair_port="${1:-}" code="${2:-}" connect_port="${3:-}"
+  [ -n "$pair_port" ] && [ -n "$code" ] || {
+    echo "Usage: $0 pair <PAIR_PORT> <CODE> [CONNECT_PORT]"; exit 2; }
+  require_tools
+  tunnel_up || exit 1
 
-# Confirm the device is actually online to adb.
-if ! "$ADB" -s "$PHONE_ADDR" get-state 2>/dev/null | grep -q device; then
-  echo "❌ $PHONE_ADDR connected but not in 'device' state. Check the phone for an"
-  echo "   'Allow wireless debugging?' prompt and tap Allow."
-  exit 1
-fi
-echo "✅ Phone online: $("$ADB" -s "$PHONE_ADDR" shell getprop ro.product.model 2>/dev/null | tr -d '\r')"
+  echo "🤝 Pairing with $PHONE_IP:$pair_port (code $code) over Tailscale ..."
+  local out
+  if ! out="$("$ADB" pair "$PHONE_IP:$pair_port" "$code" 2>&1)"; then
+    # Retry once piping the code via stdin (covers adb builds that ignore the inline arg)
+    out="$(printf '%s\n' "$code" | "$ADB" pair "$PHONE_IP:$pair_port" 2>&1 || true)"
+  fi
+  echo "   ↳ $out"
 
-# ── Logcat (app-scoped, falls back to errors-only if app not running) ────────
-"$ADB" -s "$PHONE_ADDR" logcat -c 2>/dev/null || true   # clear stale logs
+  if ! echo "$out" | grep -qi "Successfully paired"; then
+    echo ""
+    echo "❌ Pairing failed. Most likely the code/port EXPIRED (the popup was closed or timed out),"
+    echo "   or that wasn't the pairing port. On the phone:"
+    echo "     Wireless debugging → 'Pair device with pairing code' → KEEP THE POPUP OPEN,"
+    echo "     screenshot it, and send the new PORT + 6-digit CODE (both change each time)."
+    exit 1
+  fi
+  echo "✅ Paired — this Mac is now trusted by the phone (persists across reboots)."
 
-# pidof exits non-zero when the app isn't running; the trailing || keeps set -e happy
-# so we fall through to the errors-only branch instead of aborting the whole script.
-APP_PID="$("$ADB" -s "$PHONE_ADDR" shell pidof "$APP_PKG" 2>/dev/null | tr -d '\r' | awk '{print $1}')" || APP_PID=""
-LOGCAT_PID=""
-if [ -n "$APP_PID" ]; then
-  echo "📜 Streaming logcat for $APP_PKG (pid $APP_PID) — every line the app emits."
-  "$ADB" -s "$PHONE_ADDR" logcat --pid="$APP_PID" -v time &
-  LOGCAT_PID=$!
-else
-  echo "⚠️  $APP_PKG isn't running yet — open the invoicing app on the phone."
-  echo "📜 Until then, streaming system-wide ERRORS only (re-run once the app is open"
-  echo "    to get the full app-scoped stream)."
-  "$ADB" -s "$PHONE_ADDR" logcat "*:E" -v time &
-  LOGCAT_PID=$!
-fi
-
-# ── Cleanup on exit ──────────────────────────────────────────────────────────
-cleanup() {
-  [ -n "$LOGCAT_PID" ] && kill "$LOGCAT_PID" 2>/dev/null || true
-  echo ""
-  echo "🧹 Stopped logcat. (Phone stays connected to adb; run '$ADB disconnect' to drop it.)"
+  if [ -n "$connect_port" ]; then
+    PHONE_PORT="$connect_port"; PHONE_ADDR="$PHONE_IP:$PHONE_PORT"
+    echo "🔌 Connecting on CONNECT port $connect_port ..."
+    if "$ADB" connect "$PHONE_ADDR" 2>&1 | grep -qiE "connected|already" \
+       && [ "$("$ADB" -s "$PHONE_ADDR" get-state 2>/dev/null | tr -d '\r')" = "device" ]; then
+      echo "✅ Connected. Normalising to a stable port (adb tcpip 5555) ..."
+      "$ADB" -s "$PHONE_ADDR" tcpip 5555 >/dev/null 2>&1 || true
+      sleep 1
+      echo "🎉 Ready. Start the live view with:  ./scripts/monitor-phone.sh"
+    else
+      echo "⚠️  Paired OK but couldn't connect on $connect_port. Send the CONNECT port from the"
+      echo "    MAIN Wireless-debugging screen, then run: PHONE_PORT=<port> ./scripts/monitor-phone.sh"
+    fi
+  else
+    echo ""
+    echo "➡️  Next: send the CONNECT port (the IP:port on the MAIN Wireless-debugging screen),"
+    echo "    then run:  PHONE_PORT=<connect-port> ./scripts/monitor-phone.sh"
+  fi
 }
-trap cleanup EXIT INT TERM
 
-# ── Mirror (blocks until the scrcpy window is closed) ────────────────────────
-echo "🪞 Opening scrcpy mirror ($PHONE_ADDR) — close the window to stop everything."
-# NOTE: scrcpy v4 uses --video-bit-rate (the old --bit-rate was removed).
-# shellcheck disable=SC2086
-scrcpy -s "$PHONE_ADDR" --max-size 1080 --video-bit-rate 4M $SCRCPY_EXTRA
+# ── MODE: monitor (connect → logcat → mirror) ────────────────────────────────
+do_monitor() {
+  require_tools
+  command -v scrcpy >/dev/null 2>&1 || { echo "❌ scrcpy not installed — run: brew install scrcpy"; exit 1; }
+  tunnel_up || exit 1
 
-# scrcpy exited → trap fires → logcat is killed.
+  PHONE_ADDR="$PHONE_IP:$PHONE_PORT"
+  local connected=""
+  echo "🔌 adb connect $PHONE_ADDR ..."
+  if "$ADB" connect "$PHONE_ADDR" 2>&1 | grep -qiE "connected|already"; then connected=1; fi
+  if [ -z "$connected" ]; then
+    echo "   port $PHONE_PORT not open — trying fallbacks: ${FALLBACK_PORTS[*]}"
+    for p in "${FALLBACK_PORTS[@]}"; do
+      [ "$p" = "$PHONE_PORT" ] && continue
+      if "$ADB" connect "$PHONE_IP:$p" 2>&1 | grep -qiE "connected|already"; then
+        PHONE_ADDR="$PHONE_IP:$p"; connected=1; echo "   ✅ connected on fallback port $p"; break
+      fi
+    done
+  fi
+  if [ -z "$connected" ]; then
+    echo ""
+    echo "❌ No adb port open over Tailscale (tunnel is up — ping worked). Either Wireless"
+    echo "   debugging is off, or this Mac isn't paired yet. If unpaired, pair first:"
+    echo "     Wireless debugging → 'Pair device with pairing code' → send PORT + CODE, then:"
+    echo "     ./scripts/monitor-phone.sh pair <PORT> <CODE>"
+    exit 1
+  fi
+
+  local state; state="$("$ADB" -s "$PHONE_ADDR" get-state 2>/dev/null | tr -d '\r' || true)"
+  if [ "$state" != "device" ]; then
+    echo "❌ $PHONE_ADDR is '$state' (not 'device')."
+    [ "$state" = "unauthorized" ] && echo "   Not paired — run: ./scripts/monitor-phone.sh pair <PORT> <CODE>"
+    exit 1
+  fi
+  echo "✅ Phone online: $("$ADB" -s "$PHONE_ADDR" shell getprop ro.product.model 2>/dev/null | tr -d '\r')"
+
+  # logcat → screen + rolling per-session log file
+  local log_file="$LOG_DIR/invoice-app-$(date +%Y%m%d-%H%M%S).log"
+  "$ADB" -s "$PHONE_ADDR" logcat -c 2>/dev/null || true
+  local app_pid
+  app_pid="$("$ADB" -s "$PHONE_ADDR" shell pidof "$APP_PKG" 2>/dev/null | tr -d '\r' | awk '{print $1}')" || app_pid=""
+  echo "📝 Logging to: $log_file"
+  if [ -n "$app_pid" ]; then
+    echo "📜 Streaming $APP_PKG (pid $app_pid) — [GeoLog] / Capacitor/Console lines land here."
+    "$ADB" -s "$PHONE_ADDR" logcat --pid="$app_pid" -v time 2>&1 | tee "$log_file" &
+  else
+    echo "⚠️  $APP_PKG not running — open the invoicing app. Logging system ERRORS until then."
+    "$ADB" -s "$PHONE_ADDR" logcat "*:E" -v time 2>&1 | tee "$log_file" &
+  fi
+  LOGCAT_PID=$!
+  trap 'kill "${LOGCAT_PID:-}" 2>/dev/null || true; echo; echo "🧹 Stopped. Log saved: '"$log_file"'"' EXIT INT TERM
+
+  echo "🪞 Opening mirror — no audio, 15fps, capped bitrate for cellular. Close window to stop."
+  # scrcpy v4: --video-bit-rate (old --bit-rate removed).
+  # shellcheck disable=SC2086
+  scrcpy -s "$PHONE_ADDR" --no-audio --max-fps 15 --max-size 1024 --video-bit-rate 2M $SCRCPY_EXTRA
+}
+
+# ── Dispatch ─────────────────────────────────────────────────────────────────
+case "${1:-}" in
+  pair)  shift; do_pair "$@";;
+  ""|monitor) do_monitor;;
+  *) echo "Usage: $0 [pair <PAIR_PORT> <CODE> [CONNECT_PORT]]"; exit 2;;
+esac

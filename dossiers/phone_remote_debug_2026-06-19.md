@@ -137,3 +137,43 @@ Install Tailscale → sign in to the **same account** → enable VPN → **send 
 4. (Optional) A launchd/login item or `tailscale up` flag so the Mac auto-reconnects, and a
    helper to read the phone's current Wireless-debug port over the already-up adb link so we
    don't have to re-fetch it manually after each phone reboot.
+
+---
+
+## 2026-06-19 — paired & end-to-end verified on the real phone
+
+**Devices:** Mac Tailscale `100.107.176.12`; phone `steven-phone` `100.122.43.30` /
+LAN `192.168.1.125`. Phone = Motorola Edge 50 Neo ("vienna"), Android 16.
+
+**Pairing — DONE ✅ (route-independent trust, persists across reboots).**
+`adb pair` over Tailscale failed (phone's Tailscale node was offline at the time), so the
+script's LAN fallback paired instead: `Successfully paired to 192.168.1.125:39679
+[guid=adb-ZY22KBQWCF-cBV18y]`. The trust is not route-specific — it applies over Tailscale too.
+
+**Connect port — auto-discovered, no extra screenshot.** On the same LAN, `adb mdns services`
+revealed `_adb-tls-connect._tcp 192.168.1.125:41767`, and the phone auto-connected. Baked
+`41767` into the script default. ⚠️ This port **changes on reboot / WiFi-debug toggle** — on
+LAN re-discover with `adb mdns services`; over Tailscale read it off the Wireless-debugging
+screen and pass `PHONE_PORT=`.
+
+**Pipeline — VERIFIED end-to-end on the real phone (over LAN):**
+- scrcpy: a 3s `--no-window --record` captured **152,535 bytes of real H.264** — the mirror
+  works on real hardware (the thing the emulator's sw-encoder could never prove).
+- logcat: streams from the phone over the adb-tls link.
+
+**⚠️ THE reliability blocker — the phone drops connections when idle.**
+- `tailscale status` showed `steven-phone … offline, last seen 3h ago` (relay syd, rx 0) — the
+  phone's VPN had dropped. So **cellular monitoring won't work until Tailscale is reconnected
+  on the phone.**
+- Even on LAN, the wireless-debug connection dropped after ~1 min idle (`41767` went to
+  "Connection refused", mDNS stopped advertising) — Android Doze suspends adbd-wireless when
+  the screen is off.
+- **Fix (phone side):** (a) keep the phone **awake + charging** — Developer options → **"Stay
+  awake"** is ideal for the 12V cradle; (b) **reconnect Tailscale** and make it stick:
+  Always-on VPN + battery optimization **Unrestricted** for Tailscale; (c) keep Wireless
+  debugging on and battery-unrestricted. This is almost certainly the root of the earlier
+  "can't login" flakiness too — the VPN simply wasn't staying up.
+
+**Watch commands (run on the Mac):**
+- Home / same WiFi:  `PHONE_IP=192.168.1.125 ./scripts/monitor-phone.sh`
+- Anywhere (once the phone's Tailscale is back online):  `./scripts/monitor-phone.sh`
