@@ -177,3 +177,17 @@ screen and pass `PHONE_PORT=`.
 **Watch commands (run on the Mac):**
 - Home / same WiFi:  `PHONE_IP=192.168.1.125 ./scripts/monitor-phone.sh`
 - Anywhere (once the phone's Tailscale is back online):  `./scripts/monitor-phone.sh`
+
+### FINAL — pinned & verified over Tailscale ✅
+Wireless-debug port changes every toggle (41767 → 43201 observed), so after reconnecting we
+**pinned a stable port**: `adb tcpip 5555` over the mDNS-discovered TLS port. Result:
+**`192.168.1.125:5555` (LAN) and `100.122.43.30:5555` (Tailscale) both report `device`** on
+the same fixed port (no re-auth — the Mac's adbkey was already trusted). Script default is now
+`5555`. Survives the next wireless-debug toggle; resets only on a full phone **reboot** — after
+a reboot re-pin on LAN: `adb mdns services` → `adb connect 192.168.1.125:<port>` → `adb tcpip 5555`.
+
+End-to-end over Tailscale on 5555: scrcpy captured **413,607 bytes of H.264**, and logcat
+streamed real app lines (`[GeoLog]`, `CloudSync.restore`, Capgo bundle state, a Firebase
+permission-denied warning).
+
+**THE single command Steven runs:**  `./scripts/monitor-phone.sh`   *(Tailscale, anywhere; add `PHONE_IP=192.168.1.125` when home for lower latency)*

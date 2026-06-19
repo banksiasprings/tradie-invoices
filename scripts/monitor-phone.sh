@@ -23,14 +23,14 @@ set -euo pipefail
 
 # ── Config ───────────────────────────────────────────────────────────────────
 PHONE_IP="${PHONE_IP:-100.122.43.30}"               # steven-phone (Tailscale) — stable on WiFi or LTE
-PHONE_PORT="${PHONE_PORT:-41767}"                    # live Wireless-debugging CONNECT port (verified
-                                                     # 2026-06-19). CHANGES on phone reboot / WiFi-debug
-                                                     # toggle — re-discover on LAN with 'adb mdns services',
-                                                     # or read it off the Wireless-debugging screen.
+PHONE_PORT="${PHONE_PORT:-5555}"                     # PINNED via 'adb tcpip 5555' (2026-06-19) — stable on
+                                                     # LAN *and* Tailscale until the phone fully REBOOTS.
+                                                     # After a reboot, re-pin (LAN): adb mdns services →
+                                                     # adb connect 192.168.1.125:<new-port> → adb tcpip 5555
 APP_PKG="${APP_PKG:-com.banksiasprings.invoices}"    # invoicing app — verified package name
 ADB="${ADB:-$(command -v adb || echo /Users/openclaw/Library/Android/sdk/platform-tools/adb)}"
 SCRCPY_EXTRA="${SCRCPY_EXTRA:-}"                      # extra scrcpy flags (optional)
-FALLBACK_PORTS=(41767 5555 44143 37000 39000 41000)  # connect-port fallbacks
+FALLBACK_PORTS=(5555 43201 41767 44143 37000 39000)  # connect-port fallbacks
 
 export ADB                                            # scrcpy locates adb via PATH or $ADB
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
