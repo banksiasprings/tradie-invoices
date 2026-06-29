@@ -22,10 +22,10 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v87 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v89 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.87.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.89.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
 
 **Single source of truth: `APP_VERSION` in `www/index.html`.** Just bump that — the GitHub Pages deploy workflow (`.github/workflows/deploy.yml`) rewrites the other two automatically:
 
@@ -437,6 +437,38 @@ localStorage, call functions, force OTA) uses the same `adb forward … webview_
 ---
 
 ## Known Bugs Fixed (Don't Reintroduce)
+
+### Auto-STOP false-fired on rural GPS glitches → corrupted the day [FIXED v89]
+**Diagnosed from the mirrored Firestore GeoLog** (`users/{uid}/geolog/{date}` — the v81
+telemetry; readable off-device as project owner). Auto-START was always fine. Auto-STOP was
+the problem: on the rural Granite Belt, fused location (wifi/cell) periodically returns a
+fix that **passes the 150m accuracy gate yet is km off** — the smoking gun was a logged exit
+`[acc 20m · 31074m from centre · fix 4min stale]`: a 20m-"accuracy" fix placing the phone
+31 km from a ~2900m fence. The stop paths verified "outside" with `maximumAge:30000` (could
+return a cached overnight fix) and **never checked the fresh fix's own accuracy**, and
+`recoverPendingStop()` (app-kill recovery) blindly trusted the elapsed native EXIT with **no
+GPS check at all**. Result: false mid-day stops at garbage times → the day got rebuilt by
+hand (`saveEdit`) almost daily, eroding trust in auto-mode.
+**Fix:** one shared `_confirmDepartureThenStop(site, exitTime, tag)` helper used by ALL four
+stop paths (web debounce, native old-exit, native debounce, `recoverPendingStop`). A stop is
+applied ONLY when a **fresh** (`maximumAge:0`), **accurate** (≤`FRESH_FIX_ACC_M`=100m),
+genuinely-**outside** fix confirms departure. Poor/stale/unavailable/inside fix → do NOT
+stop. Asymmetry by design: a *missed* auto-stop is one tap to fix; a *false* auto-stop
+corrupts the whole workday. Over-billing protection preserved (genuine departure → fresh fix
+at home/next site confirms outside → day closes at recorded exit time). Java
+(`NativeGeoPlugin`) now also forwards the v81 telemetry (`acc/distM/fixAgeMs/rejected`) on
+the real-time broadcast so the live path can filter `rejected` events too. Verified on the
+emulator via `test-geo-stop.sh` (6 cases, the exact field failure modes) + money-path
+regression still green. **Don't reintroduce:** stopping on a single unverified fix,
+`maximumAge:>0` on a stop-confirm fix, or a stop-confirm that skips the accuracy check. The
+real fences are large (~2900m and ~1050m) — the fix is radius-independent; don't "fix" it by
+shrinking radii (a tighter fence makes false EXITs *more* likely, not less).
+
+**Remote field diagnosis (how the above was found):** the GeoLog mirrors to Firestore
+`users/{uid}/geolog/{date}` (v81). Read it off-device as the project owner via the
+already-authenticated `firebase` CLI credentials + the Firestore REST API — the per-user
+`uid` is listed in `admin/users/accounts`. Exact recipe (uid, token mint) is kept in the
+local session memory, NOT here — this repo is **public**, so never commit uids/tokens/coords.
 
 ### Capgo OTA 405 — auto-update POSTs to a static host [PARTIAL — v84]
 `@capgo/capacitor-updater@8.45.3`'s `autoUpdate` POSTs to the update manifest; static GitHub

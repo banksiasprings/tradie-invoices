@@ -77,6 +77,17 @@ public class NativeGeoPlugin extends Plugin {
                 data.put("time", ev.optString("time"));
                 data.put("date", ev.optString("date"));
                 data.put("timestamp", ev.optLong("timestamp"));
+                // v89: forward the v81 triggering-location telemetry too, so the
+                // real-time JS path gets the SAME data the replayed/persisted path
+                // does — and (critically) so a `rejected` garbage-accuracy event
+                // delivered in real time is filtered by JS instead of acted on.
+                if (ev.has("acc")) data.put("acc", ev.optInt("acc"));
+                if (ev.has("distM")) data.put("distM", ev.optInt("distM"));
+                if (ev.has("fixAgeMs")) data.put("fixAgeMs", ev.optLong("fixAgeMs"));
+                if (ev.optBoolean("rejected")) {
+                    data.put("rejected", true);
+                    data.put("reason", ev.optString("reason"));
+                }
                 notifyListeners("geoEvent", data);
                 Log.d(TAG, "Forwarded real-time geoEvent to JS: " + data.toString());
             } catch (Exception e) {

@@ -1842,7 +1842,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v88';
+const APP_VERSION = 'v89';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -3051,34 +3051,11 @@ function checkNearbySites(lat,lng,accuracy){
               outsideSiteTimer=null; outsideSiteTimerStart=null;
               const hour=new Date().getHours();
               if(hour>=5&&hour<21&&activeDay()&&!geoAutoStopTriggered){
-                const _ad=activeDay(), _site=sites().find(s=>s.name===_ad.site);
-                // Get a FRESH GPS fix before stopping — lastLat may be the same stale
-                // "outside" reading that started the debounce (screen off = no updates)
-                function doStop(){
-                  // Set the day-flag only AFTER autoStopTimer actually wrote a finish.
-                  // A false GPS blip used to set this flag without truly stopping, then
-                  // the real later EXIT was blocked by the already-set flag.
-                  GeoLog.add('exit','[Web GPS] Left geofence: '+(_ad?_ad.site:'?'));
-                  autoStopTimer();
-                  const _post=activeDay();
-                  if(_post&&_post.finish){
-                    geoAutoStopTriggered=true;
-                    geoAutoStopDate=todayStr();
-                    _saveGeoFlags();
-                  } else {
-                    GeoLog.add('ignore','[Web GPS] autoStopTimer ran but no finish recorded; flag NOT set');
-                  }
-                }
-                if(_site&&_site.lat){
-                  navigator.geolocation.getCurrentPosition(pos=>{
-                    const freshD=dist(pos.coords.latitude,pos.coords.longitude,_site.lat,_site.lng);
-                    if(freshD<(_site.radius||100)){
-                      GeoLog.add('ignore','[Web GPS] Debounce expired but fresh GPS shows '+Math.round(freshD)+'m inside '+_site.name+' — ignoring exit');
-                      return;
-                    }
-                    doStop();
-                  },()=>{ GeoLog.add('ignore','[Web GPS] Debounce expired but GPS unavailable — not stopping'); },{ enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
-                } else { doStop(); }
+                const _ad=activeDay();
+                // v89: stop only on a FRESH, accuracy-checked, genuinely-outside fix
+                // (shared with the native paths) — lastLat may be the same stale
+                // "outside" reading that started the debounce (screen off = no updates).
+                _confirmDepartureThenStop(_ad?_ad.site:null, undefined, '[Web GPS] Left geofence');
               }
             },GEO_STOP_DEBOUNCE);
           }
@@ -3150,11 +3127,61 @@ function _setPendingStop(site, exitTime, fireAt){
 function _clearPendingStop(){ try{ localStorage.removeItem('mcn_pendingStop'); }catch(_){} }
 function _getPendingStop(){ try{ return JSON.parse(localStorage.getItem('mcn_pendingStop')||'null'); }catch(_){ return null; } }
 
+// v89: Confirm a REAL departure with a FRESH, ACCURATE fix before stopping the
+// timer. Field telemetry (Lucas Ranch, rural Granite Belt) showed native EXITs
+// firing off fused-location glitches that PASS the 150m accuracy gate yet are
+// kilometres off — e.g. "acc 20m · 31074m from a 2900m fence · fix 4min stale" —
+// which false-stopped the timer mid-day and forced a full manual rebuild of the
+// day. From v89 a stop is applied ONLY when a fresh fix (maximumAge:0), accurate
+// to <=FRESH_FIX_ACC_M, actually places the phone OUTSIDE the site. A poor /
+// stale / unavailable fix does NOT stop: a missed auto-stop is one tap to fix; a
+// FALSE auto-stop corrupts the whole workday. Shared by every stop path (web
+// debounce, native old-exit, native debounce, app-kill recovery) so the four
+// can't drift. Returns a Promise<boolean> (true = actually stopped).
+const FRESH_FIX_ACC_M = 100;
+function _confirmDepartureThenStop(siteName, exitTime, tag){
+  return new Promise(resolve=>{
+    const _site=(typeof sites==='function'?sites():[]).find(s=>s.name===siteName);
+    function _commit(){
+      autoStopTimer(exitTime);
+      const post=activeDay();
+      if(post && post.finish){ geoAutoStopTriggered=true; geoAutoStopDate=todayStr(); _saveGeoFlags(); }
+      else GeoLog.add('ignore', tag+' — autoStopTimer ran but no finish recorded; flag NOT set');
+      resolve(true);
+    }
+    if(!_site || !_site.lat){ _commit(); return; } // no coords to verify against — trust the exit
+    navigator.geolocation.getCurrentPosition(pos=>{
+      const acc=pos.coords.accuracy;
+      if(acc!=null && acc>FRESH_FIX_ACC_M){
+        GeoLog.add('ignore', tag+' — NOT stopping, fresh fix too inaccurate ('+Math.round(acc)+'m > '+FRESH_FIX_ACC_M+'m)');
+        resolve(false); return;
+      }
+      const d=dist(pos.coords.latitude,pos.coords.longitude,_site.lat,_site.lng);
+      if(d < (_site.radius||100)){
+        GeoLog.add('ignore', tag+' — discarded, fresh GPS shows '+Math.round(d)+'m INSIDE '+siteName+' (acc '+Math.round(acc)+'m)');
+        resolve(false); return;
+      }
+      GeoLog.add('exit', tag+' — confirmed '+Math.round(d)+'m outside '+siteName+' (acc '+Math.round(acc)+'m)');
+      _commit();
+    },()=>{
+      GeoLog.add('ignore', tag+' — NOT stopping, fresh GPS unavailable');
+      resolve(false);
+    },{ enableHighAccuracy:true, timeout:15000, maximumAge:0 });
+  });
+}
+window._confirmDepartureThenStop = _confirmDepartureThenStop;
+
 // Apply (or re-arm) a stop that the in-memory debounce timer may have lost to an
-// app kill. Called on every cold open / resume. Trusts the elapsed native EXIT:
-// the day is closed at the recorded exit time (over-billing across a dead app is
-// the harm we're preventing; a flutter-only exit would have been cancelled by a
-// re-enter while the app was alive, which clears mcn_pendingStop).
+// app kill. Called on every cold open / resume. v89: no longer BLINDLY trusts the
+// elapsed native EXIT — it now re-confirms with a fresh, accurate fix before
+// closing the day (a flutter-only exit would have been cancelled by a re-enter
+// while the app was alive, which clears mcn_pendingStop). The earlier "trust the
+// exit, close at the recorded time" design was the exact mechanism that
+// false-stopped Steven's days at the wrong time when a stale/km-off fused fix
+// triggered the EXIT while the app was dead. Over-billing is still prevented: if
+// he genuinely left, the fresh fix (taken at home/next site) confirms outside and
+// the day closes at the recorded exit time; if he never left, it shows inside and
+// the day keeps running.
 function recoverPendingStop(){
   const ps=_getPendingStop(); if(!ps) return;
   const ad=activeDay();
@@ -3166,11 +3193,9 @@ function recoverPendingStop(){
     setTimeout(()=>{ try{ recoverPendingStop(); }catch(_){} }, remain + 500);
     return;
   }
-  GeoLog.add('info','Recovering missed auto-stop: '+ps.site+' at '+ps.exitTime+' (debounce elapsed while app was closed)');
-  autoStopTimer(ps.exitTime);
-  const post=activeDay();
-  if(post && post.finish){ geoAutoStopTriggered=true; geoAutoStopDate=todayStr(); _saveGeoFlags(); }
-  _clearPendingStop();
+  GeoLog.add('info','Recovering missed auto-stop: '+ps.site+' at '+ps.exitTime+' — verifying with a fresh fix (debounce elapsed while app was closed)');
+  _confirmDepartureThenStop(ps.site, ps.exitTime, 'Recovered stop ('+ps.site+')');
+  _clearPendingStop(); // event consumed — a genuine later departure re-arms a new pending stop
 }
 window.recoverPendingStop = recoverPendingStop;
 (function _restoreGeoFlags(){
@@ -6803,35 +6828,11 @@ window.initApp = function() {
         if (_nativeStopInFlight) { GeoLog.add('ignore', 'Native EXIT — a stop is already being applied'); return; }
         _nativeStopInFlight = true;
         try {
-          // Been outside long enough — but get a fresh GPS fix to verify
-          const _site2 = siteList.find(s => s.name === ev.site);
-          if (_site2 && _site2.lat) {
-            const freshPos = await new Promise(resolve => {
-              navigator.geolocation.getCurrentPosition(p => resolve(p), () => resolve(null), { enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
-            });
-            if (!freshPos) {
-              GeoLog.add('ignore', 'Native EXIT (old) — GPS unavailable, not stopping');
-              return;
-            }
-            const _d2 = dist(freshPos.coords.latitude, freshPos.coords.longitude, _site2.lat, _site2.lng);
-            if (_d2 < (_site2.radius || 100)) {
-              GeoLog.add('ignore', 'Native EXIT (old) discarded — fresh GPS shows ' + Math.round(_d2) + 'm inside ' + ev.site);
-              return;
-            }
-          }
-          // Only mark "stop already triggered today" AFTER autoStopTimer actually ran
-          // and the day record now has a finish time. A false GPS blip slipped past the
-          // proximity gate once and set the flag without truly stopping the timer,
-          // blocking the real later departure.
-          autoStopTimer(ev.time);
-          const _post = activeDay();
-          if (_post && _post.finish) {
-            geoAutoStopTriggered = true;
-            geoAutoStopDate = todayStr();
-            _saveGeoFlags();
-          } else {
-            GeoLog.add('ignore', 'Native EXIT — autoStopTimer ran but no finish recorded; flag NOT set');
-          }
+          // v89: fresh (maximumAge:0) + accuracy-checked confirmation. The old
+          // verify used maximumAge:30000 (could return a cached overnight fix) and
+          // never checked the fresh fix's OWN accuracy — letting a stale, km-off
+          // fused fix slip through and false-stop the day.
+          await _confirmDepartureThenStop(ev.site, ev.time, 'Native EXIT (old)');
         } finally {
           _nativeStopInFlight = false;
         }
@@ -6848,29 +6849,9 @@ window.initApp = function() {
             outsideSiteTimer = null; outsideSiteTimerStart = null;
             const hour = new Date().getHours();
             if (hour >= 5 && hour < 21 && activeDay() && !geoAutoStopTriggered) {
-              const _ad=activeDay(), _site=(typeof sites==='function'?sites():[]).find(s=>s.name===_ad.site);
-              function _doNativeStop(){
-                // Same scope fix as above: set flag only after autoStopTimer succeeded.
-                autoStopTimer();
-                const _post = activeDay();
-                if (_post && _post.finish) {
-                  geoAutoStopTriggered = true;
-                  geoAutoStopDate = todayStr();
-                  _saveGeoFlags();
-                } else {
-                  GeoLog.add('ignore','[Native] Debounce stop ran but no finish recorded; flag NOT set');
-                }
-              }
-              if(_site&&_site.lat){
-                navigator.geolocation.getCurrentPosition(pos=>{
-                  const freshD=dist(pos.coords.latitude,pos.coords.longitude,_site.lat,_site.lng);
-                  if(freshD<(_site.radius||100)){
-                    GeoLog.add('ignore','[Native] Debounce expired but fresh GPS shows '+Math.round(freshD)+'m inside '+_site.name+' — ignoring exit');
-                    return;
-                  }
-                  _doNativeStop();
-                },()=>{ GeoLog.add('ignore','[Native] Debounce expired but GPS unavailable — not stopping'); },{ enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
-              } else { _doNativeStop(); }
+              const _ad=activeDay();
+              // v89: unified fresh + accuracy-checked confirmation before stopping.
+              _confirmDepartureThenStop(_ad.site, undefined, '[Native] Debounce stop');
             }
           }, delay);
         }
