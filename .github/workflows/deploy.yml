@@ -29,9 +29,13 @@ jobs:
 
       - name: Generate Capacitor live-update bundle
         run: |
-          # Extract app version number (e.g. v14 → 1.14.0 for semver)
-          APP_VER=$(grep -o "APP_VERSION = 'v[0-9]*'" www/index.html | grep -o '[0-9]*')
-          SEMVER="1.${APP_VER}.0"
+          # Extract app version number (e.g. v14 → 1.14.0, or point-release v92.1 → 1.92.1)
+          APP_VER=$(grep -o "APP_VERSION = 'v[0-9.]*'" www/index.html | grep -o '[0-9][0-9.]*')
+          if echo "$APP_VER" | grep -q '\.'; then
+            SEMVER="1.${APP_VER}"      # dotted point release: v92.1 → 1.92.1
+          else
+            SEMVER="1.${APP_VER}.0"    # plain integer: v92 → 1.92.0
+          fi
           echo "Bundle version: ${SEMVER}"
 
           # Create updates/ dir inside www/

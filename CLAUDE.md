@@ -22,10 +22,12 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v92 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v92.1 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.92.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.92.1 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+
+> **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
 **Single source of truth: `APP_VERSION` in `www/index.html`.** Just bump that — the GitHub Pages deploy workflow (`.github/workflows/deploy.yml`) rewrites the other two automatically:
 

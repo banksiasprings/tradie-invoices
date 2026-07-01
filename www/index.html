@@ -211,7 +211,9 @@
   .hc-fix{flex-shrink:0;align-self:center;background:var(--amber);color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap}
   .hc-fix.soft{background:var(--navy)}
   .hc-row.hc-fail .hc-label{color:#c0392b}
+  .hc-row.hc-na{opacity:.45}
   .hc-banner{font-size:12.5px;color:var(--text2);background:var(--amber-light);border-radius:8px;padding:9px 11px;margin-bottom:12px;line-height:1.4}
+  .hc-banner.hc-banner-warn{color:#b26a00;background:#fef3e0;border:1px solid #f0c890;font-weight:600}
 
   .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-80px);background:var(--text);color:#fff;padding:10px 20px;border-radius:999px;font-size:13px;font-weight:600;z-index:999;transition:transform .3s;white-space:nowrap}
   .toast.show{transform:translateX(-50%) translateY(0)}
@@ -1885,7 +1887,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v92';
+const APP_VERSION = 'v92.1';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -6944,8 +6946,10 @@ const Health = {
 
   // Map the raw native status → ordered check list. Each check:
   //   { id, label, status:'pass'|'warn'|'fail'|'info'|'na', detail, critical, fixTarget }
-  _computeChecks(raw, native){
-    const na = 'Only checked in the Android app';
+  _computeChecks(raw, native, bridgeUnavailable){
+    // In the browser: "runs in the app". In an OLD app whose native side lacks the
+    // getHealthStatus bridge (v91 running v92+ JS): tell the user to update the app.
+    const na = bridgeUnavailable ? 'Update the app to run this check' : 'Only checked in the Android app';
     const avail = native && raw && typeof raw === 'object';
     const checks = [];
     const push = o => checks.push(Object.assign({ critical:false, fixTarget:null }, o));
@@ -7009,10 +7013,16 @@ const Health = {
   async run(rawOverride){
     const native = this.isNative();
     const raw = (rawOverride !== undefined) ? rawOverride : (native ? await this._rawStatus() : null);
-    const checks = this._computeChecks(raw, native);
+    // Native platform but the getHealthStatus bridge returned nothing (null / non-object /
+    // empty object) → an OLD APK (e.g. v91) running newer JS that expects the v92+ native
+    // side. Every check would read N/A → 0-of-0 would look vacuously "All good". Flag it so
+    // render() shows an amber "cannot check" state instead of a misleading green.
+    const bridgeUnavailable = native && (!raw || typeof raw !== 'object' || Object.keys(raw).length === 0);
+    this._bridgeUnavailable = bridgeUnavailable;
+    const checks = this._computeChecks(raw, native, bridgeUnavailable);
     this._lastChecks = checks;
     return {
-      checks, native, raw,
+      checks, native, raw, bridgeUnavailable,
       criticalFails: checks.filter(c => c.critical && c.status === 'fail'),
       warnings: checks.filter(c => c.status === 'warn'),
       allCriticalPass: !checks.some(c => c.critical && c.status === 'fail')
@@ -7037,12 +7047,15 @@ const Health = {
     const listEl = document.getElementById('health-check-list');
     if(!listEl) return;
     const native = result ? result.native : this.isNative();
+    const bridgeUnavailable = result ? !!result.bridgeUnavailable : !!this._bridgeUnavailable;
     const checks = (result && result.checks) || this._lastChecks || [];
     const pillEl = document.getElementById('health-pill');
     const sumEl = document.getElementById('health-summary');
 
     let html = '';
-    if(!native){
+    if(bridgeUnavailable){
+      html += '<div class="hc-banner hc-banner-warn">⚠️ Health check unavailable — this JS build expects the v92+ Android app. Reinstall the latest APK to enable checks.</div>';
+    } else if(!native){
       html += '<div class="hc-banner">These are phone-settings checks — they run live inside the Android app. In the browser they show as “—”.</div>';
     }
     html += checks.map(c => this._rowHTML(c)).join('');
@@ -7054,15 +7067,18 @@ const Health = {
     const passCount  = applicable.filter(c => c.status==='pass').length;
 
     if(pillEl){
-      if(!native){ pillEl.className='health-pill hp-amber'; pillEl.textContent='App-only'; }
+      if(bridgeUnavailable){ pillEl.className='health-pill hp-amber'; pillEl.textContent='⚠️ Cannot check'; }
+      else if(!native){ pillEl.className='health-pill hp-amber'; pillEl.textContent='App-only'; }
       else if(critFail){ pillEl.className='health-pill hp-red'; pillEl.textContent='Needs fixing'; }
       else if(anyWarn){ pillEl.className='health-pill hp-amber'; pillEl.textContent='Minor warnings'; }
       else { pillEl.className='health-pill hp-green'; pillEl.textContent='All good'; }
     }
     if(sumEl){
-      sumEl.textContent = !native
-        ? 'Full checks run on the Android app'
-        : (passCount + ' of ' + applicable.length + ' checks passing');
+      sumEl.textContent = bridgeUnavailable
+        ? 'Update the app to enable these checks'
+        : (!native
+          ? 'Full checks run on the Android app'
+          : (passCount + ' of ' + applicable.length + ' checks passing'));
     }
   },
 
