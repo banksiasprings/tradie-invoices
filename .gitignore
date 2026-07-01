@@ -82,3 +82,4 @@ fb_*.js
 MORNING_TEST.md
 geofence_logcat.log
 FIELD_TEST_EOD_*.md
+.gstack/

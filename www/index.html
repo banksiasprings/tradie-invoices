@@ -1297,6 +1297,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         <tr><td style="color:var(--text2);font-weight:700;border-top:1px solid var(--border);padding-top:4px">Total</td><td style="text-align:right;font-weight:700;font-size:18px;color:var(--amber);border-top:1px solid var(--border);padding-top:4px" id="rev-earnings"></td></tr>
       </table>
       <div id="rev-machine-info" style="display:none;font-size:12px;color:var(--text2);padding:4px 0;border-top:1px solid var(--border);margin-top:4px"></div>
+      <div id="rev-round-note" style="display:none;font-size:12px;color:var(--text2);background:var(--amber-light);border-radius:8px;padding:8px 10px;margin-top:8px"></div>
       <div class="btn-row">
         <button class="btn btn-secondary" onclick="adjustReviewSession()">Adjust</button>
         <button class="btn btn-primary" onclick="confirmReviewSession()">Confirm ✓</button>
@@ -1761,6 +1762,13 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       <div id="s-extra-worker-rate" style="display:none;margin-top:10px">
         <div class="field" style="margin:0"><label id="s-extra-label">Extra labourer rate ($/hr)</label><input type="number" id="s-sonrate" step="0.05"></div>
       </div>
+      <div class="toggle-row" style="padding:10px 0;border-top:1px solid var(--border)">
+        <div>
+          <div style="font-size:14px;font-weight:600">Round times to nearest 15 min</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">Rounds start/end times to nearest :00 / :15 / :30 / :45 at Confirm time. Original GPS times preserved for audit.</div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="s-round-15" onchange="saveRoundTo15Pref()"><span class="toggle-slider"></span></label>
+      </div>
     </div>
     <div class="card card-collapsible">
       <div class="card-title">Travel billing</div>
@@ -1848,7 +1856,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v90';
+const APP_VERSION = 'v91';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -2157,6 +2165,7 @@ function forceAppUpdate(){ return otaCheck(false); }
     <div class="field"><label>Site</label><select id="le-site" style="width:100%;padding:11px 14px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)"><option value="">— Select site —</option></select></div>
     <div class="field"><label>Start time</label><input type="time" id="le-start"></div>
     <div class="field"><label>Finish time</label><input type="time" id="le-finish"></div>
+    <div id="le-raw-note" style="display:none;font-size:12px;color:var(--text2);background:var(--amber-light);border-radius:8px;padding:8px 10px;margin:-4px 0 14px"></div>
     <div class="field"><label>Lunch break (minutes)</label><input type="number" id="le-lunch" placeholder="0 — no lunch" min="0" step="5"></div>
     <div style="margin-bottom:14px">
       <div class="toggle-row" style="padding:6px 0">
@@ -2382,6 +2391,7 @@ const DEFAULTS={
   machinesLib:[],
   materialsLib:[],
   showExtraWorker:false,
+  roundTo15:false,
   employeeName:'',
   employerName:'',
   employerContact:'',
@@ -2743,6 +2753,18 @@ function saveExtraWorkerPref(){
   applyTradeVisibility();
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
 }
+function saveRoundTo15Pref(){
+  const s=S();
+  const cb=document.getElementById('s-round-15');
+  s.roundTo15=cb?cb.checked:false;
+  DB.set('settings',s);
+  // Live refresh so the Today card / backlog immediately preview the new times.
+  try{refreshTodayTab();}catch(_){}
+  try{if(document.getElementById('screen-log')&&document.getElementById('screen-log').classList.contains('active')) renderLog();}catch(_){}
+  toast(s.roundTo15?'Rounding to :15 ON ✓':'Rounding OFF');
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+}
+window.saveRoundTo15Pref=saveRoundTo15Pref;
 function currentTradeProfile(){return TRADE_PROFILES[S().tradeType||'earthmoving']||TRADE_PROFILES.earthmoving;}
 function getMachinesLib(){
   const s=S();
@@ -3513,6 +3535,38 @@ async function reconstructAndReconcile(cleanEvents){
 }
 window.reconstructAndReconcile=reconstructAndReconcile;
 
+// --- v91: round auto-captured times to the nearest 15 min (Settings toggle, default OFF) ---
+// Pure display + save-time transform. Never mutates the raw GPS times (rawStart/rawFinish
+// stay untouched) and never touches money math — dayTotals still runs, just on rounded
+// HH:MM inputs. Skipped for user-adjusted sessions (respect precise manual input).
+function roundTo15Enabled(){ return !!S().roundTo15; }
+function _round15(hhmm){
+  if(!hhmm||typeof hhmm!=='string'||hhmm.indexOf(':')<0) return hhmm;
+  const p=hhmm.split(':'),h=+p[0],m=+p[1];
+  if(isNaN(h)||isNaN(m)) return hhmm;
+  let r=Math.round((h*60+m)/15)*15; // Math.round = half-up: 07:37→07:30, 07:38→07:45
+  if(r<0)r=0; if(r>1425)r=1425;     // clamp inside the same day (23:45 max)
+  return String(Math.floor(r/60)).padStart(2,'0')+':'+String(r%60).padStart(2,'0');
+}
+// The times that WOULD be saved for this session. rounded=false when the toggle is off,
+// the session was user-adjusted, times are already on the grid, or rounding would invert
+// start/finish (defensive fallback to raw).
+function roundedTimesFor(sess){
+  const raw={start:sess.start,finish:sess.finish,rounded:false};
+  if(!roundTo15Enabled()||sess.edited_by_user) return raw;
+  const rs=_round15(sess.start), rf=sess.finish?_round15(sess.finish):sess.finish;
+  if(rs===sess.start && rf===sess.finish) return raw;
+  if(rs&&rf&&rs>=rf){ try{GeoLog.add('info','round15: rounded start≥finish ('+rs+'≥'+rf+') — kept raw '+sess.start+'–'+sess.finish);}catch(_){} return raw; }
+  return {start:rs,finish:rf,rounded:true};
+}
+// Shallow copy carrying the rounded times, for dayTotals/preview without mutating the record.
+function sessionForDisplay(sess){
+  const rt=roundedTimesFor(sess);
+  if(!rt.rounded) return sess;
+  return Object.assign({},sess,{start:rt.start,finish:rt.finish});
+}
+window.roundedTimesFor=roundedTimesFor; window._round15=_round15; window.sessionForDisplay=sessionForDisplay;
+
 // Confirm/Reject/Adjust act on a session id in the mcn_unconfirmed store.
 function confirmSession(id){
   const uc=unconfirmed();const i=uc.findIndex(s=>s.id===id);
@@ -3520,6 +3574,19 @@ function confirmSession(id){
   const sess=uc[i];
   if(sess.start&&sess.finish&&sess.start>=sess.finish){toast('Fix the times first (finish before start) — tap Adjust');return;}
   const day=Object.assign({},sess);
+  // v91: round auto-captured times to the quarter hour if the toggle is on. Raw GPS times
+  // are preserved in rawStart/rawFinish (already set at seal time). Money math unchanged —
+  // it recomputes hours×rate from whatever start/finish end up being.
+  const rt=roundedTimesFor(sess);
+  if(rt.rounded){
+    if(!day.rawStart) day.rawStart=sess.start;
+    if(sess.finish&&!day.rawFinish) day.rawFinish=sess.finish;
+    day.start=rt.start; day.finish=rt.finish;
+    day.startTs=_tsFromDateTime(day.date,day.start);
+    day.finishTs=day.finish?_tsFromDateTime(day.date,day.finish):null;
+    day.rounded_to_15=true;
+    GeoLog.add('info','Session rounded to :15 → '+day.start+'–'+day.finish+' (raw '+day.rawStart+'–'+(day.rawFinish||'?')+')');
+  }
   day.status=SESSION_STATUS.CONFIRMED; day.invoiced=false; day.confirmedAt=Date.now(); day.updatedAt=Date.now();
   const dl=days().filter(d=>d.id!==day.id); dl.push(day); DB.set('days',dl); // → billable (invoice + stats)
   uc.splice(i,1); setUnconfirmed(uc);
@@ -3767,13 +3834,21 @@ function showReview(ad){
     if(n>1){ hintEl.style.display='block'; hintEl.innerHTML='📋 '+n+' sessions awaiting review — <a href="#" onclick="showScreen(\'log\');return false" style="color:var(--amber);font-weight:700">see all in Log →</a>'; }
     else { hintEl.style.display='none'; }
   }
-  const{h,myE,sonH,sonE,total,sonrate,machineTotal,machineLines,travelTotal,travelLine,materialsTotal}=dayTotals(ad);
+  // v91: preview the times that WOULD be saved — rounded if the toggle is on (raw kept for audit).
+  const rt=roundedTimesFor(ad);
+  const disp=rt.rounded?Object.assign({},ad,{start:rt.start,finish:rt.finish}):ad;
+  const{h,myE,sonH,sonE,total,sonrate,machineTotal,machineLines,travelTotal,travelLine,materialsTotal}=dayTotals(disp);
   document.getElementById('rev-site').textContent=ad.site;
-  document.getElementById('rev-start').textContent=ad.start;
-  document.getElementById('rev-finish').textContent=ad.finish||'—';
+  document.getElementById('rev-start').textContent=disp.start;
+  document.getElementById('rev-finish').textContent=disp.finish||'—';
   document.getElementById('rev-lunch').textContent=ad.lunchMins?ad.lunchMins+' min':'None';
   document.getElementById('rev-hours').textContent=formatHours(h);
   document.getElementById('rev-my-earn').textContent=fmtMoney(myE)+' ('+formatHours(h)+' × $'+ad.rate+'/hr)';
+  const roundNote=document.getElementById('rev-round-note');
+  if(roundNote){
+    if(rt.rounded){ roundNote.style.display='block'; roundNote.innerHTML='⏱ Rounded to :15 — raw GPS <b>'+ad.start+'–'+(ad.finish||'?')+'</b> kept for audit'; }
+    else { roundNote.style.display='none'; }
+  }
   const sonRow=document.getElementById('rev-son-row'),sonEarnRow=document.getElementById('rev-son-earn-row');
   if(ad.sonWorking){
     sonRow.style.display='';sonEarnRow.style.display='';
@@ -3872,6 +3947,16 @@ function saveDay(){
   }
   GeoLog.add('info','saveDay: saving '+ad.date+' start='+ad.start+' finish='+ad.finish+' son='+ad.sonWorking);
   try {
+  // v91: active-day direct save also rounds auto-captured times when the toggle is on.
+  // (In v90 the live path normally finishes → Review Backlog → Confirm, which rounds in
+  // confirmSession; this covers any direct-save path too.) Raw GPS times preserved.
+  const rt=roundedTimesFor(ad);
+  if(rt.rounded){
+    if(!ad.rawStart) ad.rawStart=ad.start;
+    if(ad.finish&&!ad.rawFinish) ad.rawFinish=ad.finish;
+    ad.start=rt.start; ad.finish=rt.finish; ad.rounded_to_15=true;
+    GeoLog.add('info','saveDay rounded to :15 → '+ad.start+'–'+ad.finish+' (raw '+ad.rawStart+'–'+(ad.rawFinish||'?')+')');
+  }
   // Filter by unique id so a second entry on the same day doesn't wipe the first
   const dl=days(),filtered=ad.id?dl.filter(d=>d.id!==ad.id):dl;
   const _newDay={...ad,invoiced:false,updatedAt:Date.now()};filtered.push(_newDay);
@@ -3974,6 +4059,13 @@ window.editLogDay = function(entryKey, store){
   }
   document.getElementById('le-start').value=d.start||'';
   document.getElementById('le-finish').value=d.finish||'';
+  // v91: show the raw GPS-captured times for audit when they differ from the (rounded) saved times.
+  const rawNote=document.getElementById('le-raw-note');
+  if(rawNote){
+    const rawDiffers=(d.rawStart&&d.rawStart!==d.start)||(d.rawFinish&&d.rawFinish!==d.finish);
+    if(rawDiffers){ rawNote.style.display='block'; rawNote.innerHTML='⏱ Raw GPS times: <b>'+(d.rawStart||d.start||'?')+'–'+(d.rawFinish||d.finish||'?')+'</b> (preserved for audit). Editing here sets exact times — no rounding applied.'; }
+    else { rawNote.style.display='none'; }
+  }
   document.getElementById('le-lunch').value=d.lunchMins||0;
   document.getElementById('le-son-toggle').checked=!!d.sonWorking;
   document.getElementById('le-son-section').style.display=d.sonWorking?'block':'none';
@@ -4167,15 +4259,19 @@ function renderReviewBacklog(){
   if(title) title.textContent='Review Backlog ('+q.length+')';
   list.innerHTML='';
   q.forEach(sess=>{
-    const{h,total}=dayTotals(sess);
+    // v91: show the times that WOULD be saved — rounded if the toggle is on (raw kept for audit).
+    const rt=roundedTimesFor(sess);
+    const disp=rt.rounded?Object.assign({},sess,{start:rt.start,finish:rt.finish}):sess;
+    const{h,total}=dayTotals(disp);
     const c=document.createElement('div');c.className='card';c.style.marginBottom='10px';
     const id=sess.id;
     c.innerHTML=`<div class="day-item" style="border:none;padding:0">
       <div class="day-item-left">
         <div class="date">${fmtDate(sess.date)}</div>
-        <div class="detail">${escHtml(sess.site)} · ${escHtml(sess.start)}–${escHtml(sess.finish||'?')} · ${sess.lunchMins?sess.lunchMins+'min lunch':'no lunch'}</div>
+        <div class="detail">${escHtml(sess.site)} · ${escHtml(disp.start)}–${escHtml(disp.finish||'?')} · ${sess.lunchMins?sess.lunchMins+'min lunch':'no lunch'}</div>
         <div style="margin-top:4px">
           <span class="badge" style="background:#FEF3C7;color:#92400E">⏳ Unconfirmed</span>
+          ${rt.rounded?'<span class="badge badge-blue" style="margin-left:4px">⏱ :15</span>':''}
           ${sess.merged?'<span class="badge badge-blue" style="margin-left:4px">merged</span>':''}
           ${sess.edited_by_user?'<span class="badge" style="margin-left:4px;background:var(--surface2);color:var(--text2)">✏️ edited</span>':''}
           ${!sess.finish?'<span class="badge" style="margin-left:4px;background:#FEE2E2;color:#991B1B">no finish — Adjust</span>':''}
@@ -5095,6 +5191,9 @@ function loadSettings(){
   if(ewCb) ewCb.checked=!!(s.showExtraWorker);
   const ewRate=document.getElementById('s-extra-worker-rate');
   if(ewRate) ewRate.style.display=s.showExtraWorker?'block':'none';
+  // Round-to-15 toggle (v91)
+  const r15=document.getElementById('s-round-15');
+  if(r15) r15.checked=!!(s.roundTo15);
   // Employee fields
   const enEl=document.getElementById('s-employee-name');if(enEl) enEl.value=s.employeeName||'';
   const erEl=document.getElementById('s-employer-name');if(erEl) erEl.value=s.employerName||'';
