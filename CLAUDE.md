@@ -22,10 +22,10 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v91 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v92 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.91.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.92.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
 
 **Single source of truth: `APP_VERSION` in `www/index.html`.** Just bump that — the GitHub Pages deploy workflow (`.github/workflows/deploy.yml`) rewrites the other two automatically:
 
@@ -669,6 +669,33 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
+- **v92 Settings Health self-diagnostic + Start Shift gate** — SHIPPED 2026-07-02.
+  Diagnoses every device setting that silently kills background geofencing and BLOCKS
+  Start Day on a critical fail. Native `NativeGeoPlugin.getHealthStatus()` reports
+  fine/background location, `isIgnoringBatteryOptimizations`, App-Standby bucket,
+  Play-services availability, BootReceiver enabled, FGS-location declared,
+  POST_NOTIFICATIONS, `Build.MANUFACTURER`/model. `NativeGeoPlugin.openHealthFix({target})`
+  fires the right settings Intent — **Motorola-first** battery deep-links (Steven's Edge
+  50 Neo: `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` → `HighPowerApplicationsActivity`),
+  plus Samsung/Xiaomi/Oppo/Huawei/OnePlus/Vivo branches, all with app-details fallback.
+  JS `Health` module (in index.html, `window.Health`) maps raw status → traffic-light rows
+  (critical FAIL / soft WARN / INFO), renders the Settings **🩺 Setup Health** card
+  (summary pill + per-check rows + "Tap to fix"), gates `startDay()` via
+  `Health.gateStartShift()` (blocks + `#health-modal` on critical fail; toasts on warnings;
+  **fail-OPEN** in browser or on any error so it can never trap the user), auto-opens Health
+  once on startup (`initApp` → 3500ms) if a critical check fails, and refreshes on `resume`
+  after a fix deep-link + on `showScreen('settings')`. Critical (blocking): fine location,
+  background location, battery exemption, Play services. Soft warnings: Doze/standby bucket
+  (RARE/RESTRICTED), manufacturer kill-list (advisory — can't be read programmatically).
+  INFO-only (never blocks): notifications, boot receiver, FGS. **Purely additive** — v90
+  queue + v91 rounding + money paths untouched (7/7 money tests green). Verified on the
+  Pixel_7_API34 emulator via CDP: real `getHealthStatus` all-pass (9/9), injected
+  Motorola critical-fail render, real `startDay` block (day NOT started), battery-exemption
+  dialog + optimisation list opened by the fix intents, clean cold-start (no JS errors).
+  **Don't reintroduce:** blocking on notifications (INFO only); hard-failing on the
+  manufacturer/Doze soft checks; a fail-CLOSED gate (must stay fail-open); rounding/money
+  changes (out of scope). After v92 the v90→v92 pipeline is DONE; v93 (concentric geofences +
+  interpolation) is deferred until field use demands it.
 - **v91 round-to-nearest-15-min toggle** — SHIPPED 2026-07-01. Settings toggle
   `mcn_settings.roundTo15` (default OFF). When ON, auto-captured start/finish round to the
   nearest :00/:15/:30/:45 (half-up: 07:37→07:30, 07:38→07:45) at the **Confirm** step
