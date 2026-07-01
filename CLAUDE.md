@@ -495,6 +495,26 @@ localStorage, call functions, force OTA) uses the same `adb forward … webview_
 
 ## Known Bugs Fixed (Don't Reintroduce)
 
+### Settings Health showed "0 of 0 · All good" on an old APK [FIXED v92.1]
+Steven's phone ran v91 native + v92 JS (JS ahead of the APK). The v91 APK has no
+`getHealthStatus()` bridge, so `Health._rawStatus()` returned `null`; every check
+computed to `na`; `applicable = checks.filter(status!=='na')` was `[]`; and
+`passCount + ' of ' + 0` with no critical fails fell through to the GREEN "All good"
+pill — a **vacuous-truth** false-positive (0-of-0 read as "all passing"). Misleading:
+the user thinks background tracking is verified when nothing was actually checked.
+**Fix:** `Health.run()` now sets `bridgeUnavailable = native && (!raw || typeof raw
+!== 'object' || Object.keys(raw).length === 0)` — i.e. native platform but the bridge
+returned nothing (old APK / no-op). `render()` then shows an **amber** "⚠️ Cannot check"
+pill (not green), a top warning banner ("expects the v92+ Android app — reinstall the
+latest APK"), and an "update the app" summary; rows stay visible but greyed (`.hc-na`,
+detail → "Update the app to run this check"). The Start-Day gate stays **fail-open**
+(bridgeUnavailable → 0 critical fails → never blocks). Healthy-native, critical-fail,
+and browser paths unchanged. Verified 20/20 in `test-health.js` (evals the real shipped
+`Health` object against stubbed Capacitor: v91-no-bridge, empty `{}`, all-pass,
+critical-fail, browser). **Don't reintroduce:** treating 0 applicable checks as
+"passing"; a green pill when the native bridge returns null/empty; fail-CLOSED gating on
+the unavailable state.
+
 ### Auto-STOP false-fired on rural GPS glitches → corrupted the day [FIXED v89]
 **Diagnosed from the mirrored Firestore GeoLog** (`users/{uid}/geolog/{date}` — the v81
 telemetry; readable off-device as project owner). Auto-START was always fine. Auto-STOP was
@@ -671,6 +691,17 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
+- **v92.1 Settings Health "0 of 0 All good" fix (point release)** — SHIPPED 2026-07-02.
+  Amber "⚠️ Cannot check" state when newer JS runs on an old APK whose native side lacks
+  the `getHealthStatus` bridge (see the [FIXED v92.1] bug entry). First **dotted point
+  release** — deploy workflow now parses `v92.1` → OTA `1.92.1` (JS-only patch semver over
+  `1.92.0`). OTA-shipped + verified (live `latest.json` = 1.92.1, bundle carries the fix,
+  20/20 `test-health.js`). APK rebuilt to v92.1 (embeds bridge). **Field-install of that
+  APK on Steven's phone was BLOCKED** the evening of the ship — phone unreachable on both
+  the LAN static IP and the stable Tailscale address (ping 100% loss = phone off-network,
+  not an ADB issue). APK is staged at `InvoicePDF-latest.apk` ready for `adb install -r`
+  once the phone reconnects. AuraGold 3D FPS ship-gate (v41) also blocked — needs the real
+  Moto Edge 50 Neo (emulator FPS is not a valid ship-gate).
 - **v92 Settings Health self-diagnostic + Start Shift gate** — SHIPPED 2026-07-02.
   Diagnoses every device setting that silently kills background geofencing and BLOCKS
   Start Day on a critical fail. Native `NativeGeoPlugin.getHealthStatus()` reports
