@@ -301,6 +301,67 @@
   /* Stat card editable invoice number */
   .inv-num-input{width:100%;font-size:22px;font-weight:700;font-family:'Montserrat',system-ui,sans-serif;letter-spacing:-1px;color:var(--text);background:none;border:none;border-bottom:2px solid var(--amber);outline:none;padding:0;text-align:center}
   .inv-num-input:focus{border-bottom-color:var(--amber)}
+
+  /* ═══════════════ v100 TRIP LOG ═══════════════ */
+  /* Live-trip banner (active trip in progress) */
+  .trip-live{background:linear-gradient(135deg,var(--navy),#2a3d5f);color:#fff;border-radius:var(--radius);padding:16px 18px;margin-bottom:14px;box-shadow:var(--shadow)}
+  .trip-live-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#22C55E;margin-right:7px;animation:tripPulse 1.4s ease-in-out infinite;vertical-align:middle}
+  @keyframes tripPulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(34,197,94,.5)}50%{opacity:.6;box-shadow:0 0 0 6px rgba(34,197,94,0)}}
+  .trip-live-km{font-family:'Montserrat',system-ui,sans-serif;font-size:34px;font-weight:800;letter-spacing:-1px;line-height:1}
+  .trip-live-sub{font-size:12px;opacity:.75;margin-top:4px}
+
+  /* Trip summary strip (today's totals) */
+  .trip-totals{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px}
+  .trip-tot{background:var(--surface);border-radius:var(--radius-sm);padding:12px 8px;text-align:center;box-shadow:var(--shadow)}
+  .trip-tot-val{font-family:'Montserrat',system-ui,sans-serif;font-size:20px;font-weight:800;color:var(--text);letter-spacing:-.5px}
+  .trip-tot-label{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+
+  /* Trip card (swipeable) */
+  .trip-swipe{position:relative;margin-bottom:10px;border-radius:var(--radius-sm);overflow:hidden}
+  /* left half green (swipe right→business), right half blue (swipe left→personal) */
+  .trip-swipe-bg{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 22px;font-size:13px;font-weight:800;color:#fff;background:linear-gradient(90deg,var(--green) 0%,var(--green) 50%,var(--blue) 50%,var(--blue) 100%)}
+  .trip-swipe-bg span{opacity:.95}
+  .trip-card{position:relative;background:var(--surface);border-radius:var(--radius-sm);padding:13px 15px;box-shadow:var(--shadow);border-left:3px solid var(--border);cursor:pointer;touch-action:pan-y;transition:transform .05s linear;will-change:transform}
+  .trip-card.cat-business{border-left-color:var(--green)}
+  .trip-card.cat-personal{border-left-color:var(--blue)}
+  .trip-card.cat-commute{border-left-color:#8B5CF6}
+  .trip-card.cat-mixed{border-left-color:var(--amber)}
+  .trip-card.cat-unknown{border-left-color:var(--text2)}
+  .trip-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .trip-route{font-size:14px;font-weight:700;color:var(--text);line-height:1.3}
+  .trip-meta{font-size:12px;color:var(--text2);margin-top:3px}
+  .trip-km{font-family:'Montserrat',system-ui,sans-serif;font-size:18px;font-weight:800;color:var(--amber);letter-spacing:-.5px;white-space:nowrap}
+  .trip-poly{width:100%;height:64px;margin-top:10px;background:var(--surface2);border-radius:8px;display:block}
+  .cat-badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.3px;text-transform:uppercase}
+  .cat-badge.cat-business{background:var(--success-light);color:var(--green)}
+  .cat-badge.cat-personal{background:var(--blue-light);color:var(--blue)}
+  .cat-badge.cat-commute{background:rgba(139,92,246,.14);color:#8B5CF6}
+  .cat-badge.cat-mixed{background:var(--amber-light);color:var(--amber)}
+  .cat-badge.cat-unknown{background:var(--surface2);color:var(--text2)}
+  .trip-tap-tag{font-size:11px;color:var(--text2);margin-top:8px;text-align:center;opacity:.7}
+
+  /* Category pie (weekly) */
+  .trip-pie-wrap{display:flex;align-items:center;gap:16px}
+  .trip-pie{width:104px;height:104px;flex-shrink:0}
+  .trip-legend{flex:1;font-size:12px}
+  .trip-legend-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .trip-legend-dot{width:11px;height:11px;border-radius:3px;flex-shrink:0}
+  .trip-legend-km{margin-left:auto;font-weight:700;color:var(--text)}
+
+  /* Vehicle chips */
+  .veh-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border)}
+  .veh-row:last-child{border-bottom:none}
+  .veh-icon{font-size:22px;flex-shrink:0}
+  .veh-name{font-size:14px;font-weight:700;color:var(--text)}
+  .veh-sub{font-size:12px;color:var(--text2);margin-top:1px}
+  .veh-default{font-size:10px;font-weight:800;color:var(--green);background:var(--success-light);padding:2px 8px;border-radius:999px;letter-spacing:.3px}
+
+  /* Trips FAB */
+  .trip-fab{display:flex;gap:10px;margin-bottom:14px}
+  .trip-fab button{flex:1;border:none;border-radius:var(--radius-sm);padding:14px 10px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;box-shadow:var(--shadow)}
+  .trip-fab .fab-start{background:var(--amber);color:#fff}
+  .trip-fab .fab-stop{background:var(--red,#dc3545);color:#fff}
+  .trip-fab .fab-add{background:var(--surface);color:var(--text);border:1.5px solid var(--border)}
 </style>
 <script>
 // Apply theme immediately to prevent flash of wrong mode
@@ -379,7 +440,7 @@ const firestoreDb = initializeFirestore(fbApp, {
 });
 
 // Keys to sync (without the mcn_ prefix used by DB)
-const SYNC_KEYS = ['settings', 'clients', 'days', 'sites', 'activeDay', 'invoices', 'gst_on'];
+const SYNC_KEYS = ['settings', 'clients', 'days', 'sites', 'activeDay', 'invoices', 'gst_on', 'trips', 'vehicles'];
 // == ArchivedSync: per-entry archived flags in Firestore worklog subcollection ==
 // Each entry has its own doc at users/{uid}/worklog/{entryId} with {archived:bool}.
 // This survives Android storage clears independently of the days blob.
@@ -933,7 +994,7 @@ window.deleteUserData = async function(uid, email) {
   if (!confirm(`Delete all data for ${email}?\n\nThis removes their Firestore data. To fully remove their login, use the Firebase Console.`)) return;
   try {
     // Delete their sync keys
-    const SYNC_KEYS = ['settings','clients','days','sites','activeDay','invoices','gst_on'];
+    const SYNC_KEYS = ['settings','clients','days','sites','activeDay','invoices','gst_on','trips','vehicles'];
     for (const key of SYNC_KEYS) {
       await deleteDoc(doc(firestoreDb, 'users', uid, 'data', key));
     }
@@ -1636,6 +1697,14 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 
+<!-- TRIPS SCREEN (v100 — trip log / logbook) -->
+<div id="screen-trips" class="screen">
+  <div class="header"><h1>Trips</h1><p>Business &amp; personal km logbook</p></div>
+  <div class="section">
+    <div id="trips-body"><!-- rendered by renderTrips() --></div>
+  </div>
+</div>
+
 <!-- SETTINGS SCREEN -->
 <div id="screen-settings" class="screen">
   <div class="header"><h1>Settings</h1><p>Business & rate details</p></div>
@@ -1819,6 +1888,22 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         </div>
       </div>
     </div>
+    <!-- v100 Trip Log: vehicles + auto-detect toggle -->
+    <div class="card card-collapsible" id="vehicles-card">
+      <div class="card-title">🚗 Vehicles &amp; Trip Log</div>
+      <div class="card-body">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Add your vehicle(s) for the km logbook. Set a cents-per-km rate for ATO claims.</div>
+        <div id="vehicles-list"></div>
+        <button class="btn btn-secondary" style="margin-top:8px;width:100%" onclick="openVehicleModal()">+ Add vehicle</button>
+        <div class="toggle-row" style="padding:14px 0 4px;border-top:1px solid var(--border);margin-top:14px">
+          <div>
+            <div style="font-size:14px;font-weight:600">Auto-detect trips</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:2px">Automatically start/stop a trip when you drive. Uses more battery while moving (idles when parked). Off = use the manual Start/Stop button.</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="s-trip-autodetect" onchange="saveTripAutoDetectPref()"><span class="toggle-slider"></span></label>
+        </div>
+      </div>
+    </div>
     <!-- Work sites (GPS) and Plant/Materials now appear near top of settings -->
     <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
     <div style="height:12px"></div>
@@ -1887,7 +1972,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v92.1';
+const APP_VERSION = 'v100';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -2033,6 +2118,7 @@ function forceAppUpdate(){ return otaCheck(false); }
   <button class="nav-btn" onclick="showScreen('log',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></span>Log</button>
   <button class="nav-btn" id="nav-btn-invoice" onclick="showScreen('invoice',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/></svg></span><span id="nav-invoice-label">Invoice</span></button>
   <button class="nav-btn" onclick="showScreen('analytics',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>Stats</button>
+  <button class="nav-btn" onclick="showScreen('trips',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M5 17H3v-5l2-5h11l3 5h1a2 2 0 0 1 2 2v3h-2"/><circle cx="7.5" cy="17.5" r="1.6"/><circle cx="17.5" cy="17.5" r="1.6"/><line x1="9" y1="17" x2="16" y2="17"/></svg></span>Trips</button>
   <button class="nav-btn" onclick="showScreen('settings',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings</button>
 </nav>
 
@@ -2157,6 +2243,65 @@ function forceAppUpdate(){ return otaCheck(false); }
     <div class="modal-title">Add Machine <button class="modal-close" onclick="closeMachinePicker()">✕</button></div>
     <div id="machine-picker-list" style="margin-bottom:10px"></div>
     <button onclick="closeMachinePicker();addCustomMachineUI(_machinePickerPrefix)" style="background:none;border:1.5px dashed var(--border);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;font-weight:600;color:var(--text2);cursor:pointer;width:100%;text-align:left">+ Add one-off (not in library)</button>
+  </div>
+</div>
+
+<!-- v100 VEHICLE MODAL -->
+<div class="modal-bg" id="vehicle-modal">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-title"><span id="veh-modal-title-text">Add vehicle</span> <button class="modal-close" onclick="closeVehicleModal()">✕</button></div>
+    <div class="field"><label>Name</label><input id="vm-name" class="ti-input" placeholder="e.g. My Ford Ranger"></div>
+    <div class="field-row">
+      <div class="field"><label>Registration</label><input id="vm-rego" class="ti-input" placeholder="e.g. 123ABC"></div>
+      <div class="field"><label>Year</label><input id="vm-year" type="number" class="ti-input" placeholder="2022" min="1950" max="2100"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Make</label><input id="vm-make" class="ti-input" placeholder="Ford"></div>
+      <div class="field"><label>Model</label><input id="vm-model" class="ti-input" placeholder="Ranger"></div>
+    </div>
+    <div class="field"><label>Cents per km ($/km)</label><input id="vm-rate" type="number" class="ti-input" step="0.01" min="0" placeholder="0.88">
+      <div style="font-size:11px;color:var(--text2);margin-top:4px">ATO rate 2025–26: $0.88/km. Used for claim estimates.</div></div>
+    <div class="toggle-row" style="padding:8px 0">
+      <div style="font-size:14px;font-weight:600">Default vehicle</div>
+      <label class="toggle"><input type="checkbox" id="vm-default"><span class="toggle-slider"></span></label>
+    </div>
+    <button class="btn btn-primary" style="margin-top:6px" onclick="saveVehicle()">Save vehicle</button>
+    <button class="btn btn-secondary" id="vm-delete" style="margin-top:8px;display:none;color:var(--red,#dc3545)" onclick="deleteVehicle()">Delete vehicle</button>
+  </div>
+</div>
+
+<!-- v100 TRIP DETAIL MODAL -->
+<div class="modal-bg" id="trip-detail-modal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-title">Trip detail <button class="modal-close" onclick="closeTripDetail()">✕</button></div>
+    <div id="trip-detail-body"></div>
+  </div>
+</div>
+
+<!-- v100 MANUAL TRIP MODAL -->
+<div class="modal-bg" id="manual-trip-modal">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-title">Add trip manually <button class="modal-close" onclick="closeManualTripModal()">✕</button></div>
+    <div class="field-row">
+      <div class="field"><label>From</label><input id="mt-from" class="ti-input" placeholder="e.g. Home"></div>
+      <div class="field"><label>To</label><input id="mt-to" class="ti-input" placeholder="e.g. Muirlawn"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Distance (km)</label><input id="mt-km" type="number" class="ti-input" step="0.1" min="0" placeholder="0"></div>
+      <div class="field"><label>Date</label><input id="mt-date" type="date" class="ti-input"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Category</label>
+        <select id="mt-cat" class="ti-input">
+          <option value="business">💼 Business</option>
+          <option value="personal">🏠 Personal</option>
+          <option value="commute">🚦 Commute</option>
+          <option value="mixed">🔀 Mixed</option>
+        </select>
+      </div>
+      <div class="field"><label>Vehicle</label><select id="mt-vehicle" class="ti-input"></select></div>
+    </div>
+    <button class="btn btn-primary" style="margin-top:6px" onclick="saveManualTrip()">Add trip</button>
   </div>
 </div>
 
@@ -2851,7 +2996,8 @@ function showScreen(id,btn){
     else{populateClientDropdown();renderInvoice();refreshTeamHours();}
   }
   if(id==='analytics') renderAnalytics();
-  if(id==='settings') {loadSettings();renderSavedInvoices('settings');GeoLog.render();if(window.Health)Health.refresh();}
+  if(id==='trips') renderTrips();
+  if(id==='settings') {loadSettings();renderSavedInvoices('settings');GeoLog.render();if(window.Health)Health.refresh();if(window.renderVehicles)renderVehicles();}
 }
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400)}
 function nowTime(){const n=new Date();return String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0')}
@@ -3166,6 +3312,8 @@ function startGPS(){
 function dist(la1,lo1,la2,lo2){const R=6371000,toRad=Math.PI/180,p1=la1*toRad,p2=la2*toRad,dp=(la2-la1)*toRad,dl=(lo2-lo1)*toRad,a=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))}
 
 function checkNearbySites(lat,lng,accuracy){
+  // v100: same fix stream drives trip detection (no separate GPS service).
+  try{ if(window.TripDetector) TripDetector.onFix(lat,lng,accuracy); }catch(_){}
   const ss=sites();
   let nearestGeo=null,ndGeo=Infinity;
   let nearestSuggest=null,ndSuggest=Infinity;
@@ -5239,6 +5387,10 @@ function loadSettings(){
   // Round-to-15 toggle (v91)
   const r15=document.getElementById('s-round-15');
   if(r15) r15.checked=!!(s.roundTo15);
+  // v100 Trip Log: auto-detect toggle + vehicles list
+  const tad=document.getElementById('s-trip-autodetect');
+  if(tad) tad.checked=!!(s.tripAutoDetect);
+  if(window.renderVehicles) renderVehicles();
   // Employee fields
   const enEl=document.getElementById('s-employee-name');if(enEl) enEl.value=s.employeeName||'';
   const erEl=document.getElementById('s-employer-name');if(erEl) erEl.value=s.employerName||'';
@@ -7155,6 +7307,598 @@ const Health = {
 };
 window.Health = Health;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// v100 TRIP LOG — km logbook built ON TOP of the existing GPS/geofence stack.
+// STRICTLY ADDITIVE: never touches mcn_days / mcn_activeDay / unconfirmed /
+// invoice / money paths. Trips live in their own stores (mcn_trips,
+// mcn_vehicles, mcn_activeTrip) and mirror to Firestore via SYNC_KEYS.
+// Location is fed from checkNearbySites() — the ONE shared sink for web GPS
+// (watchPosition), the 90s bg poll, and the BackgroundGeolocation watcher — so
+// NO second GPS service is spun up. The same fixes that drive geofencing drive
+// trip detection. Auto-detect is opt-in (battery); manual Start/Stop + manual
+// entry always work. Screen-off dead-app continuous capture needs the native
+// foreground watcher (opt-in toggle wires BackgroundGeolocation for that).
+// ═══════════════════════════════════════════════════════════════════════════
+var TRIP_CATS = ['business','personal','commute','mixed','unknown'];
+var TRIP_CAT_META = {
+  business:{label:'Business',hex:'#16a34a',icon:'💼'},
+  personal:{label:'Personal',hex:'#2563eb',icon:'🏠'},
+  commute:{label:'Commute',hex:'#8B5CF6',icon:'🚦'},
+  mixed:{label:'Mixed',hex:'#C1583A',icon:'🔀'},
+  unknown:{label:'Untagged',hex:'#94a3b8',icon:'❓'}
+};
+
+// ── Stores ──────────────────────────────────────────────────────────────────
+function trips(){return DB.def('trips',[])}
+function setTrips(a){DB.set('trips',Array.isArray(a)?a:[])}          // DB.set auto-syncs (SYNC_KEYS)
+function vehicles(){return DB.def('vehicles',[])}
+function setVehicles(a){DB.set('vehicles',Array.isArray(a)?a:[])}
+function activeTrip(){return DB.get('activeTrip')}                    // live buffer — NOT synced
+function setActiveTrip(t){ if(t){DB.set('activeTrip',t);} else {localStorage.removeItem('mcn_activeTrip');} }
+function defaultVehicle(){ var vs=vehicles(); return vs.find(function(v){return v.is_default;})||vs[0]||null; }
+function vehicleById(id){ return vehicles().find(function(v){return v.id===id;})||null; }
+function tripId(){ return 't'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+
+//__V100_TRIP_PURE_START__  (extracted verbatim by test-trips.js — keep pure: no DOM/DB/Date.now)
+// Great-circle metres between two lat/lng (duplicate of dist() so the pure block
+// is self-contained for unit tests).
+function _tripHaversine(la1,lo1,la2,lo2){
+  var R=6371000,tr=Math.PI/180,p1=la1*tr,p2=la2*tr,dp=(la2-la1)*tr,dl=(lo2-lo1)*tr;
+  var a=Math.sin(dp/2)*Math.sin(dp/2)+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)*Math.sin(dl/2);
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+// Sum Haversine legs of a polyline [{lat,lng},…] → km.
+function polylineKm(poly){
+  if(!poly||poly.length<2) return 0;
+  var m=0;
+  for(var i=1;i<poly.length;i++){ m+=_tripHaversine(poly[i-1].lat,poly[i-1].lng,poly[i].lat,poly[i].lng); }
+  return m/1000;
+}
+// Speed km/h between two timestamped points (t in ms). Returns 0 if no dt.
+function speedKmh(a,b){
+  if(!a||!b||a.t==null||b.t==null) return 0;
+  var dtH=Math.abs(b.t-a.t)/3600000; if(dtH<=0) return 0;
+  var km=_tripHaversine(a.lat,a.lng,b.lat,b.lng)/1000;
+  return km/dtH;
+}
+// Trip detection thresholds (tunable).
+var TRIP_CFG={ startKmh:10, startSustainMs:120000, stopKmh:5, stopSustainMs:300000,
+               sampleMs:30000, maxAccM:50, siteEndRadiusM:150, linkRadiusM:100 };
+// Aggregate a set of trips into per-category km + counts + totals over a window.
+// Pure: caller passes the already-filtered trip array.
+function aggregateTrips(list){
+  var out={ totalKm:0, count:list.length, byCat:{}, days:{}, durationMin:0 };
+  TRIP_CATS.forEach(function(c){ out.byCat[c]={km:0,count:0}; });
+  list.forEach(function(t){
+    var c=TRIP_CATS.indexOf(t.category)>=0?t.category:'unknown';
+    var km=+t.distance_km||0;
+    out.totalKm+=km; out.durationMin+=(+t.duration_min||0);
+    out.byCat[c].km+=km; out.byCat[c].count++;
+    if(t.date) out.days[t.date]=true;
+  });
+  out.daysDriven=Object.keys(out.days).length;
+  out.avgKm=out.count?out.totalKm/out.count:0;
+  return out;
+}
+// Given a stream of {lat,lng,t,acc} fixes and a config, replay the detection
+// state machine and return the list of completed trips (used by unit tests to
+// prove the algorithm without any timers/DOM). Mirrors TripDetector's logic.
+function detectTripsFromFixes(fixes,cfg){
+  cfg=cfg||TRIP_CFG;
+  var out=[], cur=null, moveStart=null, stopStart=null, lastSample=null;
+  for(var i=0;i<fixes.length;i++){
+    var f=fixes[i], prev=i>0?fixes[i-1]:null;
+    if(f.acc!=null&&f.acc>cfg.maxAccM) continue;
+    var sp=prev?speedKmh(prev,f):0;
+    if(!cur){
+      if(sp>=cfg.startKmh){
+        if(!moveStart) moveStart={f:f,t:f.t};
+        else if(f.t-moveStart.t>=cfg.startSustainMs){
+          cur={ poly:[moveStart.f,f], start:moveStart.f };
+          lastSample=f; moveStart=null; stopStart=null;
+        }
+      } else { moveStart=null; }
+    } else {
+      if(!lastSample||f.t-lastSample.t>=cfg.sampleMs){ cur.poly.push(f); lastSample=f; }
+      if(sp<cfg.stopKmh){
+        if(!stopStart) stopStart=f;
+        else if(f.t-stopStart.t>=cfg.stopSustainMs){
+          cur.end=stopStart; out.push(_finalizePure(cur)); cur=null; stopStart=null; lastSample=null;
+        }
+      } else { stopStart=null; }
+    }
+  }
+  if(cur){ cur.end=cur.poly[cur.poly.length-1]; out.push(_finalizePure(cur)); }
+  return out;
+}
+function _finalizePure(c){
+  var poly=c.poly.slice();
+  return { start_lat:c.start.lat, start_lng:c.start.lng,
+           end_lat:c.end.lat, end_lng:c.end.lng,
+           distance_km:+polylineKm(poly).toFixed(2),
+           duration_min:+((c.end.t-c.start.t)/60000).toFixed(1),
+           points:poly.length };
+}
+//__V100_TRIP_PURE_END__
+
+// ── Auto-linking heuristics (impure: reads sites) ───────────────────────────
+// Nearest saved site to a point, within radius m. Returns {site,dist} or null.
+function nearestSiteTo(lat,lng,radiusM){
+  var best=null,bd=Infinity;
+  sites().forEach(function(s){
+    if(!s.lat) return;
+    var d=dist(lat,lng,s.lat,s.lng);
+    if(d<radiusM&&d<bd){ bd=d; best=s; }
+  });
+  return best?{site:best,dist:bd}:null;
+}
+// The user's home marker (a site named "Home", or settings.homeLat/homeLng).
+function homePoint(){
+  var s=S();
+  if(s.homeLat&&s.homeLng) return {lat:s.homeLat,lng:s.homeLng};
+  var h=sites().find(function(x){return x.name&&/^home$/i.test(x.name.trim());});
+  return h&&h.lat?{lat:h.lat,lng:h.lng}:null;
+}
+// Suggest a category + link for a freshly-completed trip. Never auto-applies
+// (category stays 'unknown' until the user tags) — only sets suggestion fields.
+function suggestTripLinks(t){
+  var endSite=nearestSiteTo(t.end_lat,t.end_lng,TRIP_CFG.linkRadiusM);
+  if(endSite){ t.linked_site_id=endSite.site.id||endSite.site.name; t.suggest_category='business'; t.suggest_site_name=endSite.site.name; }
+  var home=homePoint();
+  if(home&&!endSite){
+    var startAtHome=dist(t.start_lat,t.start_lng,home.lat,home.lng)<TRIP_CFG.linkRadiusM;
+    var endAtHome=dist(t.end_lat,t.end_lng,home.lat,home.lng)<TRIP_CFG.linkRadiusM;
+    // home → somewhere (weekday morning) or work → home ⇒ commute hint
+    if(startAtHome||endAtHome){ t.suggest_category='commute'; }
+  }
+  return t;
+}
+
+// ── TripDetector — live state machine fed by every GPS fix ──────────────────
+var TripDetector = {
+  _lastFix:null, _moveStart:null, _stopStart:null, _lastSample:null, _enabled:true,
+  // Called from checkNearbySites() for EVERY fix (web GPS, bg poll, BGGeo).
+  onFix:function(lat,lng,acc){
+    if(!this._enabled) return;
+    if(lat==null||lng==null) return;
+    var now=Date.now();
+    var fix={lat:lat,lng:lng,t:now,acc:(acc==null?null:acc)};
+    // Poor-accuracy fixes: skip for polyline/speed but keep _lastFix time fresh.
+    if(fix.acc!=null&&fix.acc>TRIP_CFG.maxAccM){ this._lastFix=fix; return; }
+    var prev=this._lastFix; this._lastFix=fix;
+    var sp=prev?speedKmh(prev,fix):0;
+    var ad=activeTrip();
+    if(!ad){
+      // Not in a trip — watch for sustained movement to START one.
+      if(sp>=TRIP_CFG.startKmh){
+        if(!this._moveStart) this._moveStart=fix;
+        else if(fix.t-this._moveStart.t>=TRIP_CFG.startSustainMs){
+          this._begin(this._moveStart,fix);
+        }
+      } else { this._moveStart=null; }
+    } else {
+      // In a trip — sample, extend, and watch for STOP conditions.
+      if(!this._lastSample||fix.t-this._lastSample.t>=TRIP_CFG.sampleMs){
+        ad.polyline.push({lat:lat,lng:lng,t:now});
+        ad.distance_km=+polylineKm(ad.polyline).toFixed(2);
+        this._lastSample=fix; setActiveTrip(ad); TripUI.refreshLive();
+      }
+      // End on entering a saved work site (reuse geofence knowledge).
+      var atSite=nearestSiteTo(lat,lng,TRIP_CFG.siteEndRadiusM);
+      if(atSite){ this._end(fix,'entered work site: '+atSite.site.name); return; }
+      // End on being stopped for stopSustainMs.
+      if(sp<TRIP_CFG.stopKmh){
+        if(!this._stopStart) this._stopStart=fix;
+        else if(fix.t-this._stopStart.t>=TRIP_CFG.stopSustainMs){ this._end(this._stopStart,'stopped'); }
+      } else { this._stopStart=null; }
+    }
+  },
+  _begin:function(startFix,curFix){
+    var v=defaultVehicle();
+    var d=new Date(startFix.t);
+    var ad={
+      id:tripId(), vehicle_id:v?v.id:null, category:'unknown',
+      start_time:startFix.t, end_time:null,
+      start_lat:startFix.lat, start_lng:startFix.lng, end_lat:null, end_lng:null,
+      polyline:[{lat:startFix.lat,lng:startFix.lng,t:startFix.t},{lat:curFix.lat,lng:curFix.lng,t:curFix.t}],
+      distance_km:0, duration_min:0, notes:'',
+      linked_site_id:null, linked_invoice_id:null,
+      date:d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'),
+      auto:true, edited_by_user:false, created_at:startFix.t
+    };
+    this._moveStart=null; this._stopStart=null; this._lastSample=curFix;
+    setActiveTrip(ad);
+    try{ GeoLog.add('info','Trip auto-started ('+(v?v.name:'no vehicle')+')'); }catch(_){}
+    tripNotify('🚗 Trip started','Auto-detected — tracking your route');
+    TripUI.refreshLive();
+    if(document.getElementById('screen-trips').classList.contains('active')) renderTrips();
+  },
+  // Close the active trip. reason is for the GeoLog only.
+  _end:function(endFix,reason){
+    var ad=activeTrip(); if(!ad) return;
+    ad.end_time=endFix.t; ad.end_lat=endFix.lat; ad.end_lng=endFix.lng;
+    if(ad.polyline[ad.polyline.length-1].t!==endFix.t) ad.polyline.push({lat:endFix.lat,lng:endFix.lng,t:endFix.t});
+    ad.distance_km=+polylineKm(ad.polyline).toFixed(2);
+    ad.duration_min=+((ad.end_time-ad.start_time)/60000).toFixed(1);
+    suggestTripLinks(ad);
+    this._commit(ad,reason);
+  },
+  _commit:function(ad,reason){
+    // Ignore trivial noise (<0.3km) so a walk to the shed isn't a "trip".
+    this._moveStart=null; this._stopStart=null; this._lastSample=null;
+    setActiveTrip(null);
+    if((+ad.distance_km||0)<0.3){ try{GeoLog.add('ignore','Trip discarded (<0.3km) — '+reason);}catch(_){} TripUI.refreshLive(); return; }
+    var all=trips(); all.push(ad); setTrips(all);
+    try{ GeoLog.add('info','Trip logged '+ad.distance_km+'km ('+reason+')'); }catch(_){}
+    tripNotify('✅ Trip logged: '+ad.distance_km+' km', ad.suggest_site_name?('Near '+ad.suggest_site_name+' — tap to tag'):'Tap to tag business/personal');
+    TripUI.refreshLive();
+    if(document.getElementById('screen-trips').classList.contains('active')) renderTrips();
+  }
+};
+window.TripDetector = TripDetector;
+
+// Fire an in-app notification (native) — best-effort, never blocks.
+function tripNotify(title,body){
+  try{
+    var P=window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.LocalNotifications;
+    if(P&&P.schedule){ P.schedule({notifications:[{id:Math.floor(Date.now()%100000),title:title,body:body||'',schedule:{at:new Date(Date.now()+300)}}]}).catch(function(){}); }
+  }catch(_){}
+}
+
+// ── Manual controls ─────────────────────────────────────────────────────────
+// Start a trip right now from the current GPS fix (works while app foregrounded).
+function startTripManual(){
+  if(activeTrip()){ toast('A trip is already running'); return; }
+  if(!vehicles().length){ toast('Add a vehicle first'); openVehicleModal(); return; }
+  toast('Getting GPS…');
+  var begin=function(lat,lng){
+    var v=defaultVehicle(); var t0=Date.now(); var d=new Date(t0);
+    var ad={ id:tripId(), vehicle_id:v?v.id:null, category:'unknown',
+      start_time:t0, end_time:null, start_lat:lat, start_lng:lng, end_lat:null, end_lng:null,
+      polyline:[{lat:lat,lng:lng,t:t0}], distance_km:0, duration_min:0, notes:'',
+      linked_site_id:null, linked_invoice_id:null,
+      date:d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'),
+      auto:false, edited_by_user:false, created_at:t0 };
+    TripDetector._lastSample={lat:lat,lng:lng,t:t0}; TripDetector._lastFix={lat:lat,lng:lng,t:t0,acc:null};
+    setActiveTrip(ad);
+    try{GeoLog.add('info','Trip manually started');}catch(_){}
+    toast('Trip started 🚗'); renderTrips(); TripUI.refreshLive();
+  };
+  if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(function(p){ begin(p.coords.latitude,p.coords.longitude); },
+      function(){ begin(TripDetector._lastFix?TripDetector._lastFix.lat:0,TripDetector._lastFix?TripDetector._lastFix.lng:0); },
+      {enableHighAccuracy:true,timeout:12000,maximumAge:10000});
+  } else { begin(0,0); }
+}
+// Stop the active trip now from the current fix.
+function stopTripActive(){
+  var ad=activeTrip(); if(!ad){ toast('No trip running'); return; }
+  var finish=function(lat,lng){
+    var f={lat:(lat!=null?lat:ad.polyline[ad.polyline.length-1].lat),lng:(lng!=null?lng:ad.polyline[ad.polyline.length-1].lng),t:Date.now()};
+    TripDetector._end(f,'manual stop');
+    renderTrips();
+  };
+  if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(function(p){ finish(p.coords.latitude,p.coords.longitude); },
+      function(){ finish(null,null); }, {enableHighAccuracy:true,timeout:12000,maximumAge:10000});
+  } else { finish(null,null); }
+}
+
+// ── Vehicles CRUD ────────────────────────────────────────────────────────────
+var _editVehicleId=null;
+function openVehicleModal(id){
+  _editVehicleId=id||null;
+  var v=id?vehicleById(id):null;
+  document.getElementById('veh-modal-title-text').textContent=v?'Edit vehicle':'Add vehicle';
+  document.getElementById('vm-name').value=v?v.name||'':'';
+  document.getElementById('vm-rego').value=v?v.registration||'':'';
+  document.getElementById('vm-make').value=v?v.make||'':'';
+  document.getElementById('vm-model').value=v?v.model||'':'';
+  document.getElementById('vm-year').value=v?v.year||'':'';
+  document.getElementById('vm-rate').value=v?(v.cents_per_km!=null?v.cents_per_km:0.88):(S().travelKmRate||0.88);
+  document.getElementById('vm-default').checked=v?!!v.is_default:!vehicles().length;
+  document.getElementById('vm-delete').style.display=v?'block':'none';
+  document.getElementById('vehicle-modal').classList.add('open');
+}
+function closeVehicleModal(){ document.getElementById('vehicle-modal').classList.remove('open'); }
+function saveVehicle(){
+  var name=document.getElementById('vm-name').value.trim();
+  if(!name){ toast('Give the vehicle a name'); return; }
+  var rec={
+    id:_editVehicleId||('v'+Date.now().toString(36)),
+    name:name,
+    registration:document.getElementById('vm-rego').value.trim(),
+    make:document.getElementById('vm-make').value.trim(),
+    model:document.getElementById('vm-model').value.trim(),
+    year:parseInt(document.getElementById('vm-year').value)||null,
+    cents_per_km:parseFloat(document.getElementById('vm-rate').value)||0,
+    is_default:document.getElementById('vm-default').checked
+  };
+  var vs=vehicles();
+  if(rec.is_default) vs.forEach(function(v){ v.is_default=false; });
+  var idx=vs.findIndex(function(v){return v.id===rec.id;});
+  if(idx>=0) vs[idx]=rec; else vs.push(rec);
+  if(!vs.some(function(v){return v.is_default;})&&vs.length) vs[0].is_default=true;
+  setVehicles(vs);
+  closeVehicleModal(); renderVehicles(); renderTrips();
+  toast('Vehicle saved');
+}
+function deleteVehicle(){
+  if(!_editVehicleId) return;
+  if(!confirm('Delete this vehicle? Existing trips keep their record.')) return;
+  var vs=vehicles().filter(function(v){return v.id!==_editVehicleId;});
+  if(vs.length&&!vs.some(function(v){return v.is_default;})) vs[0].is_default=true;
+  setVehicles(vs); closeVehicleModal(); renderVehicles(); renderTrips();
+}
+function renderVehicles(){
+  var el=document.getElementById('vehicles-list'); if(!el) return;
+  var vs=vehicles();
+  if(!vs.length){ el.innerHTML='<div style="font-size:13px;color:var(--text2);padding:6px 0">No vehicles yet.</div>'; return; }
+  el.innerHTML=vs.map(function(v){
+    var sub=[v.make,v.model,v.year].filter(Boolean).join(' ')||'—';
+    var rate=(v.cents_per_km!=null?('$'+(+v.cents_per_km).toFixed(2)+'/km'):'');
+    return '<div class="veh-row" onclick="openVehicleModal(\''+v.id+'\')">'+
+      '<div class="veh-icon">🚗</div>'+
+      '<div style="flex:1;min-width:0"><div class="veh-name">'+escHtml(v.name)+(v.is_default?' <span class="veh-default">DEFAULT</span>':'')+'</div>'+
+      '<div class="veh-sub">'+escHtml(sub)+(v.registration?(' · '+escHtml(v.registration)):'')+' · '+rate+'</div></div>'+
+      '<div style="color:var(--text2)">›</div></div>';
+  }).join('');
+}
+
+// ── Auto-detect preference → BackgroundGeolocation watcher control ───────────
+function saveTripAutoDetectPref(){
+  var on=document.getElementById('s-trip-autodetect').checked;
+  var s=S(); s.tripAutoDetect=on; DB.set('settings',s);
+  TripDetector._enabled=true; // detector always processes fixes; toggle controls the bg watcher
+  if(window.setTripBgWatcher) window.setTripBgWatcher(on);
+  toast(on?'Auto-detect on':'Auto-detect off');
+}
+
+// ── Rendering: Trips tab ─────────────────────────────────────────────────────
+var TripUI={
+  refreshLive:function(){
+    if(!document.getElementById('screen-trips').classList.contains('active')) return;
+    var live=document.getElementById('trip-live-slot'); if(live) live.innerHTML=_liveHtml();
+  }
+};
+function _liveHtml(){
+  var ad=activeTrip(); if(!ad) return '';
+  var mins=Math.round((Date.now()-ad.start_time)/60000);
+  return '<div class="trip-live"><div style="font-size:12px;opacity:.8;margin-bottom:4px"><span class="trip-live-dot"></span>TRIP IN PROGRESS</div>'+
+    '<div class="trip-live-km">'+(+ad.distance_km||0).toFixed(1)+' <span style="font-size:16px;font-weight:600">km</span></div>'+
+    '<div class="trip-live-sub">'+mins+' min · '+ad.polyline.length+' points'+(ad.auto?' · auto':'')+'</div></div>';
+}
+function fmtTime(ts){ var d=new Date(ts); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+
+function renderTrips(){
+  var body=document.getElementById('trips-body'); if(!body) return;
+  var vs=vehicles();
+  // First-run: prompt to add a vehicle.
+  if(!vs.length&&!trips().length&&!activeTrip()){
+    body.innerHTML='<div class="empty"><div class="empty-icon">🚗</div><h3>Set up your trip log</h3>'+
+      '<p>Add your vehicle, then the app can track your business &amp; personal kilometres for tax time.</p>'+
+      '<button class="btn btn-primary" style="margin-top:12px" onclick="openVehicleModal()">+ Add your vehicle</button></div>';
+    return;
+  }
+  var all=trips().slice().sort(function(a,b){return (b.start_time||0)-(a.start_time||0);});
+  var today=todayStr();
+  var todays=all.filter(function(t){return t.date===today;});
+  var todayAgg=aggregateTrips(todays);
+  var weekAgg=aggregateTrips(all.filter(function(t){return _withinDays(t.date,7);}));
+  var html='';
+  html+='<div id="trip-live-slot">'+_liveHtml()+'</div>';
+  // Controls
+  html+='<div class="trip-fab">';
+  if(activeTrip()) html+='<button class="fab-stop" onclick="stopTripActive()">■ Stop trip</button>';
+  else html+='<button class="fab-start" onclick="startTripManual()">▶ Start trip</button>';
+  html+='<button class="fab-add" onclick="openManualTripModal()">✎ Add manually</button></div>';
+  // Today totals
+  html+='<div class="trip-totals">'+
+    '<div class="trip-tot"><div class="trip-tot-val">'+todayAgg.totalKm.toFixed(1)+'</div><div class="trip-tot-label">km today</div></div>'+
+    '<div class="trip-tot"><div class="trip-tot-val">'+todayAgg.byCat.business.km.toFixed(1)+'</div><div class="trip-tot-label">business</div></div>'+
+    '<div class="trip-tot"><div class="trip-tot-val">'+todays.length+'</div><div class="trip-tot-label">trips</div></div></div>';
+  // Weekly summary card
+  html+=_weeklySummaryHtml(weekAgg);
+  // Trip list
+  if(!all.length){
+    html+='<div class="empty" style="padding:24px 16px"><div class="empty-icon">🛣️</div><h3>No trips yet</h3><p>Drive somewhere with the app open, tap Start trip, or add one manually.</p></div>';
+  } else {
+    html+='<div class="card-title" style="margin:18px 0 10px">Recent trips</div>';
+    html+=all.slice(0,60).map(_tripCardHtml).join('');
+  }
+  body.innerHTML=html;
+  // Wire swipe handlers after DOM insert.
+  all.slice(0,60).forEach(function(t){ _wireSwipe(t.id); });
+}
+function _withinDays(dateStr,n){
+  if(!dateStr) return false;
+  var d=new Date(dateStr+'T00:00:00'); if(isNaN(d)) return false;
+  var diff=(Date.now()-d.getTime())/86400000;
+  return diff>=-1&&diff<n;
+}
+function _tripCardHtml(t){
+  var cat=TRIP_CATS.indexOf(t.category)>=0?t.category:'unknown';
+  var meta=TRIP_CAT_META[cat];
+  var route=_tripRouteLabel(t);
+  var sug=(cat==='unknown'&&t.suggest_category)?(' · suggests '+TRIP_CAT_META[t.suggest_category].label):'';
+  return '<div class="trip-swipe">'+
+    '<div class="trip-swipe-bg"><span class="s-left">💼 Business</span><span class="s-right">🏠 Personal</span></div>'+
+    '<div class="trip-card cat-'+cat+'" id="tc-'+t.id+'" data-id="'+t.id+'" onclick="openTripDetail(\''+t.id+'\')">'+
+      '<div class="trip-card-top"><div style="flex:1;min-width:0">'+
+        '<div class="trip-route">'+escHtml(route)+'</div>'+
+        '<div class="trip-meta">'+fmtDate(t.date)+' · '+fmtTime(t.start_time)+(t.end_time?('–'+fmtTime(t.end_time)):'')+' · '+Math.round(t.duration_min||0)+' min</div>'+
+      '</div><div style="text-align:right"><div class="trip-km">'+(+t.distance_km||0).toFixed(1)+'<span style="font-size:11px;color:var(--text2)"> km</span></div>'+
+        '<div style="margin-top:5px"><span class="cat-badge cat-'+cat+'">'+meta.label+'</span></div></div></div>'+
+      _polySvg(t.polyline)+
+      (cat==='unknown'?'<div class="trip-tap-tag">← swipe to tag'+sug+' →</div>':'')+
+    '</div></div>';
+}
+function _tripRouteLabel(t){
+  if(t.from_label||t.to_label) return (t.from_label||'Start')+' → '+(t.to_label||'End');
+  var endSite=t.suggest_site_name?t.suggest_site_name:null;
+  return (endSite?('→ '+endSite):('Trip · '+(t.polyline?t.polyline.length:0)+' pts'));
+}
+// Tiny inline SVG polyline preview (normalised to the card width). No map tiles.
+function _polySvg(poly){
+  if(!poly||poly.length<2) return '';
+  var W=300,H=64,pad=8;
+  var lats=poly.map(function(p){return p.lat;}),lngs=poly.map(function(p){return p.lng;});
+  var minLa=Math.min.apply(null,lats),maxLa=Math.max.apply(null,lats);
+  var minLo=Math.min.apply(null,lngs),maxLo=Math.max.apply(null,lngs);
+  var rLa=(maxLa-minLa)||1e-6,rLo=(maxLo-minLo)||1e-6;
+  var pts=poly.map(function(p){
+    var x=pad+((p.lng-minLo)/rLo)*(W-2*pad);
+    var y=H-pad-((p.lat-minLa)/rLa)*(H-2*pad);
+    return x.toFixed(1)+','+y.toFixed(1);
+  }).join(' ');
+  var last=pts.split(' ').pop().split(',');
+  var first=pts.split(' ')[0].split(',');
+  return '<svg class="trip-poly" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+
+    '<polyline points="'+pts+'" fill="none" stroke="var(--amber)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>'+
+    '<circle cx="'+first[0]+'" cy="'+first[1]+'" r="3.5" fill="var(--green)"/>'+
+    '<circle cx="'+last[0]+'" cy="'+last[1]+'" r="3.5" fill="var(--red,#dc3545)"/></svg>';
+}
+function _weeklySummaryHtml(agg){
+  var segs=[];
+  TRIP_CATS.forEach(function(c){ if(agg.byCat[c].km>0.05) segs.push({c:c,km:agg.byCat[c].km}); });
+  var pie=_pieSvg(segs,agg.totalKm);
+  var legend=segs.length?segs.map(function(s){
+    return '<div class="trip-legend-row"><span class="trip-legend-dot" style="background:'+TRIP_CAT_META[s.c].hex+'"></span>'+
+      TRIP_CAT_META[s.c].label+'<span class="trip-legend-km">'+s.km.toFixed(1)+' km</span></div>';
+  }).join(''):'<div style="font-size:12px;color:var(--text2)">No km logged this week yet.</div>';
+  return '<div class="card"><div class="card-title" style="margin-bottom:12px">This week</div>'+
+    '<div class="trip-pie-wrap">'+pie+'<div class="trip-legend">'+legend+
+      '<div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;font-size:11px;color:var(--text2)">'+
+      agg.totalKm.toFixed(1)+' km · '+agg.count+' trips · '+agg.daysDriven+' day'+(agg.daysDriven===1?'':'s')+' driven · avg '+agg.avgKm.toFixed(1)+' km</div>'+
+    '</div></div></div>';
+}
+function _pieSvg(segs,total){
+  var R=48,C=52,cx=C,cy=C;
+  if(!total||!segs.length){ return '<svg class="trip-pie" viewBox="0 0 104 104"><circle cx="'+cx+'" cy="'+cy+'" r="'+R+'" fill="none" stroke="var(--surface2)" stroke-width="16"/></svg>'; }
+  var a0=-Math.PI/2,parts='';
+  segs.forEach(function(s){
+    var frac=s.km/total, a1=a0+frac*2*Math.PI;
+    var large=frac>0.5?1:0;
+    var x0=cx+R*Math.cos(a0),y0=cy+R*Math.sin(a0),x1=cx+R*Math.cos(a1),y1=cy+R*Math.sin(a1);
+    if(frac>0.999){ parts+='<circle cx="'+cx+'" cy="'+cy+'" r="'+R+'" fill="none" stroke="'+TRIP_CAT_META[s.c].hex+'" stroke-width="16"/>'; }
+    else { parts+='<path d="M '+x0.toFixed(1)+' '+y0.toFixed(1)+' A '+R+' '+R+' 0 '+large+' 1 '+x1.toFixed(1)+' '+y1.toFixed(1)+'" fill="none" stroke="'+TRIP_CAT_META[s.c].hex+'" stroke-width="16"/>'; }
+    a0=a1;
+  });
+  return '<svg class="trip-pie" viewBox="0 0 104 104">'+parts+'</svg>';
+}
+
+// ── Swipe-to-tag ─────────────────────────────────────────────────────────────
+function _wireSwipe(id){
+  var card=document.getElementById('tc-'+id); if(!card||card._swiped) return; card._swiped=true;
+  var x0=0,y0=0,dx=0,active=false,decided=false;
+  card.addEventListener('touchstart',function(e){ var t=e.touches[0]; x0=t.clientX; y0=t.clientY; dx=0; active=true; decided=false; },{passive:true});
+  card.addEventListener('touchmove',function(e){
+    if(!active) return; var t=e.touches[0]; dx=t.clientX-x0; var dy=t.clientY-y0;
+    if(!decided){ if(Math.abs(dx)>10&&Math.abs(dx)>Math.abs(dy)){ decided=true; } else if(Math.abs(dy)>10){ active=false; return; } }
+    if(decided){ card.style.transform='translateX('+dx+'px)'; }
+  },{passive:true});
+  card.addEventListener('touchend',function(){
+    if(!active){ card.style.transform=''; return; } active=false;
+    if(dx>70){ card.style.transform='translateX(120%)'; setTimeout(function(){ tagTrip(id,'business'); },160); }
+    else if(dx<-70){ card.style.transform='translateX(-120%)'; setTimeout(function(){ tagTrip(id,'personal'); },160); }
+    else { card.style.transform=''; }
+  });
+}
+function tagTrip(id,cat){
+  var all=trips(); var t=all.find(function(x){return x.id===id;}); if(!t) return;
+  t.category=cat; t.edited_by_user=true; setTrips(all);
+  try{ if(navigator.vibrate) navigator.vibrate(20); }catch(_){}
+  toast('Tagged '+TRIP_CAT_META[cat].label);
+  renderTrips();
+}
+
+// ── Trip detail + manual entry ───────────────────────────────────────────────
+var _detailTripId=null;
+function openTripDetail(id){
+  var t=trips().find(function(x){return x.id===id;}); if(!t) return;
+  _detailTripId=id;
+  var cat=TRIP_CATS.indexOf(t.category)>=0?t.category:'unknown';
+  var v=vehicleById(t.vehicle_id);
+  var rate=v&&v.cents_per_km!=null?v.cents_per_km:(S().travelKmRate||0.88);
+  var claim=(+t.distance_km||0)*rate;
+  var el=document.getElementById('trip-detail-body');
+  el.innerHTML=
+    _polySvg(t.polyline).replace('class="trip-poly"','class="trip-poly" style="height:120px"')+
+    '<div style="text-align:center;margin:14px 0"><div class="trip-live-km" style="color:var(--amber)">'+(+t.distance_km||0).toFixed(1)+' <span style="font-size:15px">km</span></div>'+
+      '<div style="font-size:12px;color:var(--text2);margin-top:4px">'+fmtDate(t.date)+' · '+fmtTime(t.start_time)+(t.end_time?('–'+fmtTime(t.end_time)):'')+' · '+Math.round(t.duration_min||0)+' min</div></div>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">'+TRIP_CATS.map(function(c){
+      return '<button class="cat-badge cat-'+c+'" style="border:2px solid '+(c===cat?TRIP_CAT_META[c].hex:'transparent')+';cursor:pointer;padding:6px 12px" onclick="setTripCategory(\''+id+'\',\''+c+'\')">'+TRIP_CAT_META[c].icon+' '+TRIP_CAT_META[c].label+'</button>';
+    }).join('')+'</div>'+
+    '<div class="field"><label>Vehicle</label><select id="td-vehicle" class="ti-input" onchange="setTripVehicle(\''+id+'\',this.value)">'+
+      vehicles().map(function(vh){return '<option value="'+vh.id+'"'+(vh.id===t.vehicle_id?' selected':'')+'>'+escHtml(vh.name)+'</option>';}).join('')+
+      (vehicles().length?'':'<option value="">(no vehicle)</option>')+'</select></div>'+
+    '<div class="field"><label>Notes</label><input id="td-notes" class="ti-input" value="'+escHtml(t.notes||'')+'" placeholder="e.g. Muirlawn site visit" onblur="setTripNotes(\''+id+'\',this.value)"></div>'+
+    '<div style="background:var(--surface2);border-radius:10px;padding:12px;font-size:13px;margin:6px 0 14px">Estimated claim at $'+(+rate).toFixed(2)+'/km: <strong style="color:var(--amber)">'+fmtMoney(claim)+'</strong></div>'+
+    '<button class="btn btn-secondary" style="width:100%;color:var(--red,#dc3545)" onclick="deleteTrip(\''+id+'\')">Delete trip</button>';
+  document.getElementById('trip-detail-modal').classList.add('open');
+}
+function closeTripDetail(){ document.getElementById('trip-detail-modal').classList.remove('open'); }
+function setTripCategory(id,cat){
+  var all=trips(); var t=all.find(function(x){return x.id===id;}); if(!t) return;
+  t.category=cat; t.edited_by_user=true; setTrips(all);
+  try{ if(navigator.vibrate) navigator.vibrate(15); }catch(_){}
+  openTripDetail(id); renderTrips();
+}
+function setTripVehicle(id,vid){ var all=trips();var t=all.find(function(x){return x.id===id;});if(!t)return;t.vehicle_id=vid;t.edited_by_user=true;setTrips(all);openTripDetail(id); }
+function setTripNotes(id,val){ var all=trips();var t=all.find(function(x){return x.id===id;});if(!t)return;t.notes=val;t.edited_by_user=true;setTrips(all); }
+function deleteTrip(id){
+  if(!confirm('Delete this trip?')) return;
+  setTrips(trips().filter(function(x){return x.id!==id;}));
+  closeTripDetail(); renderTrips(); toast('Trip deleted');
+}
+function openManualTripModal(){
+  document.getElementById('mt-from').value='';
+  document.getElementById('mt-to').value='';
+  document.getElementById('mt-km').value='';
+  document.getElementById('mt-date').value=todayStr();
+  document.getElementById('mt-cat').value='business';
+  var vsel=document.getElementById('mt-vehicle');
+  vsel.innerHTML=vehicles().map(function(v){return '<option value="'+v.id+'"'+(v.is_default?' selected':'')+'>'+escHtml(v.name)+'</option>';}).join('')||'<option value="">(add a vehicle first)</option>';
+  document.getElementById('manual-trip-modal').classList.add('open');
+}
+function closeManualTripModal(){ document.getElementById('manual-trip-modal').classList.remove('open'); }
+function saveManualTrip(){
+  var km=parseFloat(document.getElementById('mt-km').value);
+  if(!(km>0)){ toast('Enter the distance in km'); return; }
+  var date=document.getElementById('mt-date').value||todayStr();
+  var t0=new Date(date+'T09:00:00').getTime();
+  var rec={ id:tripId(), vehicle_id:document.getElementById('mt-vehicle').value||null,
+    category:document.getElementById('mt-cat').value||'business',
+    start_time:t0, end_time:t0, start_lat:null, start_lng:null, end_lat:null, end_lng:null,
+    polyline:[], distance_km:+km.toFixed(2), duration_min:0,
+    from_label:document.getElementById('mt-from').value.trim(),
+    to_label:document.getElementById('mt-to').value.trim(),
+    notes:'', linked_site_id:null, linked_invoice_id:null,
+    date:date, auto:false, edited_by_user:true, created_at:Date.now() };
+  var all=trips(); all.push(rec); setTrips(all);
+  closeManualTripModal(); renderTrips(); toast('Trip added');
+}
+
+// ── Lifecycle ────────────────────────────────────────────────────────────────
+function initTripLog(){
+  // Migration / first-run: ensure stores exist (empty arrays) so sync + render work.
+  if(DB.get('trips')===null) DB.set('trips',[]);
+  if(DB.get('vehicles')===null) DB.set('vehicles',[]);
+  // Recover a stale active trip (app died mid-trip, hours passed with no fixes):
+  // if the last polyline point is >30 min old, seal it so it isn't left running.
+  var ad=activeTrip();
+  if(ad&&ad.polyline&&ad.polyline.length){
+    var lastT=ad.polyline[ad.polyline.length-1].t||ad.start_time;
+    if(Date.now()-lastT>30*60000){
+      var f=ad.polyline[ad.polyline.length-1];
+      TripDetector._end({lat:f.lat,lng:f.lng,t:lastT},'stale recovery');
+    }
+  }
+  // Reflect the auto-detect toggle.
+  var el=document.getElementById('s-trip-autodetect'); if(el) el.checked=!!S().tripAutoDetect;
+}
+window.initTripLog=initTripLog;
+
 window.initApp = function() {
   if(!DB.get('settings')){
     DB.set('settings',DEFAULTS);
@@ -7187,6 +7931,7 @@ window.initApp = function() {
     }
   }
   migrateToV90(); // one-time: seed the unconfirmed queue + tag existing days CONFIRMED
+  try{ initTripLog(); }catch(e){ console.warn('initTripLog:',e); } // v100 trip log stores + stale-trip recovery
   // Restore GST toggle state
   const gstEl=document.getElementById('toggle-gst');
   if(gstEl) gstEl.checked=!!DB.get('gst_on');
@@ -7547,6 +8292,37 @@ window.initApp = function() {
     }).catch(e => console.warn('[BGGeo fallback] Failed:', e));
   }
 
+  // ── v100: continuous location watcher for TRIP auto-detect (opt-in) ─────────
+  // Reuses the SAME BackgroundGeolocation plugin (not a new geofence service).
+  // Motion-gated: distanceFilter means it stays idle when parked and only
+  // streams while the vehicle is moving, so battery cost is near-zero at rest.
+  // Feeds checkNearbySites() → TripDetector.onFix(), the same sink as every
+  // other fix. NativeGeo geofences remain the owner of work-site enter/exit.
+  window.setTripBgWatcher = function(on) {
+    if (!BackgroundGeolocation) return; // browser/PWA — web GPS watch covers foreground
+    if (on) {
+      if (window._tripWatcherId) return;
+      BackgroundGeolocation.addWatcher(
+        { backgroundMessage: 'Logging your trip.', backgroundTitle: 'Trip log',
+          requestPermissions: true, stale: false, distanceFilter: 25 },
+        function(location, error) {
+          if (error || !location) return;
+          if (typeof checkNearbySites === 'function') checkNearbySites(location.latitude, location.longitude, location.accuracy);
+        }
+      ).then(function(id){ window._tripWatcherId = id; console.log('[TripBGGeo] watcher on:', id); })
+       .catch(function(e){ console.warn('[TripBGGeo] failed:', e); });
+    } else if (window._tripWatcherId) {
+      try { BackgroundGeolocation.removeWatcher({ id: window._tripWatcherId }); } catch(_){}
+      window._tripWatcherId = null;
+      console.log('[TripBGGeo] watcher off');
+    }
+  };
+  // Honour the saved auto-detect preference on cold start.
+  try {
+    var _s = JSON.parse(localStorage.getItem('mcn_settings') || '{}');
+    if (_s.tripAutoDetect) setTimeout(function(){ try{ window.setTripBgWatcher(true); }catch(_){} }, 2500);
+  } catch(_) {}
+
   // ── Real-time geofence event listener ───────────────────────────────────────
   // The native receiver LocalBroadcasts each transition; the plugin forwards it
   // here via notifyListeners('geoEvent', …) when the process is alive. v90 routes
@@ -7631,6 +8407,11 @@ window.initApp = function() {
         Health._pendingRefresh = false;
         Health.refresh();
       }
+    } catch(_){}
+    // v100: recover a stale active trip + refresh the Trips tab if it's open.
+    try {
+      if (window.initTripLog) initTripLog();
+      if (document.getElementById('screen-trips') && document.getElementById('screen-trips').classList.contains('active') && window.renderTrips) renderTrips();
     } catch(_){}
   });
 
