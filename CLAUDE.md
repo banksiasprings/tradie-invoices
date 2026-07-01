@@ -22,10 +22,10 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v92.1 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1978) | v100 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.92.1 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.100.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -301,6 +301,65 @@ process-death/reboot, which flush) when testing kill-persistence.
 
 ---
 
+## v100 — Trip Log ("field worker + tax logbook")
+
+Phase-2 major (SHIPPED 2026-07-02): a business/personal km logbook bolted ON TOP of
+the existing GPS/geofence/sync stack. **STRICTLY ADDITIVE** — money paths, the v90
+queue, v91 rounding, and v92 health are UNTOUCHED (proven: 7/7 money, 16/16 v90-session,
+20/20 new trip tests, live-emulator round-trip). The trip-log JS is one clearly-marked
+module in `index.html` (search `═══ v100 TRIP LOG ═══`).
+
+**Stores** (localStorage source of truth; `mcn_trips`+`mcn_vehicles` mirror to Firestore
+via SYNC_KEYS blob `users/{uid}/data/*`; `mcn_activeTrip` is a LOCAL-ONLY live buffer —
+deliberately NOT synced, so mid-trip polyline growth doesn't spam Firestore):
+- `mcn_vehicles` — `{id,name,registration,make,model,year,cents_per_km,is_default}`. Default rate 0.88 (ATO 2025–26; the app's existing travel-billing note, more current than the brief's 0.78 FY24-25). Configurable per vehicle.
+- `mcn_trips` — completed trips `{id,vehicle_id,category('business'|'personal'|'commute'|'mixed'|'unknown'),start_time,end_time,start/end_lat/lng,polyline[{lat,lng,t}],distance_km,duration_min,notes,linked_site_id,linked_invoice_id,from_label,to_label,date,auto,edited_by_user,created_at,suggest_category?}`.
+- `mcn_activeTrip` — the one in-progress trip (polyline building).
+
+**Location — NO second GPS service.** `TripDetector.onFix(lat,lng,acc)` is called from
+`checkNearbySites()`, the ONE shared sink already fed by the web GPS watch, the 90s bg
+poll, AND the BackgroundGeolocation watcher. NativeGeo geofences still own work-site
+enter/exit. Auto-detect (opt-in toggle in Settings, **default OFF** for battery) starts a
+motion-gated `BackgroundGeolocation` watcher (`window.setTripBgWatcher`) — the SAME plugin
+already bundled, distanceFilter idles it when parked. Manual **Start/Stop trip** + **Add
+manually** always work regardless of the toggle.
+
+**Detection state machine** (`TripDetector`, thresholds in `TRIP_CFG`): START = sustained
+≥10 km/h for ≥2 min while not inside a saved-site geofence; END = stopped <5 km/h for
+≥5 min OR entering a saved work site; polyline sampled every 30–60s, ≤50m-accuracy fixes
+only; distance = Haversine sum; category defaults `unknown`. Trips <0.3km discarded.
+Endpoint within 100m of a saved site → `linked_site_id` + suggest `business`; start/end at
+`Home` marker → suggest `commute`. Stale active trip (last point >30 min old, e.g. app
+died mid-trip) auto-sealed on `initTripLog()` (cold start + resume).
+
+**UI:** 6th nav tab **Trips** (Today·Log·Invoice·Stats·**Trips**·Settings — fits 375px at
+10px labels). Today totals + weekly category **pie + legend** (`_pieSvg`) + trip cards with
+inline SVG polyline previews (`_polySvg`, no map tiles). **Swipe right = business / swipe
+left = personal** (`_wireSwipe`, + `navigator.vibrate`). Trip detail modal: category chips,
+vehicle picker, notes, per-vehicle **cents/km claim estimate** (`km × cents_per_km`).
+Vehicles CRUD + auto-detect toggle in a Settings card.
+
+**Pure-logic tests:** `test-trips.js` extracts the `//__V100_TRIP_PURE_*__` block
+(Haversine, `polylineKm`, `speedKmh`, `detectTripsFromFixes`, `aggregateTrips`) and runs it
+against synthetic drives — 20 cases, sub-second, no emulator. Keep that block pure.
+
+**Firestore isolation:** already enforced by the `users/{userId}/{document=**}` catch-all
+(user A can never read user B's trips). `firestore.rules` also has an EXPLICIT (redundant)
+trips/vehicles block for clarity + forward-compat with per-doc storage.
+
+**Don't reintroduce / don't break:** a second continuous-GPS service (reuse the shared
+`checkNearbySites` sink + the one BackgroundGeolocation plugin); syncing `mcn_activeTrip`
+(write-spam); writing trips into `mcn_days` (they'd hit the money path); auto-detect
+default ON (battery — must stay opt-in); rounding/mutating money code (out of scope).
+
+**Deferred (honest MVP scope):** dead-app screen-off continuous capture relies on the
+opt-in native watcher (foreground-service continuous logging is the v100.1 hardening);
+recurring-route auto-learn → v101; ATO logbook/cents-per-km export (CSV/PDF) → v101;
+per-document Firestore trip storage → only when a single blob approaches ~1MB (a 30-min
+trip ≈ 1.2KB, so hundreds of trips fit fine for now); Xero mileage push → v102.
+
+---
+
 ## Data Model
 
 ### localStorage Keys
@@ -316,6 +375,9 @@ process-death/reboot, which flush) when testing kill-persistence.
 | `mcn_geoFlags` | Object | Persisted geo trigger flags + notification guards (v81) |
 | `mcn_v90migrated` | Boolean | Set once the v90 migration has run (idempotent) |
 | `gst_on` | Boolean | GST toggle state |
+| `mcn_trips` | Array | **v100 trip log** — completed trips (WorkSession-independent). Synced via SYNC_KEYS. See "v100 — Trip Log" below. |
+| `mcn_vehicles` | Array | **v100** — user vehicles `{id,name,registration,make,model,year,cents_per_km,is_default}`. Synced. |
+| `mcn_activeTrip` | Object | **v100** — the ONE live trip in progress (polyline building). LOCAL-ONLY live buffer — NOT in SYNC_KEYS (avoids Firestore write-spam mid-trip). Sealed into `mcn_trips` on stop. |
 | ~~`mcn_processedGeoEvents`~~ | — | REMOVED in v90 (per-event dedup replaced by atomic drain + id-based supersede) |
 
 ### activeDay Record
@@ -691,6 +753,15 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
+- **v100 Trip Log MVP (phase 2 major)** — SHIPPED 2026-07-02. Business/personal km logbook
+  built on the existing GPS/geofence/sync stack. New **Trips** tab (6th), vehicles, swipe-to-tag
+  (business/personal), weekly category pie, inline polyline previews, per-vehicle cents/km claim
+  estimate, opt-in auto-detect (motion-gated `BackgroundGeolocation`, default OFF) + manual
+  Start/Stop + manual entry. Native capture layer UNCHANGED; money paths UNTOUCHED. See the
+  "v100 — Trip Log" section above. Verified: 20/20 `test-trips.js` (pure), 16/16 v90-session,
+  7/7 money (live emulator), 5 real-device screenshots (`plans/v100-shots/`), OTA live at 1.100.0.
+  **Deferred → v100.1/v101:** dead-app screen-off continuous capture (native foreground-service
+  logging), recurring-route auto-learn, ATO logbook + CSV/PDF export. **Xero mileage push → v102.**
 - **v92.1 Settings Health "0 of 0 All good" fix (point release)** — SHIPPED 2026-07-02.
   Amber "⚠️ Cannot check" state when newer JS runs on an old APK whose native side lacks
   the `getHealthStatus` bridge (see the [FIXED v92.1] bug entry). First **dotted point
