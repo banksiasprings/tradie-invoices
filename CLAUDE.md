@@ -22,10 +22,10 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v90 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v91 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.90.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.91.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
 
 **Single source of truth: `APP_VERSION` in `www/index.html`.** Just bump that — the GitHub Pages deploy workflow (`.github/workflows/deploy.yml`) rewrites the other two automatically:
 
@@ -669,6 +669,19 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
+- **v91 round-to-nearest-15-min toggle** — SHIPPED 2026-07-01. Settings toggle
+  `mcn_settings.roundTo15` (default OFF). When ON, auto-captured start/finish round to the
+  nearest :00/:15/:30/:45 (half-up: 07:37→07:30, 07:38→07:45) at the **Confirm** step
+  (`confirmSession`) and the legacy active-day `saveDay`. Raw GPS times kept in
+  `rawStart`/`rawFinish` + `rounded_to_15` audit flag; the log-edit modal surfaces them.
+  Today review card + Review Backlog rows PREVIEW the rounded times (via `roundedTimesFor()`/
+  `sessionForDisplay()`, a pure display+save transform — **money math untouched**, `dayTotals`
+  just runs on rounded HH:MM). Manual **Adjust** (`edited_by_user`) bypasses rounding — respects
+  precise input. Defensive fallback to raw if rounding inverts start/finish. Verified live
+  (headless): OFF preserves the $433 field record exactly (7.2167h×$60); ON rounds
+  07:42/16:50→07:45/16:45→$495 (9.00h×$55) with raw kept; 16/16 builder tests green.
+  **Don't reintroduce:** rounding a user-Adjusted session, mutating `rawStart`/`rawFinish`, or
+  applying rounding inside `dayTotals`/`buildSessionsFromEvents` (it's confirm/save-time only).
 - **v90 multi-session queue** — SHIPPED 2026-07-01. Set-and-forget for weeks: many days
   captured with the app never opened, reviewed in a "Review Backlog (N)" with
   Confirm/Adjust/Reject. See the "v90 — Multi-Session Queue" section above. Native capture
