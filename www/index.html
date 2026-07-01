@@ -196,6 +196,23 @@
   .card-body{overflow:hidden}
   .card-collapsible.collapsed .card-body{display:none}
 
+  /* v92 Settings Health — traffic-light diagnostic rows + status pill */
+  .health-pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;padding:5px 12px;border-radius:999px;letter-spacing:.3px}
+  .hp-green{background:#e6f4ea;color:#1e7e34}
+  .hp-amber{background:#fef3e0;color:#b26a00}
+  .hp-red{background:#fdecea;color:#c0392b}
+  .health-count{font-size:13px;color:var(--text2);font-weight:600}
+  .hc-row{display:flex;align-items:flex-start;gap:10px;padding:11px 0;border-top:1px solid var(--border)}
+  .hc-row:first-child{border-top:none}
+  .hc-ic{font-size:18px;line-height:1.3;flex-shrink:0;width:22px;text-align:center}
+  .hc-body{flex:1;min-width:0}
+  .hc-label{font-size:14px;font-weight:700;color:var(--text)}
+  .hc-detail{font-size:12px;color:var(--text2);margin-top:2px;line-height:1.4}
+  .hc-fix{flex-shrink:0;align-self:center;background:var(--amber);color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap}
+  .hc-fix.soft{background:var(--navy)}
+  .hc-row.hc-fail .hc-label{color:#c0392b}
+  .hc-banner{font-size:12.5px;color:var(--text2);background:var(--amber-light);border-radius:8px;padding:9px 11px;margin-bottom:12px;line-height:1.4}
+
   .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-80px);background:var(--text);color:#fff;padding:10px 20px;border-radius:999px;font-size:13px;font-weight:600;z-index:999;transition:transform .3s;white-space:nowrap}
   .toast.show{transform:translateX(-50%) translateY(0)}
 
@@ -1621,6 +1638,18 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
 <div id="screen-settings" class="screen">
   <div class="header"><h1>Settings</h1><p>Business & rate details</p></div>
   <div class="section">
+    <!-- v92 Setup Health — self-diagnostic of the settings that keep background
+         tracking alive. Traffic-light rows + tap-to-fix. Auto-opens on startup if a
+         critical check fails; Start Shift is blocked while critical checks fail. -->
+    <div class="card" id="health-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px">
+        <div class="card-title" style="margin:0">🩺 Setup Health</div>
+        <span id="health-pill" class="health-pill hp-green">…</span>
+      </div>
+      <div id="health-summary" class="health-count" style="margin-bottom:10px">Checking…</div>
+      <div id="health-check-list"></div>
+      <button class="btn btn-secondary" style="width:100%;margin-top:12px;font-size:13px" onclick="Health.refresh()">↻ Re-check</button>
+    </div>
     <div class="card">
       <div class="card-title">Trade / Industry</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:4px">Customises equipment types, labels, and terminology.</div>
@@ -1856,7 +1885,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v91';
+const APP_VERSION = 'v92';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -2137,6 +2166,17 @@ function forceAppUpdate(){ return otaCheck(false); }
       <input type="time" id="adjust-start-time" style="font-size:18px;text-align:center">
     </div>
     <button class="btn btn-primary" onclick="saveAdjustedStart()" style="width:100%">Set Start Time ✓</button>
+  </div>
+</div>
+
+<!-- v92 START-SHIFT HEALTH BLOCK — shown when a critical check fails on Start Day -->
+<div class="modal-bg" id="health-modal">
+  <div class="modal">
+    <div class="modal-title">⚠️ Can't start shift yet<button class="modal-close" onclick="document.getElementById('health-modal').classList.remove('open')">✕</button></div>
+    <div style="font-size:13.5px;color:var(--text2);margin-bottom:14px;line-height:1.45">Fix these or the timer won't reliably start &amp; stop on site while your phone's away:</div>
+    <div id="health-modal-list"></div>
+    <button class="btn btn-secondary" style="width:100%;margin-top:6px" onclick="document.getElementById('health-modal').classList.remove('open');showScreen('settings');setTimeout(function(){Health._reveal();},200)">See full Health list</button>
+    <button class="btn btn-primary" style="width:100%;margin-top:10px" onclick="document.getElementById('health-modal').classList.remove('open')">Close</button>
   </div>
 </div>
 
@@ -2809,7 +2849,7 @@ function showScreen(id,btn){
     else{populateClientDropdown();renderInvoice();refreshTeamHours();}
   }
   if(id==='analytics') renderAnalytics();
-  if(id==='settings') {loadSettings();renderSavedInvoices('settings');GeoLog.render();}
+  if(id==='settings') {loadSettings();renderSavedInvoices('settings');GeoLog.render();if(window.Health)Health.refresh();}
 }
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400)}
 function nowTime(){const n=new Date();return String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0')}
@@ -3703,12 +3743,15 @@ function initCheckinScreen(){
   requestNotificationPermission();
 }
 
-function startDay(){
+async function startDay(){
   const site=document.getElementById('checkin-site').value,
         start=document.getElementById('checkin-start').value,
         sonWorking=document.getElementById('toggle-son').checked,
         sonHoursVal=document.getElementById('son-hours-input').value;
   if(!site){toast('Please select a site');return;}
+  // v92: block the shift if a critical device setting would sabotage tracking.
+  // Fail-open — gateStartShift only returns false on a real native critical fail.
+  if(window.Health && !(await Health.gateStartShift())) return;
   const s=S();
   const ad={
     id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),
@@ -6864,6 +6907,238 @@ function migrateToV90(){
   }catch(e){ try{GeoLog.add('error','v90 migration failed: '+e.message);}catch(_){} }
 }
 
+// ─── v92 SETTINGS HEALTH ─────────────────────────────────────────────────────
+// Self-diagnostic of the device settings that keep background geofencing alive.
+// Native NativeGeoPlugin.getHealthStatus() reports raw state; this module maps it
+// to PASS/WARN/FAIL/INFO rows, renders the Settings → Health card, gates Start
+// Shift on any CRITICAL fail, and fires the right fix Intent per row. In the
+// browser/PWA (no native plugin) every native check reads N/A and NOTHING blocks —
+// the gate is fail-open by design so a diagnostic bug can never trap the user out
+// of starting their day.
+const Health = {
+  _lastChecks: null,
+  _autoOpened: false,      // startup auto-open fires at most once per app session
+  _pendingRefresh: false,  // set after a fix deep-link so onResume re-checks
+
+  isNative(){ return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); },
+  _plugin(){ return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeGeo) || null; },
+
+  async _rawStatus(){
+    const ng = this._plugin();
+    if(!ng || typeof ng.getHealthStatus !== 'function') return null;
+    try { return await ng.getHealthStatus(); }
+    catch(e){ console.warn('[Health] getHealthStatus failed:', e); return null; }
+  },
+
+  _bucketName(b){
+    switch(b){
+      case 5: return 'Exempted';
+      case 10: return 'Active';
+      case 20: return 'Working set';
+      case 30: return 'Frequent';
+      case 40: return 'Rare';
+      case 45: return 'Restricted';
+      default: return 'Unknown';
+    }
+  },
+
+  // Map the raw native status → ordered check list. Each check:
+  //   { id, label, status:'pass'|'warn'|'fail'|'info'|'na', detail, critical, fixTarget }
+  _computeChecks(raw, native){
+    const na = 'Only checked in the Android app';
+    const avail = native && raw && typeof raw === 'object';
+    const checks = [];
+    const push = o => checks.push(Object.assign({ critical:false, fixTarget:null }, o));
+
+    // 1. Precise location — CRITICAL
+    push({ id:'location', label:'Location access', critical:true, fixTarget:'location',
+      status: !avail ? 'na' : (raw.fineLocation==='granted' ? 'pass' : 'fail'),
+      detail: !avail ? na : (raw.fineLocation==='granted' ? 'Precise location granted' : "Precise location is OFF — the timer can't detect job sites") });
+
+    // 2. Background location "Allow all the time" — CRITICAL
+    push({ id:'background', label:'Background location ("Allow all the time")', critical:true, fixTarget:'location',
+      status: !avail ? 'na' : (raw.backgroundLocation==='granted' ? 'pass' : 'fail'),
+      detail: !avail ? na : (raw.backgroundLocation==='granted' ? 'Set to "Allow all the time"' : "Not set to \"Allow all the time\" — auto start/stop won't fire when the app is closed") });
+
+    // 3. Unrestricted battery — CRITICAL
+    push({ id:'battery', label:'Unrestricted battery', critical:true, fixTarget:'battery',
+      status: !avail ? 'na' : (raw.batteryExempt ? 'pass' : 'fail'),
+      detail: !avail ? na : (raw.batteryExempt ? 'Exempt from battery optimisation' : 'Battery optimisation is ON — Android will kill background tracking') });
+
+    // 4. Google Play services — CRITICAL
+    push({ id:'playservices', label:'Google Play services', critical:true, fixTarget:'playservices',
+      status: !avail ? 'na' : (raw.playServices==='success' ? 'pass' : 'fail'),
+      detail: !avail ? na : (raw.playServices==='success' ? 'Available and up to date' : 'Unavailable or outdated — geofencing needs Play services (code '+raw.playServicesCode+')') });
+
+    // 5. Doze / App-standby bucket — soft WARNING
+    { const b = avail ? raw.standbyBucket : -1;
+      const bad = (b === 40 || b === 45);
+      push({ id:'doze', label:'App standby / Doze', critical:false, fixTarget:'battery',
+        status: !avail ? 'na' : (b < 0 ? 'pass' : (bad ? 'warn' : 'pass')),
+        detail: !avail ? na : (b < 0 ? 'Standby bucket not reported (older Android)' : 'Standby bucket: '+this._bucketName(b)+(bad ? ' — Android may delay background wakeups' : ' (healthy)')) });
+    }
+
+    // 6. Manufacturer battery killer — soft WARNING (kill-list can't be read; advisory)
+    { const mfr = avail ? (raw.manufacturer||'') : '';
+      const nice = mfr ? (mfr.charAt(0).toUpperCase()+mfr.slice(1)) : 'Your phone';
+      const known = avail && raw.hasKnownKiller;
+      push({ id:'manufacturer', label:'Manufacturer battery killer', critical:false, fixTarget:'manufacturer',
+        status: !avail ? 'na' : (known ? 'warn' : 'pass'),
+        detail: !avail ? na : (known ? nice+' adds its own app-kill list. Tap to open its battery/autostart page and allow this app.' : (mfr ? nice+' — no known extra kill-list' : 'No known extra kill-list')) });
+    }
+
+    // 7. Notifications — INFO only (never blocks; Steven doesn't rely on them)
+    push({ id:'notifications', label:'Notifications', critical:false, fixTarget:'notifications',
+      status: !avail ? 'na' : (raw.postNotifications==='granted' ? 'pass' : 'info'),
+      detail: !avail ? na : (raw.postNotifications==='granted' ? 'Arrival/leave alerts can show' : 'Off — optional, time tracking still works without them') });
+
+    // 8. Re-arm after reboot — self-audit INFO
+    push({ id:'boot', label:'Re-arm after reboot', critical:false, fixTarget:null,
+      status: !avail ? 'na' : (raw.bootReceiver ? 'pass' : 'warn'),
+      detail: !avail ? na : (raw.bootReceiver ? 'Geofences re-register after a phone restart' : 'Boot receiver disabled — fences may not re-arm after reboot') });
+
+    // 9. Location service declared — self-audit INFO
+    push({ id:'fgs', label:'Location service declared', critical:false, fixTarget:null,
+      status: !avail ? 'na' : (raw.fgsLocationDeclared ? 'pass' : 'fail'),
+      detail: !avail ? na : (raw.fgsLocationDeclared ? 'Foreground-location service present' : 'FOREGROUND_SERVICE_LOCATION missing (build issue)') });
+
+    return checks;
+  },
+
+  // Run all checks. Pass rawOverride to render a specific state (used by tests).
+  async run(rawOverride){
+    const native = this.isNative();
+    const raw = (rawOverride !== undefined) ? rawOverride : (native ? await this._rawStatus() : null);
+    const checks = this._computeChecks(raw, native);
+    this._lastChecks = checks;
+    return {
+      checks, native, raw,
+      criticalFails: checks.filter(c => c.critical && c.status === 'fail'),
+      warnings: checks.filter(c => c.status === 'warn'),
+      allCriticalPass: !checks.some(c => c.critical && c.status === 'fail')
+    };
+  },
+
+  _icon(s){ return ({ pass:'✅', warn:'⚠️', fail:'❌', na:'➖', info:'ℹ️' })[s] || '•'; },
+
+  _rowHTML(c, forceFix){
+    const showFix = c.fixTarget && (forceFix || c.status==='fail' || c.status==='warn' || c.status==='info');
+    const softBtn = (c.status==='warn' || c.status==='info');
+    const btn = showFix
+      ? '<button class="hc-fix'+(softBtn?' soft':'')+'" onclick="Health.fix(\''+c.fixTarget+'\')">Tap to fix</button>'
+      : '';
+    return '<div class="hc-row hc-'+c.status+'">'
+      + '<div class="hc-ic">'+this._icon(c.status)+'</div>'
+      + '<div class="hc-body"><div class="hc-label">'+c.label+'</div><div class="hc-detail">'+c.detail+'</div></div>'
+      + btn + '</div>';
+  },
+
+  render(result){
+    const listEl = document.getElementById('health-check-list');
+    if(!listEl) return;
+    const native = result ? result.native : this.isNative();
+    const checks = (result && result.checks) || this._lastChecks || [];
+    const pillEl = document.getElementById('health-pill');
+    const sumEl = document.getElementById('health-summary');
+
+    let html = '';
+    if(!native){
+      html += '<div class="hc-banner">These are phone-settings checks — they run live inside the Android app. In the browser they show as “—”.</div>';
+    }
+    html += checks.map(c => this._rowHTML(c)).join('');
+    listEl.innerHTML = html;
+
+    const critFail = checks.some(c => c.critical && c.status==='fail');
+    const anyWarn  = checks.some(c => c.status==='warn' || c.status==='info');
+    const applicable = checks.filter(c => c.status !== 'na');
+    const passCount  = applicable.filter(c => c.status==='pass').length;
+
+    if(pillEl){
+      if(!native){ pillEl.className='health-pill hp-amber'; pillEl.textContent='App-only'; }
+      else if(critFail){ pillEl.className='health-pill hp-red'; pillEl.textContent='Needs fixing'; }
+      else if(anyWarn){ pillEl.className='health-pill hp-amber'; pillEl.textContent='Minor warnings'; }
+      else { pillEl.className='health-pill hp-green'; pillEl.textContent='All good'; }
+    }
+    if(sumEl){
+      sumEl.textContent = !native
+        ? 'Full checks run on the Android app'
+        : (passCount + ' of ' + applicable.length + ' checks passing');
+    }
+  },
+
+  async refresh(){
+    try { const res = await this.run(); this.render(res); return res; }
+    catch(e){ console.warn('[Health] refresh failed:', e); return null; }
+  },
+
+  async fix(target){
+    const ng = this._plugin();
+    if(!ng || typeof ng.openHealthFix !== 'function'){
+      toast('Open your phone Settings to fix this');
+      return;
+    }
+    try {
+      await ng.openHealthFix({ target });
+      this._pendingRefresh = true; // onResume re-checks after the user returns
+      try { GeoLog.add('info', 'Health fix opened: ' + target); } catch(_){}
+    } catch(e){
+      console.warn('[Health] openHealthFix failed:', e);
+      toast("Couldn't open settings — open them manually");
+    }
+  },
+
+  // Scroll the Health card into view (card is always-open, not collapsible).
+  _reveal(){
+    const card = document.getElementById('health-card');
+    if(!card) return;
+    try { card.scrollIntoView({ behavior:'smooth', block:'start' }); } catch(_){}
+  },
+
+  _showBlockModal(fails){
+    const listEl = document.getElementById('health-modal-list');
+    if(listEl) listEl.innerHTML = fails.map(c => this._rowHTML(c, true)).join('');
+    const modal = document.getElementById('health-modal');
+    if(modal) modal.classList.add('open');
+  },
+
+  // Runs once on app startup. Silent when all critical checks pass; on any critical
+  // fail it renders the card, jumps to Settings, and opens Health — at most once.
+  async startupCheck(){
+    if(!this.isNative()) return;
+    try {
+      const res = await this.run();
+      this.render(res);
+      if(res.criticalFails.length && !this._autoOpened){
+        this._autoOpened = true;
+        showScreen('settings');
+        setTimeout(() => this._reveal(), 250);
+        toast('⚠ Setup needs attention — see Health');
+      }
+    } catch(e){ console.warn('[Health] startupCheck failed:', e); }
+  },
+
+  // Gate for Start Day. Returns true if OK to proceed. Blocks (shows modal, returns
+  // false) only on a CRITICAL fail. Warnings → toast + proceed. Fail-OPEN on any
+  // error or in the browser so a diagnostic hiccup never traps the user.
+  async gateStartShift(){
+    if(!this.isNative()) return true;
+    let res;
+    try { res = await this.run(); }
+    catch(e){ console.warn('[Health] gate run failed — allowing start:', e); return true; }
+    if(res.criticalFails.length){
+      this.render(res);
+      this._showBlockModal(res.criticalFails);
+      try { GeoLog.add('info', 'Start Shift blocked — critical: ' + res.criticalFails.map(c=>c.id).join(',')); } catch(_){}
+      return false;
+    }
+    if(res.warnings.length){
+      toast(res.warnings.length + ' setup warning' + (res.warnings.length>1?'s':'') + ' — check Health');
+    }
+    return true;
+  }
+};
+window.Health = Health;
+
 window.initApp = function() {
   if(!DB.get('settings')){
     DB.set('settings',DEFAULTS);
@@ -6907,6 +7182,9 @@ window.initApp = function() {
   // Init native geo AFTER the app is visible — delay so the permission dialog
   // appears to the user as a deliberate prompt, not a startup-blocking freeze.
   if (window.initNativeGeo) setTimeout(window.initNativeGeo, 1500);
+  // v92: run the self-diagnostic once the native layer has settled. Silent on
+  // pass; on a critical fail it opens Settings → Health once.
+  setTimeout(function(){ try{ if(window.Health) Health.startupCheck(); }catch(_){}}, 3500);
 
   // Tap outside modal to close — works for all modals
   document.addEventListener('click', function(e){
@@ -7328,6 +7606,16 @@ window.initApp = function() {
     if (geoAutoStopDate !== _today) { geoAutoStopTriggered = false; geoAutoStopDate = null; }
     _saveGeoFlags();
     processPendingGeoEvents();
+    // v92: re-check Setup Health after returning — e.g. the user just came back
+    // from a settings deep-link fired by a "Tap to fix" button, or is on Settings.
+    try {
+      const settingsOpen = document.getElementById('screen-settings')
+        && document.getElementById('screen-settings').classList.contains('active');
+      if (window.Health && (Health._pendingRefresh || settingsOpen)) {
+        Health._pendingRefresh = false;
+        Health.refresh();
+      }
+    } catch(_){}
   });
 
   // Expose so app can call it directly (e.g. after permission grant)
