@@ -4205,7 +4205,7 @@ function renderLog(){
   if(filterLabel) filterLabel.textContent=showArchivedLogs?'All entries ('+allDays.length+')':'Active entries ('+ui+')';
   if(toggleBtn) toggleBtn.textContent=showArchivedLogs?'Hide archived':'Show archived ('+archivedCount+')';
   const list=showArchivedLogs?allDays:allDays.filter(d=>!d.invoiced);
-  if(!allDays.length){el.innerHTML='<div class="empty"><div class="empty-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></div><h3>No days logged yet</h3><p>Use the Today tab to check in and start tracking your time</p><button class="btn btn-primary" style="margin-top:12px" onclick="showScreen(\'today\',this)">Go to Today</button></div>';return;}
+  if(!allDays.length){el.innerHTML='<div class="empty"><div class="empty-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></div><h3>No days logged yet</h3><p>Use the Today tab to check in and start tracking your time</p><button class="btn btn-primary" style="margin-top:12px" onclick="showScreen(\'checkin\')">Go to Today</button></div>';return;}
   if(!list.length){el.innerHTML='<div class="empty"><div class="empty-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></div><h3>All days are invoiced</h3><p>Tap "Show archived" above to view invoiced entries</p></div>';return;}
   el.innerHTML='';
   list.forEach(d=>{
