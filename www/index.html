@@ -1281,7 +1281,8 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   <!-- REVIEW -->
   <div id="checkin-review" class="section" style="display:none">
     <div class="card">
-      <div class="card-title">Day Summary</div>
+      <div class="card-title">Review Session</div>
+      <div id="rev-backlog-hint" style="display:none;font-size:12px;color:var(--text2);background:var(--blue-light);border-radius:8px;padding:8px 10px;margin-bottom:10px"></div>
       <table style="width:100%;font-size:13px;line-height:2.2">
         <tr><td style="color:var(--text2)">Site</td><td style="text-align:right;font-weight:600" id="rev-site"></td></tr>
         <tr><td style="color:var(--text2)">Start</td><td style="text-align:right;font-weight:600" id="rev-start"></td></tr>
@@ -1297,10 +1298,10 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       </table>
       <div id="rev-machine-info" style="display:none;font-size:12px;color:var(--text2);padding:4px 0;border-top:1px solid var(--border);margin-top:4px"></div>
       <div class="btn-row">
-        <button class="btn btn-secondary" onclick="editDay()">Edit</button>
-        <button class="btn btn-primary" onclick="saveDay()">Save Day ✓</button>
+        <button class="btn btn-secondary" onclick="adjustReviewSession()">Adjust</button>
+        <button class="btn btn-primary" onclick="confirmReviewSession()">Confirm ✓</button>
       </div>
-      <button class="btn btn-secondary" style="width:100%;margin-top:10px" onclick="promptDiscardDay()">Cancel / Discard</button>
+      <button class="btn btn-secondary" style="width:100%;margin-top:10px;color:var(--red)" onclick="rejectReviewSession()">Reject</button>
     </div>
   </div>
 </div>
@@ -1308,6 +1309,11 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
 <!-- LOG SCREEN -->
 <div id="screen-log" class="screen">
   <div class="header"><h1>Work Log</h1><p id="log-uninvoiced">Uninvoiced days</p></div>
+  <!-- v90: Review Backlog — auto-captured sessions awaiting Confirm/Adjust/Reject -->
+  <div class="section" id="review-backlog-section" style="display:none">
+    <div style="font-size:13px;font-weight:800;color:var(--navy);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px" id="review-backlog-title">Review Backlog</div>
+    <div id="review-backlog-list"></div>
+  </div>
   <div class="log-filter-bar">
     <span style="font-size:12px;color:var(--text2)" id="log-filter-label">Active entries</span>
     <button class="btn-ghost" id="archived-toggle-btn" onclick="toggleArchivedLogs()">Show archived</button>
@@ -1842,7 +1848,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v89';
+const APP_VERSION = 'v90';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -2392,6 +2398,137 @@ function invoices(){return DB.def('invoices',[])}
 function sites(){return DB.def('sites',[])}
 function activeDay(){return DB.get('activeDay')}
 
+// ─── v90: MULTI-SESSION UNCONFIRMED QUEUE ────────────────────────────────────
+// Set-and-forget architecture. Three stores, each with ONE job:
+//   • mcn_activeDay   — the ONE currently-running (live) session (start, no
+//                       finish). Drives the live timer. Unchanged v89 semantics.
+//   • mcn_unconfirmed — completed WorkSessions awaiting review (status
+//                       UNCONFIRMED) plus REJECTED/MERGED audit records. NOT
+//                       billable. Accumulates across days/weeks with the app
+//                       never opened — this is what makes multi-day capture work.
+//   • mcn_days        — CONFIRMED / billable store (existing, untouched money
+//                       path). Invoice + Stats read ONLY here, so "count
+//                       CONFIRMED only" is automatic — a session is billable iff
+//                       it has been Confirmed into days[].
+// A WorkSession uses the SAME field names as a day record (site≡site_id,
+// start≡start_time, finish≡end_time) so it flows into dayTotals()/invoice/edit
+// unchanged. Extra v90 fields: status, rawStart/rawFinish (audit + v91 rounding),
+// edited_by_user.
+const SESSION_STATUS = { UNCONFIRMED:'UNCONFIRMED', CONFIRMED:'CONFIRMED', REJECTED:'REJECTED', MERGED:'MERGED' };
+const MERGE_WINDOW_MINUTES = 90; // same-site rejoin within this many min → merge (off-site lunch)
+function unconfirmed(){return DB.def('unconfirmed',[])}
+function setUnconfirmed(arr){DB.set('unconfirmed',Array.isArray(arr)?arr:[])}
+function unconfirmedQueue(){return unconfirmed().filter(s=>s&&s.status===SESSION_STATUS.UNCONFIRMED).sort((a,b)=>(a.startTs||0)-(b.startTs||0))}
+function unconfirmedCount(){return unconfirmedQueue().length}
+
+//__V90_BUILDER_START__  (extracted verbatim by test-sessions.js — keep pure)
+// PURE session reconstruction. Given chronologically-orderable native geo events
+// (already flutter-collapsed + rejected-filtered) plus an optional carried-in
+// open session (the current live activeDay) and recent same-site unconfirmed
+// sessions (for cross-drain merge), reconstruct the set of work sessions.
+// NO DOM / NO DB / NO Date.now — fully deterministic and unit-testable.
+// Returns { completed:[session…], open:session|null }.
+//   • completed — sessions with a finish, ready to seal into the backlog.
+//   • open      — a session with a start but no finish (still on site) → activeDay.
+// A carried-in session that gets merged/re-opened keeps its ORIGINAL id, so it
+// reappears in completed/open with that id — the caller supersedes by id.
+// Merge rule: an ENTER at the same site within mergeWindowMin AFTER a previous
+// session's EXIT (same calendar date) re-opens that session, banking the gap as
+// lunch (off-site lunch) instead of splitting the day. Different site → always a
+// new session (multi-site day). Enter with a session already open → the open one
+// is pushed as-is (incomplete, no finish) and a new one begins.
+function buildSessionsFromEvents(events, opts){
+  opts = opts || {};
+  var mergeWin = (opts.mergeWindowMin != null ? opts.mergeWindowMin : 90);
+  var mkId = opts.mkId || function(){ return 's'+Math.floor((opts.idSeed||1)+Math.random()*1e9).toString(36); };
+  var defs = opts.sessionDefaults || {};
+  function msOf(ev){
+    if(!ev) return 0;
+    if(typeof ev.timestamp === 'number' && ev.timestamp>0) return ev.timestamp;
+    var p = Date.parse((ev.date||'') + 'T' + (ev.time||'00:00') + ':00');
+    return isNaN(p) ? 0 : p;
+  }
+  function clone(s){ return s ? JSON.parse(JSON.stringify(s)) : s; }
+  function hourOf(ev){ var t=(ev.time||'00:00'); return parseInt(t.substring(0,2),10)||0; }
+  function newSession(ev){
+    var ms = msOf(ev);
+    return {
+      id: mkId(), site: ev.site, start: ev.time, date: ev.date,
+      startTs: ms, finish: null, finishTs: null,
+      rate: defs.rate, sonrate: defs.sonrate,
+      sonWorking:false, sonHours:null, lunchMins:0, lunchStart:null, machines:[],
+      autoStarted:true, rawStart: ev.time, rawFinish:null,
+      status:'UNCONFIRMED', edited_by_user:false, createdAt: ms
+    };
+  }
+  function completeWith(sess, ev){
+    sess.finish = ev.time; sess.finishTs = msOf(ev); sess.rawFinish = ev.time;
+    return sess;
+  }
+  // chronological sort, stable on original index
+  var evs = (events||[])
+    .filter(function(e){ return e && (e.type==='enter'||e.type==='exit'); })
+    // hour guard belt-and-braces (native receiver already drops out-of-hours)
+    .filter(function(e){ var h=hourOf(e); return h>=5 && h<21; })
+    .map(function(e,i){ return {e:e,i:i}; })
+    .sort(function(a,b){ return (msOf(a.e)-msOf(b.e)) || (a.i-b.i); })
+    .map(function(x){ return x.e; });
+
+  var completed = [];
+  var open = opts.openSession ? clone(opts.openSession) : null;
+  var mergePool = (opts.recentUnconfirmed||[]).map(clone);
+
+  function tryMerge(ev){
+    // last completed same site, same date, gap within window → pop & reopen
+    if(completed.length){
+      var last = completed[completed.length-1];
+      if(last.finish && last.site===ev.site && last.date===ev.date){
+        var gap = (msOf(ev) - (last.finishTs||0))/60000;
+        if(gap>=0 && gap<=mergeWin){ completed.pop(); return {sess:last, gap:gap}; }
+      }
+    }
+    // cross-drain: a recent unconfirmed session (same site/date, within window)
+    for(var k=mergePool.length-1;k>=0;k--){
+      var c = mergePool[k];
+      if(c.finish && c.site===ev.site && c.date===ev.date){
+        var g = (msOf(ev) - (c.finishTs||0))/60000;
+        if(g>=0 && g<=mergeWin){ mergePool.splice(k,1); return {sess:c, gap:g}; }
+      }
+    }
+    return null;
+  }
+
+  for(var n=0;n<evs.length;n++){
+    var ev = evs[n];
+    if(ev.type==='enter'){
+      if(open){ completed.push(open); open=null; } // prior enter never closed
+      var m = tryMerge(ev);
+      if(m){
+        m.sess.lunchMins = (m.sess.lunchMins||0) + Math.max(0, Math.round(m.gap));
+        m.sess.finish = null; m.sess.finishTs = null; m.sess.rawFinish = null;
+        m.sess.status = 'UNCONFIRMED'; m.sess.merged = true;
+        open = m.sess;
+      } else {
+        open = newSession(ev);
+      }
+    } else { // exit
+      if(open && open.site===ev.site){
+        completed.push(completeWith(open, ev)); open=null;
+      } else if(open){
+        // exit for a different site than the one open — close open incomplete, drop stray exit
+        completed.push(open); open=null;
+      } // else stray exit (missed enter) — ignore
+    }
+  }
+  return { completed: completed, open: open };
+}
+//__V90_BUILDER_END__
+// Exposed for the CDP test harness (test-v90-sessions.sh) + cross-script access.
+window.buildSessionsFromEvents=buildSessionsFromEvents;
+window.unconfirmed=unconfirmed; window.setUnconfirmed=setUnconfirmed;
+window.unconfirmedQueue=unconfirmedQueue; window.unconfirmedCount=unconfirmedCount;
+window.SESSION_STATUS=SESSION_STATUS; window.MERGE_WINDOW_MINUTES=MERGE_WINDOW_MINUTES;
+
 // --- Invoice day selection state ---
 // null = use all uninvoiced (default); Set of day ids = user has explicitly chosen
 let _invoiceDaySelection = null; // null means "all uninvoiced checked"
@@ -2657,6 +2794,7 @@ function nowTime(){const n=new Date();return String(n.getHours()).padStart(2,'0'
 function todayStr(){const n=new Date();return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0')}
 function fmtDate(d){const p=d.split('-');const m=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return parseInt(p[2])+' '+m[parseInt(p[1])-1]+' '+p[0]}
 function timeDiffHours(s,f){const[sh,sm]=s.split(':').map(Number);const[fh,fm]=f.split(':').map(Number);return(fh*60+fm-sh*60-sm)/60}
+function _tsFromDateTime(date,time){const p=Date.parse((date||'')+'T'+(time||'00:00')+':00');return isNaN(p)?0:p;} // local-tz epoch ms for a day record
 function formatHours(h){return h.toFixed(2)+'h'}
 function fmtMoney(n){return'$'+n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',')}
 
@@ -3080,6 +3218,17 @@ function checkNearbySites(lat,lng,accuracy){
 
 function autoStartTimer(site, overrideTime){
   const s=S(),startTime=overrideTime||nowTime();
+  // v90 merge: re-arriving the SAME site within MERGE_WINDOW of a just-sealed
+  // session (off-site lunch, or a false-stop we're undoing) re-opens that session
+  // with the gap banked as lunch — instead of splitting the day into two.
+  const merged=_tryReopenForMerge(site.name,startTime);
+  if(merged){
+    GeoLog.add('start','Auto-timer RESUMED (merge) at '+startTime+' · '+site.name+' (+'+ (merged.lunchMins||0) +'min lunch)');
+    DB.set('activeDay',merged);
+    showActiveTimer(merged);
+    toast('Resumed at '+site.name+(overrideTime?' (replayed '+overrideTime+')':''));
+    return;
+  }
   GeoLog.add('start', 'Auto-timer started at ' + startTime + ' · ' + site.name);
   const ad={
     id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),
@@ -3089,12 +3238,35 @@ function autoStartTimer(site, overrideTime){
     lunchMins:0,lunchStart:null,
     machines:[],
     autoStarted:true,
+    rawStart:startTime,rawFinish:null,
+    status:SESSION_STATUS.UNCONFIRMED,edited_by_user:false,
+    startTs:_tsFromDateTime(todayStr(),startTime),
     updatedAt:Date.now()
   };
   DB.set('activeDay',ad);
   showActiveTimer(ad);
   showGeofenceNotification(site.name,startTime);
   toast('Auto-started at '+site.name+(overrideTime?' (replayed '+overrideTime+')':''));
+}
+// If the most-recent unconfirmed session is the same site, same day, and its
+// finish was within MERGE_WINDOW_MINUTES before `startTime`, pull it back out of
+// the backlog and re-open it (finish cleared, gap → lunch). Returns the re-opened
+// session or null. Keeps single-session (web/foreground) reentry consistent with
+// the native batch builder's merge rule.
+function _tryReopenForMerge(siteName,startTime){
+  try{
+    const q=unconfirmedQueue();
+    if(!q.length) return null;
+    const last=q[q.length-1];
+    if(!last.finish || last.site!==siteName || last.date!==todayStr()) return null;
+    const gap=(_tsFromDateTime(todayStr(),startTime)-(last.finishTs||_tsFromDateTime(last.date,last.finish)))/60000;
+    if(!(gap>=0 && gap<=MERGE_WINDOW_MINUTES)) return null;
+    const uc=unconfirmed().filter(s=>s.id!==last.id); setUnconfirmed(uc); // remove from backlog
+    last.lunchMins=(last.lunchMins||0)+Math.max(0,Math.round(gap));
+    last.finish=null; last.finishTs=null; last.rawFinish=null;
+    last.status=SESSION_STATUS.UNCONFIRMED; last.merged=true; last.updatedAt=Date.now();
+    return last;
+  }catch(_){ return null; }
 }
 
 let _lastArrivalNotifyDate=null;
@@ -3248,11 +3420,156 @@ function autoStopTimer(overrideTime){
     ad.lunchMins=(ad.lunchMins||0)+Math.max(0,mins);ad.lunchStart=null;
   }
   ad.finish=stopTime;
-  DB.set('activeDay',ad);
-  showReview(ad);
+  if(!ad.rawFinish) ad.rawFinish=stopTime;
+  // v90: SEAL the finished session into the review backlog and CLEAR activeDay so
+  // the NEXT arrival can auto-start a fresh session. Pre-v90 this left the day as
+  // a finished-but-unsaved activeDay, which blocked every subsequent day's ENTER
+  // (the single-session limit). Now multiple days accumulate with the app closed.
+  _sealSessionToBacklog(ad);
+  DB.set('activeDay',null);
+  _resetGeoTriggerFlags(); // re-arm auto-start for the next arrival (same as saveDay did)
   if(wasRunning) showGeofenceDepartureNotification(ad.site,stopTime);
-  toast('Auto-stopped: left '+ad.site+(overrideTime?' (replayed '+overrideTime+')':''));
+  refreshTodayTab(); // Today now shows the latest unconfirmed session for review
+  toast('Session captured: '+ad.site+' — review in Log'+(overrideTime?' (replayed '+overrideTime+')':''));
 }
+
+// v90 session lifecycle — the review backlog (mcn_unconfirmed) + confirm/reject/adjust.
+function _resetGeoTriggerFlags(){
+  geoAutoStartTriggered=false;geoAutoStopTriggered=false;
+  geoAutoStartDate=null;geoAutoStopDate=null;
+  _saveGeoFlags();
+  _clearPendingStop();
+}
+function _sealSessionToBacklog(session){
+  try{
+    const rec=Object.assign({},session);
+    rec.status=SESSION_STATUS.UNCONFIRMED;
+    if(!rec.rawStart) rec.rawStart=rec.start;
+    if(rec.finish&&!rec.rawFinish) rec.rawFinish=rec.finish;
+    if(!rec.startTs) rec.startTs=_tsFromDateTime(rec.date,rec.start);
+    if(rec.finish&&!rec.finishTs) rec.finishTs=_tsFromDateTime(rec.date,rec.finish);
+    if(rec.edited_by_user===undefined) rec.edited_by_user=false;
+    rec.updatedAt=Date.now();
+    const filtered=unconfirmed().filter(s=>s.id!==rec.id); // dedup by id (idempotent)
+    filtered.push(rec);
+    setUnconfirmed(filtered);
+    GeoLog.add('info','Session → review backlog: '+rec.site+' '+rec.start+'–'+(rec.finish||'?')+' ('+unconfirmedQueue().length+' awaiting review)');
+    if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+  }catch(e){ GeoLog.add('error','seal failed: '+e.message); }
+}
+// Reconcile the current live session + the drained native queue into sessions.
+// The pure builder does the pairing/merge; here we apply the v89 fresh-fix STOP
+// gate ONLY to the trailing same-day exit (the one case that could be a
+// false-stop-in-progress). Everything else is trusted history.
+async function reconstructAndReconcile(cleanEvents){
+  const ad=activeDay();
+  const openSession=(ad && !ad.finish)?ad:null;
+  const s=S();
+  const recent=unconfirmedQueue().filter(x=>x.date===todayStr());
+  const {completed,open}=buildSessionsFromEvents(cleanEvents,{
+    openSession, recentUnconfirmed:recent,
+    sessionDefaults:{rate:s.rate,sonrate:s.sonrate||30},
+    mergeWindowMin:MERGE_WINDOW_MINUTES,
+    mkId:()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7)
+  });
+  // ids in the result supersede any carried-in unconfirmed rows (merges/reopens)
+  const resultIds=new Set(completed.map(x=>x.id).concat(open?[open.id]:[]));
+  let uc=unconfirmed().filter(x=>!resultIds.has(x.id));
+  // Split: trusted-to-seal vs the single trailing same-day exit that needs verify.
+  let toSeal=completed.slice();
+  let candidate=null;
+  if(!open && toSeal.length){
+    const last=toSeal[toSeal.length-1];
+    if(last.finish && last.date===todayStr()) candidate=toSeal.pop();
+  }
+  toSeal.forEach(sess=>{
+    sess.status=SESSION_STATUS.UNCONFIRMED;
+    if(!sess.rawStart) sess.rawStart=sess.start;
+    if(sess.finish&&!sess.rawFinish) sess.rawFinish=sess.finish;
+    if(sess.edited_by_user===undefined) sess.edited_by_user=false;
+    sess.updatedAt=Date.now();
+    uc.push(sess);
+  });
+  setUnconfirmed(uc);
+  if(toSeal.length) GeoLog.add('info','Reconstructed '+toSeal.length+' session(s) from native queue → review backlog');
+  if(open){
+    // Still on site → this is the live running timer.
+    open.status=SESSION_STATUS.UNCONFIRMED; open.finish=null;
+    DB.set('activeDay',open);
+    geoAutoStartTriggered=true; geoAutoStartDate=todayStr();
+    geoAutoStopTriggered=false; geoAutoStopDate=null; _saveGeoFlags();
+    GeoLog.add('start','Live session (from native queue): '+open.site+' since '+open.start);
+  } else if(candidate){
+    // Trailing same-day exit — re-open + verify departure with a fresh, accurate,
+    // genuinely-outside fix (v89) before sealing. Inside/poor fix → keeps running.
+    DB.set('activeDay',Object.assign({},candidate,{finish:null}));
+    geoAutoStartTriggered=true; geoAutoStartDate=todayStr(); geoAutoStopTriggered=false; geoAutoStopDate=null; _saveGeoFlags();
+    await _confirmDepartureThenStop(candidate.site,candidate.finish,'Native EXIT (reconstructed)');
+  } else if(!activeDay()){
+    _resetGeoTriggerFlags();
+  }
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+  refreshTodayTab();
+}
+window.reconstructAndReconcile=reconstructAndReconcile;
+
+// Confirm/Reject/Adjust act on a session id in the mcn_unconfirmed store.
+function confirmSession(id){
+  const uc=unconfirmed();const i=uc.findIndex(s=>s.id===id);
+  if(i<0){toast('Session not found');return;}
+  const sess=uc[i];
+  if(sess.start&&sess.finish&&sess.start>=sess.finish){toast('Fix the times first (finish before start) — tap Adjust');return;}
+  const day=Object.assign({},sess);
+  day.status=SESSION_STATUS.CONFIRMED; day.invoiced=false; day.confirmedAt=Date.now(); day.updatedAt=Date.now();
+  const dl=days().filter(d=>d.id!==day.id); dl.push(day); DB.set('days',dl); // → billable (invoice + stats)
+  uc.splice(i,1); setUnconfirmed(uc);
+  if(typeof ArchivedSync!=='undefined') ArchivedSync.ensureEntry(day.id).catch(()=>{});
+  if(window.CloudSync) window.CloudSync.pushAll().then(()=>toast('☁ Synced ✓')).catch(()=>{});
+  GeoLog.add('info','Session CONFIRMED → invoiceable: '+day.site+' '+day.start+'–'+day.finish);
+  toast('Confirmed ✓ — added to invoiceable days');
+  _afterSessionAction();
+}
+function rejectSession(id){
+  const uc=unconfirmed();const sess=uc.find(x=>x.id===id);
+  if(!sess){toast('Session not found');return;}
+  sess.status=SESSION_STATUS.REJECTED; sess.updatedAt=Date.now(); // kept for audit, never billed
+  setUnconfirmed(uc);
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+  GeoLog.add('info','Session REJECTED (kept, not billed): '+sess.site+' '+sess.start+'–'+(sess.finish||'?'));
+  toast('Rejected — not billed');
+  _afterSessionAction();
+}
+function adjustSession(id){ editLogDay(id,'unconfirmed'); } // reuse the log-edit modal, bound to the backlog store
+function _afterSessionAction(){
+  const todayVisible=document.getElementById('screen-checkin')&&document.getElementById('screen-checkin').classList.contains('active');
+  if(todayVisible) refreshTodayTab();
+  const logVisible=document.getElementById('screen-log')&&document.getElementById('screen-log').classList.contains('active');
+  if(logVisible){ try{renderLog();}catch(_){} }
+}
+window.confirmSession=confirmSession; window.rejectSession=rejectSession; window.adjustSession=adjustSession;
+
+// Review card (Today tab) — bound to the latest unconfirmed session by id.
+let _reviewSessionId=null;
+function confirmReviewSession(){ if(_reviewSessionId) confirmSession(_reviewSessionId); }
+function adjustReviewSession(){ if(_reviewSessionId) adjustSession(_reviewSessionId); }
+function rejectReviewSession(){ if(_reviewSessionId) rejectSession(_reviewSessionId); }
+window.confirmReviewSession=confirmReviewSession; window.adjustReviewSession=adjustReviewSession; window.rejectReviewSession=rejectReviewSession;
+
+function showCheckinIdle(){
+  document.getElementById('checkin-idle').style.display='block';
+  document.getElementById('checkin-active').style.display='none';
+  document.getElementById('checkin-review').style.display='none';
+  const st=document.getElementById('checkin-start'); if(st) st.value=nowTime();
+}
+// Today tab reflects one of three states: running timer / latest unconfirmed / idle.
+function refreshTodayTab(){
+  const ad=activeDay();
+  if(ad && !ad.finish){ showActiveTimer(ad); return; }
+  const q=unconfirmedQueue();
+  if(q.length){ showReview(q[q.length-1]); return; }
+  showCheckinIdle();
+}
+window.refreshTodayTab=refreshTodayTab;
 
 function showGeofenceDepartureNotification(siteName,stopTime){
   // Only one departure notification per day
@@ -3312,11 +3629,9 @@ function initCheckinScreen(){
   initMaterialsSection('idle',null);
   document.getElementById('checkin-start').value=nowTime();
   applyTradeVisibility();
-  const ad=activeDay();
-  // If the day was auto-stopped while the app was closed (ad.finish set, never cleared),
-  // go straight to the review screen instead of restarting the live timer display.
-  if(ad && ad.finish) showReview(ad);
-  else if(ad) showActiveTimer(ad);
+  // v90: Today shows one of three states — running timer / latest unconfirmed
+  // session for review / idle. refreshTodayTab picks the right one.
+  refreshTodayTab();
   startGPS();
   requestNotificationPermission();
 }
@@ -3431,17 +3746,31 @@ function finishDay(){
   const travelData=readTravelFromUI('active');
   Object.assign(ad,travelData);
   Object.assign(ad,readMaterialsFromUI('active'));
-  ad.finish=nowTime();DB.set('activeDay',ad);showReview(ad);
+  ad.finish=nowTime();
+  if(!ad.rawFinish) ad.rawFinish=ad.finish;
+  // v90: manual finish seals into the review backlog too (same model as auto-stop).
+  _sealSessionToBacklog(ad);
+  DB.set('activeDay',null);
+  _resetGeoTriggerFlags();
+  refreshTodayTab();
 }
 
 function showReview(ad){
   document.getElementById('checkin-idle').style.display='none';
   document.getElementById('checkin-active').style.display='none';
   document.getElementById('checkin-review').style.display='block';
+  _reviewSessionId=ad.id||null; // v90: Confirm/Adjust/Reject act on this session
+  // Backlog hint — how many sessions await review, with a jump to the full list.
+  const hintEl=document.getElementById('rev-backlog-hint');
+  if(hintEl){
+    const n=unconfirmedQueue().length;
+    if(n>1){ hintEl.style.display='block'; hintEl.innerHTML='📋 '+n+' sessions awaiting review — <a href="#" onclick="showScreen(\'log\');return false" style="color:var(--amber);font-weight:700">see all in Log →</a>'; }
+    else { hintEl.style.display='none'; }
+  }
   const{h,myE,sonH,sonE,total,sonrate,machineTotal,machineLines,travelTotal,travelLine,materialsTotal}=dayTotals(ad);
   document.getElementById('rev-site').textContent=ad.site;
   document.getElementById('rev-start').textContent=ad.start;
-  document.getElementById('rev-finish').textContent=ad.finish;
+  document.getElementById('rev-finish').textContent=ad.finish||'—';
   document.getElementById('rev-lunch').textContent=ad.lunchMins?ad.lunchMins+' min':'None';
   document.getElementById('rev-hours').textContent=formatHours(h);
   document.getElementById('rev-my-earn').textContent=fmtMoney(myE)+' ('+formatHours(h)+' × $'+ad.rate+'/hr)';
@@ -3626,9 +3955,12 @@ window.saveAdjustedStart = function(){
 
 // --- Log entry edit ---
 let _logEditDate=null; // stores entry id (or date for legacy entries)
-window.editLogDay = function(entryKey){
+let _logEditStore='days'; // v90: 'days' (confirmed) | 'unconfirmed' (review backlog / Adjust)
+window.editLogDay = function(entryKey, store){
+  _logEditStore = (store==='unconfirmed') ? 'unconfirmed' : 'days';
   // entryKey is preferably the unique id, falls back to date for old entries
-  const dl=days(),d=dl.find(x=>(x.id&&x.id===entryKey)||(!x.id&&x.date===entryKey));if(!d)return;
+  const src = _logEditStore==='unconfirmed' ? unconfirmed() : days();
+  const d=src.find(x=>(x.id&&x.id===entryKey)||(!x.id&&x.date===entryKey));if(!d)return;
   _logEditDate=d.id||d.date;
   document.getElementById('le-date').value=d.date;
   // Populate site dropdown (U2) — include the day's current site even if it's no
@@ -3669,11 +4001,14 @@ window.unarchiveLogEntry = function(){
 window.closeLogEditModal = function(){
   document.getElementById('log-edit-modal').classList.remove('open');
   _logEditDate=null;
+  _logEditStore='days';
 };
 window.saveLogEdit = function(){
   if(!_logEditDate)return;
-  const dl=days(),idx=dl.findIndex(x=>(x.id&&x.id===_logEditDate)||(!x.id&&x.date===_logEditDate));
-  if(idx===-1){toast('Day not found');return;}
+  const isUC=_logEditStore==='unconfirmed';
+  const dl=isUC?unconfirmed():days();
+  const idx=dl.findIndex(x=>(x.id&&x.id===_logEditDate)||(!x.id&&x.date===_logEditDate));
+  if(idx===-1){toast(isUC?'Session not found':'Day not found');return;}
   const d=dl[idx];
   const newDate=document.getElementById('le-date').value||d.date;
   const ns=document.getElementById('le-start').value||d.start;
@@ -3696,12 +4031,20 @@ window.saveLogEdit = function(){
   Object.assign(d,readTravelFromUI('le'));
   Object.assign(d,readMaterialsFromUI('le'));
   d.updatedAt=Date.now();
+  if(isUC){
+    // v90 Adjust: stamp the audit flag, refresh startTs/finishTs, keep UNCONFIRMED.
+    d.edited_by_user=true;
+    d.status=SESSION_STATUS.UNCONFIRMED;
+    d.startTs=_tsFromDateTime(d.date,d.start);
+    d.finishTs=d.finish?_tsFromDateTime(d.date,d.finish):null;
+  }
   dl[idx]=d;
-  DB.set('days',dl);
+  if(isUC) setUnconfirmed(dl); else DB.set('days',dl);
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
   closeLogEditModal();
   renderLog();
-  toast('Day updated ✓');
+  if(isUC) refreshTodayTab();
+  toast(isUC?'Session adjusted ✓ — tap Confirm to bill it':'Day updated ✓');
 };
 
 // --- Discard day confirmation flow ---
@@ -3749,14 +4092,17 @@ window.closeDeleteConfirm = function(){
 };
 window.confirmDeleteLogEntry = function(){
   if(!_logEditDate)return;
-  const dl=days(),idx=dl.findIndex(x=>(x.id&&x.id===_logEditDate)||(!x.id&&x.date===_logEditDate));
-  if(idx===-1){toast('Day not found');return;}
+  const isUC=_logEditStore==='unconfirmed';
+  const dl=isUC?unconfirmed():days();
+  const idx=dl.findIndex(x=>(x.id&&x.id===_logEditDate)||(!x.id&&x.date===_logEditDate));
+  if(idx===-1){toast(isUC?'Session not found':'Day not found');return;}
   const filtered=dl.filter((d,i)=>i!==idx);
-  DB.set('days',filtered);
+  if(isUC) setUnconfirmed(filtered); else DB.set('days',filtered);
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
   document.getElementById('delete-log-confirm-modal').classList.remove('open');
   closeLogEditModal();
   renderLog();
+  if(isUC) refreshTodayTab();
   toast('Entry deleted ✓');
 };
 
@@ -3809,8 +4155,46 @@ function dayTotals(d){
   return{h,myE,sonH,sonE,total:myE+sonE+machineTotal+travelTotal+materialsTotal,sonrate,machineTotal,machineLines,travelTotal,travelLine,materialsTotal,materialLines};
 }
 
+// --- v90 Review Backlog (unconfirmed auto-captured sessions) ---
+function renderReviewBacklog(){
+  const sec=document.getElementById('review-backlog-section');
+  const list=document.getElementById('review-backlog-list');
+  const title=document.getElementById('review-backlog-title');
+  if(!sec||!list) return;
+  const q=unconfirmedQueue().slice().reverse(); // newest first
+  if(!q.length){ sec.style.display='none'; list.innerHTML=''; return; }
+  sec.style.display='block';
+  if(title) title.textContent='Review Backlog ('+q.length+')';
+  list.innerHTML='';
+  q.forEach(sess=>{
+    const{h,total}=dayTotals(sess);
+    const c=document.createElement('div');c.className='card';c.style.marginBottom='10px';
+    const id=sess.id;
+    c.innerHTML=`<div class="day-item" style="border:none;padding:0">
+      <div class="day-item-left">
+        <div class="date">${fmtDate(sess.date)}</div>
+        <div class="detail">${escHtml(sess.site)} · ${escHtml(sess.start)}–${escHtml(sess.finish||'?')} · ${sess.lunchMins?sess.lunchMins+'min lunch':'no lunch'}</div>
+        <div style="margin-top:4px">
+          <span class="badge" style="background:#FEF3C7;color:#92400E">⏳ Unconfirmed</span>
+          ${sess.merged?'<span class="badge badge-blue" style="margin-left:4px">merged</span>':''}
+          ${sess.edited_by_user?'<span class="badge" style="margin-left:4px;background:var(--surface2);color:var(--text2)">✏️ edited</span>':''}
+          ${!sess.finish?'<span class="badge" style="margin-left:4px;background:#FEE2E2;color:#991B1B">no finish — Adjust</span>':''}
+        </div>
+      </div>
+      <div class="day-item-right" style="text-align:right"><div class="amount">${fmtMoney(total)}</div><div class="hours">${formatHours(h)}</div></div>
+    </div>
+    <div class="btn-row" style="margin-top:10px">
+      <button class="btn btn-secondary" style="flex:1" onclick="adjustSession('${id}')">Adjust</button>
+      <button class="btn btn-primary" style="flex:1" onclick="confirmSession('${id}')">Confirm ✓</button>
+    </div>
+    <button class="btn btn-secondary" style="width:100%;margin-top:8px;color:var(--red)" onclick="rejectSession('${id}')">Reject</button>`;
+    list.appendChild(c);
+  });
+}
+
 // --- Log ---
 function renderLog(){
+  renderReviewBacklog();
   const allDays=days().sort((a,b)=>b.date.localeCompare(a.date));
   const el=document.getElementById('log-list');
   const archivedCount=allDays.filter(d=>d.invoiced).length;
@@ -6357,6 +6741,30 @@ if('serviceWorker' in navigator){
 }
 
 // --- Init (called by Firebase auth after sign-in + cloud restore) ---
+// v90 one-time migration — no data loss. Idempotent (safe to run every launch).
+function migrateToV90(){
+  try{
+    if(DB.get('unconfirmed')===null) DB.set('unconfirmed',[]);
+    // Tag existing finalized day records CONFIRMED. Non-destructive: dayTotals
+    // ignores status; invoice/stats already read days[] = the billable set. This
+    // just makes the status explicit so the model is uniform.
+    const dl=days(); let changed=false;
+    dl.forEach(d=>{ if(d && !d.status){ d.status=SESSION_STATUS.CONFIRMED; changed=true; } });
+    if(changed){ DB.set('days',dl); try{GeoLog.add('info','v90 migration: tagged '+dl.length+' day record(s) CONFIRMED');}catch(_){} }
+    // A v89 stopped-but-unsaved activeDay (finish set, never Saved) becomes the
+    // first Review Backlog entry so NO captured time is lost on upgrade (e.g. an
+    // auto-captured day still sitting on the review screen).
+    const ad=activeDay();
+    if(ad && ad.finish){
+      _sealSessionToBacklog(ad);
+      DB.set('activeDay',null);
+      _resetGeoTriggerFlags();
+      try{GeoLog.add('info','v90 migration: moved finished activeDay ('+ad.site+' '+ad.start+'–'+ad.finish+') → Review Backlog');}catch(_){}
+    }
+    DB.set('v90migrated',true);
+  }catch(e){ try{GeoLog.add('error','v90 migration failed: '+e.message);}catch(_){} }
+}
+
 window.initApp = function() {
   if(!DB.get('settings')){
     DB.set('settings',DEFAULTS);
@@ -6388,6 +6796,7 @@ window.initApp = function() {
       DB.set('clients',[{company:ec,contact:'',abn:'',address:'',email:'',phone:'',isDefault:true}]);
     }
   }
+  migrateToV90(); // one-time: seed the unconfirmed queue + tag existing days CONFIRMED
   // Restore GST toggle state
   const gstEl=document.getElementById('toggle-gst');
   if(gstEl) gstEl.checked=!!DB.get('gst_on');
@@ -6611,35 +7020,19 @@ window.initApp = function() {
     const n = Number(t); return isNaN(n) ? 0 : n;
   }
 
-  // Cross-session dedup of native geo events. SharedPrefs MAY fail to clear
-  // (e.g. plugin call rejects, JS exception before the loop completes), so
-  // belt-and-suspenders: remember each event signature in localStorage and
-  // skip any replay we've already actioned within the last 24h.
-  const PROCESSED_EVENTS_KEY = 'mcn_processedGeoEvents';
-  const PROCESSED_TTL_MS = 24 * 60 * 60 * 1000;
-  function _eventSig(ev){
-    return (ev.type||'?') + '|' + (ev.site||'?') + '|' + (ev.timestamp||ev.time||'?');
-  }
-  function _loadProcessed(){
-    try { return JSON.parse(localStorage.getItem(PROCESSED_EVENTS_KEY) || '[]'); } catch(_){ return []; }
-  }
-  function _isProcessed(ev){
-    const sig = _eventSig(ev);
-    return _loadProcessed().some(e => e.sig === sig);
-  }
-  function _markProcessed(ev){
-    try {
-      const cutoff = Date.now() - PROCESSED_TTL_MS;
-      let arr = _loadProcessed().filter(e => (e.recordedAt||0) > cutoff);
-      arr.push({ sig: _eventSig(ev), recordedAt: Date.now() });
-      if (arr.length > 100) arr = arr.slice(-100);
-      localStorage.setItem(PROCESSED_EVENTS_KEY, JSON.stringify(arr));
-    } catch(_){}
-  }
+  // v90: per-event signature dedup is no longer needed — the atomic drain +
+  // id-based supersede in reconstructAndReconcile make replay idempotent, and a
+  // single _reconstructInFlight guard serialises concurrent callers.
+  let _reconstructInFlight = false;
 
   async function processPendingGeoEvents() {
-    try { recoverPendingStop(); } catch(_) {} // FIX-C1: apply any auto-stop lost to an app kill
     if (!NativeGeo) return;
+    if (_reconstructInFlight) { console.log('[NativeGeo] reconstruct already in flight — skipping'); return; }
+    _reconstructInFlight = true;
+    try { await _processPendingGeoEventsInner(); }
+    finally { _reconstructInFlight = false; }
+  }
+  async function _processPendingGeoEventsInner() {
     let raw = [];
     let drained = false;
     try {
@@ -6663,19 +7056,15 @@ window.initApp = function() {
       return;
     }
 
-    // Collapse the replay storm before any event reaches processGeoEvent.
-    // Native geofence flutter at the boundary records repeated enter/exit
-    // pairs that would each fire ignored/debounced events — and (worse)
-    // generate an "Open app to generate invoice" notification per replayed
-    // exit. Two passes:
+    // Collapse the replay storm before reconstruction. Native geofence flutter
+    // at the boundary records repeated enter/exit pairs. Two passes:
     //   1. Same (site,type) within 60s → keep only the latest.
     //   2. Opposite-type oscillation at same site within 60s → cancel both.
-    // Order is preserved otherwise so debounce timing still applies to the
-    // surviving event.
+    // Order is preserved otherwise so the builder pairs the surviving events.
     // Rejected events (accuracy gate, v81) must NOT participate in the
     // flutter-collapse below — a garbage-fix "enter" could otherwise pair with
-    // a REAL exit in the opposite-type rule and silently drop both. They still
-    // flow through processGeoEvent (which logs and ignores them).
+    // a REAL exit in the opposite-type rule and silently drop both. They are
+    // logged (visibility) but never fed to the builder.
     const rejectedEvs = raw.filter(e => e && e.rejected);
     const cleanRaw = raw.filter(e => e && !e.rejected);
 
@@ -6703,20 +7092,20 @@ window.initApp = function() {
       GeoLog.add('info', 'Replay collapsed: ' + raw.length + ' raw → ' + collapsed.length + ' actionable' + (rejectedEvs.length ? ' (' + rejectedEvs.length + ' rejected)' : ''));
     }
 
-    console.log('[NativeGeo] Replaying', collapsed.length, 'pending events (from', raw.length, 'raw)');
+    // Log rejected events (visibility) but never act on them — v81 accuracy gate.
+    rejectedEvs.forEach(ev => {
+      const meta = [];
+      if (ev.acc != null && ev.acc >= 0) meta.push('acc ' + Math.round(ev.acc) + 'm');
+      if (ev.distM != null) meta.push(Math.round(ev.distM) + 'm from centre');
+      GeoLog.add('ignore', 'REJECTED ' + ev.type + ' @ ' + ev.site + ' at ' + (ev.time||'?') + ' — ' + (ev.reason||'failed validation') + (meta.length ? ' [' + meta.join(' · ') + ']' : ''));
+    });
+    console.log('[NativeGeo] Reconstructing', collapsed.length, 'events (from', raw.length, 'raw)');
     try {
-      for (const ev of [...rejectedEvs, ...collapsed]) {
-        if (_isProcessed(ev)) {
-          console.log('[NativeGeo] Skipping already-processed event:', _eventSig(ev));
-          continue;
-        }
-        try {
-          await processGeoEvent(ev);
-          _markProcessed(ev);
-        } catch(err) {
-          console.warn('[NativeGeo] event handler threw, skipping:', ev, err);
-        }
-      }
+      // v90: the whole drained batch is reconstructed at once into the
+      // multi-session queue (pure buildSessionsFromEvents + v89 stop gate on the
+      // trailing same-day exit). Replaces the per-event processGeoEvent loop, so
+      // a week of banked enter/exit pairs becomes N sessions in one pass.
+      await reconstructAndReconcile(collapsed);
     } finally {
       // GUARANTEE the queue is cleared even if processing threw mid-loop.
       // If we used drain, SharedPrefs is already empty — otherwise this is
@@ -6724,136 +7113,6 @@ window.initApp = function() {
       if (!drained) {
         try { await NativeGeo.clearPendingEvents(); } catch(e) {
           console.warn('[NativeGeo] clearPendingEvents failed:', e);
-        }
-      }
-    }
-  }
-
-  async function processGeoEvent(ev) {
-    // ev = { site, type: 'enter'|'exit', time, date, timestamp,
-    //        evLat?, evLng?, acc?, distM?, fixAgeMs?, rejected?, reason? }
-    // Since v81 Java attaches the triggering location — the GeoLog finally
-    // records WHERE the phone thought it was, not just that a fence fired.
-    const meta = [];
-    if (ev.acc != null && ev.acc >= 0) meta.push('acc ' + Math.round(ev.acc) + 'm');
-    if (ev.distM != null) meta.push(Math.round(ev.distM) + 'm from centre');
-    if (ev.fixAgeMs != null && ev.fixAgeMs > 60000) meta.push('fix ' + Math.round(ev.fixAgeMs/60000) + 'min stale');
-    const metaStr = meta.length ? ' [' + meta.join(' · ') + ']' : (ev.acc === -1 ? ' [no trig location]' : '');
-
-    // Java marks events triggered by garbage-accuracy fixes as rejected —
-    // log them (visibility is the whole point) but never act on them.
-    if (ev.rejected) {
-      GeoLog.add('ignore', 'REJECTED ' + ev.type + ' @ ' + ev.site + ' at ' + (ev.time||'?') + ' — ' + (ev.reason||'failed validation') + metaStr);
-      return;
-    }
-
-    const hour = parseInt((ev.time || '00:00').substring(0, 2), 10);
-    const outOfHours = hour < 5 || hour >= 21;
-    GeoLog.add(ev.type, (ev.type==='enter'?'Arrived at ':'Left ') + ev.site + ' at ' + (ev.time||'?') + metaStr + (outOfHours?' [outside hours — ignored]':''));
-    if (outOfHours) return; // outside working hours
-
-    // Read sites() once at top of function — both enter and exit branches need it.
-    // Previously this was scoped inside the enter branch, so any exit-branch
-    // codepath that referenced `siteList` (stale-GPS proximity gate or old-event
-    // fresh-GPS verify) threw a ReferenceError that was silently swallowed by
-    // the outer catch — losing the EXIT entirely.
-    const siteList = (typeof sites === 'function') ? sites() : [];
-
-    if (ev.type === 'enter') {
-      // Only auto-start if there's no active day already
-      if (activeDay()) {
-        console.log('[NativeGeo] ENTER ignored — timer already running');
-        GeoLog.add('ignore', 'Enter ignored — timer already running (' + ev.site + ')');
-        return;
-      }
-      if (geoAutoStartTriggered) { GeoLog.add('ignore', 'Enter ignored — already triggered today (' + ev.site + ')'); return; }
-      const site = siteList.find(s => s.name === ev.site);
-      if (!site) {
-        console.warn('[NativeGeo] Site not found for enter event:', ev.site);
-        return;
-      }
-      geoAutoStartTriggered = true;
-      geoAutoStartDate = todayStr();
-      _saveGeoFlags();
-      autoStartTimer(site, ev.time);
-
-    } else if (ev.type === 'exit') {
-      const ad = activeDay();
-      if (!ad) {
-        console.log('[NativeGeo] EXIT ignored — no active day');
-        GeoLog.add('ignore', 'Exit ignored — no active timer (' + ev.site + ')');
-        return;
-      }
-      // Timer already finished (review screen / awaiting save) — never re-stop
-      // a finished day from a replayed exit event. autoStopTimer would otherwise
-      // overwrite ad.finish with the replay timestamp.
-      if (ad.finish) {
-        console.log('[NativeGeo] EXIT ignored — timer already finished');
-        GeoLog.add('ignore', 'Exit ignored — timer already finished (' + ev.site + ')');
-        return;
-      }
-      if (geoAutoStopTriggered) { GeoLog.add('ignore', 'Exit ignored — already triggered today (' + ev.site + ')'); return; }
-      if (ad.site !== ev.site) {
-        console.log('[NativeGeo] EXIT ignored — active site is', ad.site, 'not', ev.site);
-        GeoLog.add('ignore', 'Exit ignored — active site is ' + ad.site + ', not ' + ev.site);
-        return;
-      }
-      // Before acting on a queued EXIT, check if we're currently inside the geofence.
-      // GPS flutter while the screen was off can fire a spurious EXIT even though the
-      // user never actually left. If current position is inside, discard the event.
-      // BUT: only trust lastLat/lastLng if it was captured within the last 2 minutes.
-      // On resume after a long sleep, lastLat is stale (from before the user left) and
-      // would falsely report "inside" — discarding a legitimate EXIT.
-      const GPS_STALE_MS = 2 * 60 * 1000;
-      if (lastLat != null && lastLng != null && lastLatTs && (Date.now() - lastLatTs) < GPS_STALE_MS) {
-        const activeSite = siteList.find(s => s.name === ev.site);
-        if (activeSite && activeSite.lat) {
-          const nowDist = dist(lastLat, lastLng, activeSite.lat, activeSite.lng);
-          const radius = activeSite.radius || 100;
-          if (nowDist < radius) {
-            GeoLog.add('ignore', 'Native EXIT discarded — currently ' + Math.round(nowDist) + 'm inside ' + ev.site + ' (radius ' + radius + 'm)');
-            return;
-          }
-        }
-      }
-
-      // Debounce native EXIT the same way web GPS does — don't stop instantly on boundary flutter.
-      // If the exit event is older than GEO_STOP_DEBOUNCE, apply immediately (user was clearly away).
-      // If recent, start a debounce timer so a quick re-enter can cancel it.
-      const evMs = _evMs(ev);
-      const evAge = (evMs > 0) ? (Date.now() - evMs) : 0; // treat unparseable timestamps as "just now"
-      if (evAge >= GEO_STOP_DEBOUNCE) {
-        // C7: claim a synchronous in-flight slot before the async GPS verify, so a
-        // second exit event delivered during the await can't also reach autoStopTimer.
-        if (_nativeStopInFlight) { GeoLog.add('ignore', 'Native EXIT — a stop is already being applied'); return; }
-        _nativeStopInFlight = true;
-        try {
-          // v89: fresh (maximumAge:0) + accuracy-checked confirmation. The old
-          // verify used maximumAge:30000 (could return a cached overnight fix) and
-          // never checked the fresh fix's OWN accuracy — letting a stale, km-off
-          // fused fix slip through and false-stop the day.
-          await _confirmDepartureThenStop(ev.site, ev.time, 'Native EXIT (old)');
-        } finally {
-          _nativeStopInFlight = false;
-        }
-      } else {
-        // Recent exit — debounce before stopping
-        const delay = GEO_STOP_DEBOUNCE - evAge;
-        GeoLog.add('info', 'Native EXIT — debouncing ' + Math.round(delay/1000) + 's before stopping');
-        // Persist the pending stop so an app-kill during the debounce window
-        // doesn't lose it — recoverPendingStop() applies it on next open (FIX-C1).
-        _setPendingStop(ev.site, ev.time, Date.now() + delay);
-        if (!outsideSiteTimer) {
-          outsideSiteTimerStart = Date.now();
-          outsideSiteTimer = setTimeout(() => {
-            outsideSiteTimer = null; outsideSiteTimerStart = null;
-            const hour = new Date().getHours();
-            if (hour >= 5 && hour < 21 && activeDay() && !geoAutoStopTriggered) {
-              const _ad=activeDay();
-              // v89: unified fresh + accuracy-checked confirmation before stopping.
-              _confirmDepartureThenStop(_ad.site, undefined, '[Native] Debounce stop');
-            }
-          }, delay);
         }
       }
     }
@@ -6896,26 +7155,23 @@ window.initApp = function() {
   }
 
   // ── Real-time geofence event listener ───────────────────────────────────────
-  // Without this, EXIT events sit in SharedPreferences until the user next
-  // opens the app — which they may never do until hours later. The native
-  // receiver also LocalBroadcasts each event; the plugin forwards it to JS via
-  // `notifyListeners('geoEvent', ...)`, and we run the same processGeoEvent
-  // pipeline immediately. processPendingGeoEvents() on next resume is then a
-  // no-op because _isProcessed() short-circuits anything we already handled.
+  // The native receiver LocalBroadcasts each transition; the plugin forwards it
+  // here via notifyListeners('geoEvent', …) when the process is alive. v90 routes
+  // this through the SAME batch path as cold-open/resume: the receiver has
+  // already banked the event to SharedPreferences, so a short debounced
+  // processPendingGeoEvents() drains + reconstructs it (a burst coalesces into
+  // one pass; the debounce also lets the receiver's prefs.apply() commit first).
+  // One reconstruction path → no drift between real-time and replay.
+  let _geoEventDebounce = null;
   if (NativeGeo && typeof NativeGeo.addListener === 'function') {
     try {
-      NativeGeo.addListener('geoEvent', async (data) => {
-        try {
-          console.log('[NativeGeo] Real-time geoEvent received:', data);
-          if (_isProcessed(data)) {
-            console.log('[NativeGeo] Real-time event already processed — skipping');
-            return;
-          }
-          await processGeoEvent(data);
-          _markProcessed(data);
-        } catch (e) {
-          console.warn('[NativeGeo] Real-time geoEvent handler error:', e);
-        }
+      NativeGeo.addListener('geoEvent', (data) => {
+        console.log('[NativeGeo] Real-time geoEvent received:', data);
+        if (_geoEventDebounce) clearTimeout(_geoEventDebounce);
+        _geoEventDebounce = setTimeout(() => {
+          _geoEventDebounce = null;
+          processPendingGeoEvents().catch(e => console.warn('[NativeGeo] real-time reconstruct error:', e));
+        }, 1500);
       });
       console.log('[NativeGeo] Real-time geoEvent listener registered');
     } catch (e) {

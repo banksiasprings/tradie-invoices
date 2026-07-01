@@ -49,49 +49,55 @@ const SETUP = `(()=>{
   return 'setup-ok:'+(typeof window._confirmDepartureThenStop)+'/'+(typeof window.recoverPendingStop)+'/sites='+sites().length;
 })()`;
 
-// Reset to a fresh RUNNING day before each case.
-const RESET = `(()=>{ DB.set('activeDay',{id:'t'+Date.now(),site:'Test Site',start:'08:00',date:todayStr(),rate:60}); localStorage.removeItem('mcn_pendingStop'); try{geoAutoStopTriggered=false;geoAutoStopDate=null;}catch(_){} return 'reset'; })()`;
+// Reset to a fresh RUNNING day before each case. v90: also clear the unconfirmed
+// backlog so `sealedFinish` reflects only this case's outcome.
+const RESET = `(()=>{ DB.set('activeDay',{id:'t'+Date.now(),site:'Test Site',start:'08:00',date:todayStr(),rate:60}); if(typeof setUnconfirmed==='function')setUnconfirmed([]); localStorage.removeItem('mcn_pendingStop'); try{geoAutoStopTriggered=false;geoAutoStopDate=null;}catch(_){} return 'reset'; })()`;
 
 // Each case: set mock pos (+ optional pendingStop), run the action, let async
-// callbacks flush, then report whether the day was stopped.
+// callbacks flush, then report the outcome. v90: a genuine stop SEALS the session
+// into the unconfirmed backlog and CLEARS activeDay (multi-session model), so the
+// finish lands in `sealedFinish`, not on activeDay. A "do NOT stop" leaves
+// activeDay running (finish null) and seals nothing.
 function caseExpr(body){
-  return `(async()=>{ ${body}; await new Promise(r=>setTimeout(r,120));
+  return `(async()=>{ ${body}; await new Promise(r=>setTimeout(r,150));
     const ad=activeDay(); const ps=localStorage.getItem('mcn_pendingStop');
-    return JSON.stringify({finish: ad&&ad.finish||null, pendingStop: ps?JSON.parse(ps):null}); })()`;
+    const uq=(typeof unconfirmedQueue==='function')?unconfirmedQueue():[];
+    const sealed=uq.length?uq[uq.length-1]:null;
+    return JSON.stringify({finish: ad&&ad.finish||null, activeCleared: !ad, sealedFinish: sealed&&sealed.finish||null, pendingStop: ps?JSON.parse(ps):null}); })()`;
 }
 
 const CASES = [
   { name: 'FALSE exit (31km-glitch): fresh fix shows INSIDE → do NOT stop',
     body: `window.__mockPos={lat:-27.00000,lng:153.00000,acc:12};
            await window._confirmDepartureThenStop('Test Site','20:05','T1')`,
-    expect: g => g.finish === null },
+    expect: g => g.finish === null && g.sealedFinish === null },
 
   { name: 'Exit but fresh fix INACCURATE (600m) → do NOT stop',
     body: `window.__mockPos={lat:-27.20000,lng:153.00000,acc:600};
            await window._confirmDepartureThenStop('Test Site','17:00','T2')`,
-    expect: g => g.finish === null },
+    expect: g => g.finish === null && g.sealedFinish === null },
 
   { name: 'Exit but fresh GPS UNAVAILABLE → do NOT stop',
     body: `window.__mockPos=null;
            await window._confirmDepartureThenStop('Test Site','17:00','T3')`,
-    expect: g => g.finish === null },
+    expect: g => g.finish === null && g.sealedFinish === null },
 
-  { name: 'GENUINE departure: fresh accurate fix OUTSIDE → STOP at exit time',
+  { name: 'GENUINE departure: fresh accurate fix OUTSIDE → STOP (sealed to backlog @ exit time)',
     body: `window.__mockPos={lat:-27.20000,lng:153.00000,acc:12};
            await window._confirmDepartureThenStop('Test Site','17:00','T4')`,
-    expect: g => g.finish === '17:00' },
+    expect: g => g.sealedFinish === '17:00' && g.activeCleared === true },
 
   { name: 'recoverPendingStop (08:59 field bug): app-kill recovery, still ON SITE → do NOT stop, clear pending',
     body: `localStorage.setItem('mcn_pendingStop',JSON.stringify({site:'Test Site',exitTime:'08:59',fireAt:Date.now()-60000}));
            window.__mockPos={lat:-27.00000,lng:153.00000,acc:12};
            window.recoverPendingStop()`,
-    expect: g => g.finish === null && g.pendingStop === null },
+    expect: g => g.finish === null && g.sealedFinish === null && g.pendingStop === null },
 
-  { name: 'recoverPendingStop: genuinely LEFT (accurate, outside) → STOP at recorded exit time',
+  { name: 'recoverPendingStop: genuinely LEFT (accurate, outside) → STOP (sealed @ recorded exit time)',
     body: `localStorage.setItem('mcn_pendingStop',JSON.stringify({site:'Test Site',exitTime:'17:05',fireAt:Date.now()-60000}));
            window.__mockPos={lat:-27.20000,lng:153.00000,acc:12};
            window.recoverPendingStop()`,
-    expect: g => g.finish === '17:05' && g.pendingStop === null },
+    expect: g => g.sealedFinish === '17:05' && g.activeCleared === true && g.pendingStop === null },
 ];
 
 (async () => {

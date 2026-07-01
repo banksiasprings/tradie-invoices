@@ -66,3 +66,19 @@ graphify-out/
 
 # Remote-monitoring session logs
 logs/
+live_monitor.js
+run_monitor.sh
+day_log.txt
+live_gps_trace.log
+geofence_events.log
+URGENT_ALERTS.txt
+ALERTS.log
+discrepancy.log
+monitor_state.json
+monitor_stdout.log
+screenshots/
+forensic_*
+fb_*.js
+MORNING_TEST.md
+geofence_logcat.log
+FIELD_TEST_EOD_*.md

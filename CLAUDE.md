@@ -22,10 +22,10 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v89 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1739) | v90 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.89.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.90.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
 
 **Single source of truth: `APP_VERSION` in `www/index.html`.** Just bump that — the GitHub Pages deploy workflow (`.github/workflows/deploy.yml`) rewrites the other two automatically:
 
@@ -246,6 +246,59 @@ over the freshly-installed APK.
 
 ---
 
+## v90 — Multi-Session Queue ("set and forget for weeks")
+
+The flagship shift: capture MANY days with the app never opened, then review them in a
+backlog. **The native capture layer is UNCHANGED (zero regression risk to the v89 field
+capture Steven validated).** The `native_geo_prefs → pending_events` SharedPrefs queue
+already banks every ENTER/EXIT across days while the app is dead — that IS the JS-independent
+"native drainage." v90 rebuilds the JS **read/repair** layer to reconstruct MULTIPLE sessions
+from that banked queue. (The brief's Room-DB/foreground-Service option was deliberately NOT
+taken: the queue already survives app death, real-time notifications aren't a priority, and a
+native rewrite would risk the validated capture. The brief explicitly sanctions the "extended
+SharedPrefs queue" alternative + "keep the JS replay path.")
+
+**Three stores, one job each** (see Data Model table):
+- `mcn_activeDay` — the ONE live running session (unchanged v89 semantics).
+- `mcn_unconfirmed` — the review backlog (UNCONFIRMED + REJECTED/MERGED audit). Not billable.
+- `mcn_days` — CONFIRMED/billable (existing money path UNTOUCHED). Invoice + Stats read here,
+  so CONFIRMED-only billing is structural, not a filter — **no money code was changed.**
+
+**The enabler:** on stop, `autoStopTimer`/`finishDay` now SEAL the finished session into
+`mcn_unconfirmed` and CLEAR `activeDay` (+ reset geo flags). Pre-v90 a finished-but-unsaved
+`activeDay` blocked every subsequent day's ENTER — that was the single-session limit.
+
+**Reconstruction:** `buildSessionsFromEvents()` (PURE, unit-tested in `test-sessions.js`
+between the `//__V90_BUILDER_*__` markers) pairs banked enter/exit events into sessions,
+applying the same-site rejoin MERGE rule (`MERGE_WINDOW_MINUTES=90` → gap banked as lunch).
+`reconstructAndReconcile()` runs it over the drained queue and applies the **v89 fresh-fix
+STOP gate to ONLY the trailing same-day exit** (the one case that could be a
+false-stop-in-progress); every earlier session is trusted history (a later event proves he
+moved on). This preserves v89 EXACTLY for the single-day case while enabling multi-day.
+`processPendingGeoEvents()` now drains → flutter-collapses → `reconstructAndReconcile` (the
+old per-event `processGeoEvent` loop is GONE; the real-time listener debounces into the same
+path — one reconstruction path, no drift).
+
+**UI:** Today tab = live timer / latest unconfirmed review card (Confirm/Adjust/Reject) /
+idle, chosen by `refreshTodayTab()`. Log tab = "Review Backlog (N)" section above the
+confirmed log. Confirm → `days[]`; Reject → status REJECTED (kept); Adjust → the log-edit
+modal bound to the unconfirmed store (`editLogDay(id,'unconfirmed')`), stamps `edited_by_user`.
+
+**Don't reintroduce:** leaving a finished `activeDay` uncleared (re-breaks multi-day);
+fresh-fix gating a PRIOR-day replayed exit (breaks multi-day — you're not at Monday's site on
+Friday); trusting the trailing same-day exit without the fresh-fix gate (re-opens the v89
+false-stop bug); writing unconfirmed sessions into `days[]` (they'd bill before confirmation).
+
+**Tests:** `test-sessions.js` (16 pure-logic cases), `test-v90-sessions.sh` (15 live-app CDP:
+migration, reconstruct, confirm/reject/adjust, merge, multi-site, end-to-end via the real
+`processPendingGeoEvents`), plus `test-money-math.sh` (7, money unchanged) and
+`test-geo-stop.sh` (6, v89 stop hardening, now asserts the sealed-to-backlog outcome).
+**Persistence note:** localStorage flushes on `onPause`/`pagehide`; `adb am force-stop`
+SIGKILLs before flush (data appears lost) — background the app first (or rely on real
+process-death/reboot, which flush) when testing kill-persistence.
+
+---
+
 ## Data Model
 
 ### localStorage Keys
@@ -254,12 +307,14 @@ over the freshly-installed APK.
 | `mcn_settings` | Object | Business settings (rate, client, trade type, etc.) |
 | `mcn_sites` | Array | Job sites with name, lat, lng, radius, client |
 | `mcn_clients` | Array | Clients with company, ABN, address, email |
-| `mcn_activeDay` | Object | Current active day record (null when idle) |
-| `mcn_days` | Array | All completed day records |
+| `mcn_activeDay` | Object | The ONE currently-RUNNING (live) session — start set, no finish (null when idle). Drives the live timer. |
+| `mcn_unconfirmed` | Array | **v90 review backlog** — completed WorkSessions awaiting Confirm/Adjust/Reject (status UNCONFIRMED) + REJECTED/MERGED audit records. NOT billable. Accumulates across days/weeks with the app never opened. |
+| `mcn_days` | Array | CONFIRMED / billable day records — invoice + stats read ONLY here, so "count CONFIRMED only" is automatic (a session becomes billable iff Confirmed into days[]). |
 | `mcn_geoLog` | Array | GeoLog entries (200-entry ring buffer; mirrored to Firestore since v81) |
 | `mcn_geoFlags` | Object | Persisted geo trigger flags + notification guards (v81) |
-| `mcn_processedGeoEvents` | Array | 24h dedup ring of actioned native geo event signatures |
+| `mcn_v90migrated` | Boolean | Set once the v90 migration has run (idempotent) |
 | `gst_on` | Boolean | GST toggle state |
+| ~~`mcn_processedGeoEvents`~~ | — | REMOVED in v90 (per-event dedup replaced by atomic drain + id-based supersede) |
 
 ### activeDay Record
 ```js
@@ -614,6 +669,11 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
+- **v90 multi-session queue** — SHIPPED 2026-07-01. Set-and-forget for weeks: many days
+  captured with the app never opened, reviewed in a "Review Backlog (N)" with
+  Confirm/Adjust/Reject. See the "v90 — Multi-Session Queue" section above. Native capture
+  UNCHANGED (v89 field capture preserved); money code UNCHANGED. Verified: 16 pure + 15 live
+  + 7 money + 6 geo-stop tests, migration/persistence/round-trip on the emulator.
 - **Employee timesheets** — SHIPPED and verified end-to-end (2026-06-14): boss `generateBusinessCode()`
   → employee (tradeType `employee`) `linkToEmployer(code)` writes profile+days to the boss's
   `employeeHours` subcollection → boss `fetchTeam()` reads them. Firestore rules gate the cross-user
