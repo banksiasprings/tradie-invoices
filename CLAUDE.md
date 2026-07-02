@@ -22,10 +22,10 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1978) | v100 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1978) | v101 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.100.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.101.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -357,6 +357,63 @@ opt-in native watcher (foreground-service continuous logging is the v100.1 harde
 recurring-route auto-learn → v101; ATO logbook/cents-per-km export (CSV/PDF) → v101;
 per-document Firestore trip storage → only when a single blob approaches ~1MB (a 30-min
 trip ≈ 1.2KB, so hundreds of trips fit fine for now); Xero mileage push → v102.
+
+---
+
+## v101 — Trip Log Tax Exports ("pick your method, hit export, send to your accountant")
+
+Phase-2 major (SHIPPED 2026-07-02): turns the v100 trip log into an ATO-ready km
+claim with two methods + CSV/PDF export. **STRICTLY ADDITIVE** — invoice/day money
+paths, the v90 queue, v91 rounding, v92 health, and v100 capture are UNTOUCHED
+(proven: 36/36 new pure tests, 20/20 v100, 16/16 v90, live headless round-trip).
+The JS is one clearly-marked module in `index.html` (search `═══ v101 TAX EXPORTS ═══`).
+**This is the DRIVER's own expense-claim math — wholly separate from invoice money math.**
+
+**Config store:** `mcn_settings.tax_prefs` (rides the SYNC_KEYS settings blob → synced).
+`{method:'cents'|'logbook', fy:'YYYY-YY', vehicle_id, category:'all'|'business'|…,
+logbooks:[{id,vehicle_id,start_date(Monday),created_at}]}`. Vehicle records gained
+`odometers:{ 'YYYY-YY':{start,end} }` and `expenses:[{id,date,category,amount}]`
+(merged over on edit so they survive — see `saveVehicle` Object.assign).
+
+**Pure logic** (`//__V101_TAX_PURE_START/END__`, extracted verbatim by `test-tax.js` —
+keep it pure: no DOM/DB/argless `Date`): AU financial-year math (`fyOf` — Jul 1
+boundary), `kmByCat` (commute counts toward TOTAL but never BUSINESS, per ATO),
+`taxSummary` (cents-per-km + 5,000 business-km/vehicle/FY cap), `logbookPct`
+(business km ÷ total over a 12-week Monday-start window), `logbookExpenseClaim`,
+`expensesInFy`, `fyList`. 36 cases, sub-second, no emulator.
+
+**Two ATO methods, both shown side-by-side so the user compares:**
+- **Cents per km:** `min(businessKm, 5000) × vehicle.cents_per_km` (default $0.88, the
+  FY25-26 rate, per-vehicle configurable). Over-cap → amber banner: "logbook may claim more."
+- **Logbook (12-week):** business-use % from a locked 12-week window (start any Monday,
+  5-year expiry), applied to actual vehicle expenses. Odometer start/end-of-FY prompts.
+
+**UI:** two collapsible Settings cards — **📊 Tax exports** (method radio, FY + vehicle
+selectors, export-category filter, both-method claim box, cap banner, CSV/PDF buttons)
+and **📒 ATO Logbook** (start/track/delete a 12-week logbook, business-use %, expiry,
+odometer). Vehicle modal gained odometer + an inline expense tracker. **"$X claimable
+this week" chip** on the Trips weekly summary (business km × default-vehicle rate).
+
+**CSV** (`exportTripsCSV`): summary block (FY/vehicle/km-by-cat/both claims) + 12 columns
+(Date…Purpose). **UTF-8 BOM + CRLF** so Excel (Windows) renders the en-dash FY label;
+Google Sheets strips the BOM. Filename `trip_log_{fy}_{vehSlug}_{date}.csv`.
+**PDF** (`exportTripsPDF`, vector jsPDF from CDN via `loadScript`, no bundled dep):
+summary page + one page per week + page numbers/footer. 100 trips renders in ~46ms.
+Both go through `shareOrDownload` (Web Share API → native Android share sheet → email /
+Drive) except the PDF's native path uses Capacitor Filesystem + Share directly.
+
+**Don't reintroduce / don't break:** counting commute km as business (it's private per
+ATO); a cents-per-km claim over 5,000 business km (hard cap); rounding/mutating invoice
+money code (out of scope — this is the driver's tax, not the client's invoice); syncing
+`mcn_activeTrip` (v100 rule); **U+2192 `→` in any `doc.text()` call** — jsPDF core
+(helvetica) is WinAnsi-encoded and renders it as garbage `!'`; use en-dash `–` (ranges)
+or ASCII `->` in PDF strings (en-dash/em-dash ARE in WinAnsi and render fine); impurity
+in the `//__V101_TAX_PURE_*__` block (breaks `test-tax.js`).
+
+**Deferred → later:** recurring-route auto-learn (v101 → still open), dead-app screen-off
+continuous capture (v100.1 native foreground-service), Xero mileage push → v102.
+
+**Tests:** `test-tax.js` (36 pure cases: `node test-tax.js`).
 
 ---
 
@@ -753,6 +810,18 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
+- **v101 Trip Log Tax Exports (phase 2 major)** — SHIPPED 2026-07-02. ATO cents-per-km
+  (5,000km cap) + 12-week logbook methods, both-method claim comparison, FY selector,
+  per-vehicle odometer + expense tracker, CSV export (summary + 12 cols, UTF-8 BOM/CRLF
+  for Excel, native share) and vector jsPDF export (summary + weekly pages), "$X claimable
+  this week" chip on Trips. Additive — invoice money / v90 / v91 / v92 / v100 UNTOUCHED.
+  See the "v101 — Trip Log Tax Exports" section above. Verified: 36/36 `test-tax.js` (pure),
+  20/20 v100, 16/16 v90, live headless round-trip (cap $4,400, logbook 75%→$1,500, past-FY
+  filter, CSV structure), 100-trip PDF in ~46ms, screenshots + sample CSV/PDF in
+  `plans/v101-shots/`. OTA live at 1.101.0; APK rebuilt (`InvoicePDF-latest.apk`, embeds
+  1.101.0 builtin + v101 www). **Field-install on Steven's phone still pending** (same as
+  v92.1 — install `adb install -r` when the phone reconnects). **Deferred:** recurring-route
+  auto-learn, dead-app screen-off continuous capture (v100.1), Xero mileage push → v102.
 - **v100 Trip Log MVP (phase 2 major)** — SHIPPED 2026-07-02. Business/personal km logbook
   built on the existing GPS/geofence/sync stack. New **Trips** tab (6th), vehicles, swipe-to-tag
   (business/personal), weekly category pie, inline polyline previews, per-vehicle cents/km claim
