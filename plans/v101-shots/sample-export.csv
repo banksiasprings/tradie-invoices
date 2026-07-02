@@ -1,0 +1,30 @@
+Financial year,FY 2026–27
+Vehicle,Ranger (123-ABC)
+Generated,2 Jul 2026
+,
+Total km,7540.0
+Business km,5580.0
+Personal km,1500.0
+Commute km,460.0
+Business-use %,75.0%
+Cents-per-km claim,"$4,400.00 (5000 km @ $0.88, capped at 5000)"
+Actual expenses (FY),"$2,000.00"
+Logbook claim,"$1,500.00 (75.0% of expenses)"
+,
+Date,Vehicle,Start Time,End Time,Distance (km),Category,Start Address,End Address,Notes,Linked Site,Linked Invoice,Purpose
+2026-07-01,Ranger,07:30,15:50,380.00,Business,"Home, Stanthorpe",Glen Aplin,Gravel haul,,,Gravel haul
+2026-07-01,Ranger,18:00,18:40,60.00,Personal,"Home, Stanthorpe",Town,Groceries,,,Groceries
+2026-07-02,Ranger,08:00,14:20,350.00,Business,"Home, Stanthorpe",Ballandean,Site inspection,,,Site inspection
+2026-07-08,Ranger,07:00,16:00,539.00,Business,"Home, Stanthorpe",Client site,Earthmoving job,,,Earthmoving job
+2026-07-10,Ranger,09:00,15:00,900.00,Personal,"Home, Stanthorpe",Brisbane,Family trip Brisbane,,,Family trip Brisbane
+2026-07-15,Ranger,07:00,16:00,539.00,Business,"Home, Stanthorpe",Client site,Earthmoving job,,,Earthmoving job
+2026-07-18,Ranger,06:30,07:15,260.00,Commute,"Home, Stanthorpe",Depot,Depot runs,,,Depot runs
+2026-07-22,Ranger,07:00,16:00,539.00,Business,"Home, Stanthorpe",Client site,Earthmoving job,,,Earthmoving job
+2026-07-29,Ranger,07:00,16:00,539.00,Business,"Home, Stanthorpe",Client site,Earthmoving job,,,Earthmoving job
+2026-08-05,Ranger,07:00,16:00,539.00,Business,"Home, Stanthorpe",Client site,Earthmoving job,,,Earthmoving job
+2026-08-12,Ranger,07:00,16:00,539.00,Business,"Home, Stanthorpe",Client site,Earthmoving job,,,Earthmoving job
+2026-08-14,Ranger,10:00,13:00,540.00,Personal,"Home, Stanthorpe",Coast,Weekend away,,,Weekend away
+2026-08-19,Ranger,07:00,16:00,539.00,Business,"Home, Stanthorpe",Client site,Earthmoving job,,,Earthmoving job
+2026-08-20,Ranger,06:30,07:15,200.00,Commute,"Home, Stanthorpe",Depot,Depot runs,,,Depot runs
+2026-08-26,Ranger,07:00,16:00,539.00,Business,"Home, Stanthorpe",Client site,Earthmoving job,,,Earthmoving job
+2026-09-02,Ranger,07:00,16:00,538.00,Business,"Home, Stanthorpe",Client site,Earthmoving job,,,Earthmoving job

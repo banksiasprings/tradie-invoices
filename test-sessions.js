@@ -177,5 +177,108 @@ function check(name, cond, detail){
     JSON.stringify(r.completed.map(s=>s.date+' '+s.start+'-'+(s.finish||'?'))));
 })();
 
+// ── 12. v101.2 REGRESSION: today's field fragmentation (2 Jul, Lucas Ranch) ────
+// Steven was on site continuously 08:45–13:30 (one work day, one site, no real
+// departures). Rural GMS fence flutter produced a stream of accepted same-site
+// same-day re-ENTERs (each garbage EXIT got accuracy-rejected, so the fence
+// re-armed and fired a clean-accuracy re-ENTER). Carried-in openSession = the
+// 08:49 web-GPS-fallback activeDay; accepted enters 10:15/11:45/13:15/13:21;
+// the one genuine EXIT at 13:28 when he left.
+// PRE-FIX (v90 builder, no guard): 4 incomplete $0 fragments (08:49, 10:15,
+//   11:45, 13:15) + one 13:21–13:28 session → the fragmented Work Log Steven saw.
+// POST-FIX (v89 idempotency restored): ONE session 08:49–13:28, 4 ignored ENTERs.
+(() => {
+  const openSess = { id:'live-0849', site:'Lucas Ranch', date:'2026-07-02', start:'08:49',
+    startTs: ts('2026-07-02','08:49'), finish:null, lunchMins:0, status:'UNCONFIRMED' };
+  const r = build([
+    ev('enter','Lucas Ranch','2026-07-02','10:15'),
+    ev('enter','Lucas Ranch','2026-07-02','11:45'),
+    ev('enter','Lucas Ranch','2026-07-02','13:15'),
+    ev('enter','Lucas Ranch','2026-07-02','13:21'),
+    ev('exit','Lucas Ranch','2026-07-02','13:28')
+  ], { openSession: openSess });
+  check('today field case → ONE session (not fragmented)',
+    r.completed.length===1 && r.open===null,
+    JSON.stringify({completed:r.completed.length, open:!!r.open}));
+  check('today field case → session spans 08:49–13:28, id preserved',
+    r.completed[0] && r.completed[0].id==='live-0849' &&
+    r.completed[0].start==='08:49' && r.completed[0].finish==='13:28',
+    JSON.stringify(r.completed[0]&&{id:r.completed[0].id,s:r.completed[0].start,f:r.completed[0].finish}));
+  check('today field case → 4 duplicate ENTERs ignored (surfaced to caller)',
+    r.ignored && r.ignored.length===4 && r.ignored.every(e=>e.type==='enter' && e.site==='Lucas Ranch'),
+    JSON.stringify({ignored:r.ignored&&r.ignored.length}));
+})();
+
+// ── 13. v101.2 REGRESSION: yesterday's control day (1 Jul, closed-app test) ────
+// Identical flutter pattern — accepted phantom re-enters at 10:08/11:26/11:32/
+// 14:17 on top of the first real enter 09:37, one real exit 16:50. This day
+// replayed under v89 code (v90 shipped ~50 min later) and produced ONE clean
+// session; the fix reproduces that behaviour under the current builder.
+(() => {
+  const r = build([
+    ev('enter','Lucas Ranch','2026-07-01','09:37'),
+    ev('enter','Lucas Ranch','2026-07-01','10:08'),
+    ev('enter','Lucas Ranch','2026-07-01','11:26'),
+    ev('enter','Lucas Ranch','2026-07-01','11:32'),
+    ev('enter','Lucas Ranch','2026-07-01','14:17'),
+    ev('exit','Lucas Ranch','2026-07-01','16:50')
+  ]);
+  check('control day → ONE clean session 09:37–16:50 (v89 parity)',
+    r.completed.length===1 && r.open===null &&
+    r.completed[0].start==='09:37' && r.completed[0].finish==='16:50',
+    JSON.stringify(r.completed.map(s=>s.start+'-'+(s.finish||'?'))));
+  check('control day → 4 duplicate ENTERs ignored',
+    r.ignored && r.ignored.length===4,
+    JSON.stringify({ignored:r.ignored&&r.ignored.length}));
+})();
+
+// ── 14. MULTI-DAY still splits (guard scoped to same DATE, not just same site) ─
+// enter Mon (exit lost) → enter Tue same site: different dates → Mon must still
+// seal incomplete and Tue opens fresh. The guard must NOT swallow this.
+(() => {
+  const r = build([
+    ev('enter','Muirlawn','2026-07-06','08:00'),   // Monday, exit missed
+    ev('enter','Muirlawn','2026-07-07','08:00'),    // Tuesday same site, different day
+    ev('exit','Muirlawn','2026-07-07','16:00')
+  ]);
+  check('multi-day → 2 sessions, Mon incomplete, nothing ignored',
+    r.completed.length===2 && r.open===null &&
+    r.completed[0].date==='2026-07-06' && !r.completed[0].finish &&
+    r.completed[1].date==='2026-07-07' && r.completed[1].finish==='16:00' &&
+    (!r.ignored || r.ignored.length===0),
+    JSON.stringify({completed:r.completed.length, ignored:r.ignored&&r.ignored.length}));
+})();
+
+// ── 15. MULTI-SITE same day still splits (guard scoped to same SITE) ──────────
+// enter A → enter B same day, no exits: different site → A seals incomplete, B
+// opens. The guard must NOT swallow this (it's a legit multi-site day).
+(() => {
+  const r = build([
+    ev('enter','Site A','2026-07-08','07:00'),
+    ev('enter','Site B','2026-07-08','10:00')       // different site → not a duplicate
+  ]);
+  check('multi-site (no exits) → A incomplete completed, B open, nothing ignored',
+    r.completed.length===1 && r.completed[0].site==='Site A' && !r.completed[0].finish &&
+    r.open && r.open.site==='Site B' && !r.open.finish &&
+    (!r.ignored || r.ignored.length===0),
+    JSON.stringify({completed:r.completed.map(s=>s.site),open:r.open&&r.open.site,ignored:r.ignored&&r.ignored.length}));
+})();
+
+// ── 16. Existing merge path unaffected: re-ENTER AFTER a genuine EXIT merges ───
+// enter → EXIT (accepted, closes session) → re-enter within window: the guard
+// only triggers while a session is OPEN, so this still takes the merge path.
+(() => {
+  const r = build([
+    ev('enter','Muirlawn','2026-07-09','09:00'),
+    ev('exit','Muirlawn','2026-07-09','12:00'),      // accepted exit → session closed
+    ev('enter','Muirlawn','2026-07-09','12:20'),     // 20 min → merge, NOT ignored
+    ev('exit','Muirlawn','2026-07-09','17:00')
+  ]);
+  check('re-enter after accepted exit → merges (not ignored), 20min lunch',
+    r.completed.length===1 && r.completed[0].lunchMins===20 && r.completed[0].merged===true &&
+    (!r.ignored || r.ignored.length===0),
+    JSON.stringify({completed:r.completed.length,lunch:r.completed[0]&&r.completed[0].lunchMins,ignored:r.ignored&&r.ignored.length}));
+})();
+
 console.log('\n  RESULT: ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail===0 ? 0 : 1);

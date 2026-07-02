@@ -22,7 +22,7 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1978) | v101.1 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1978) | v101.2 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
 | 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.101.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
@@ -810,6 +810,27 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
+- **v101.2 Work Log fragmentation fix (point release)** — SHIPPED 2026-07-02. Restores v89's
+  duplicate-ENTER idempotency INSIDE the pure v90 builder (`buildSessionsFromEvents`), which the
+  v90 rewrite (commit `32f23a8`) dropped. Field incident 2 Jul at Lucas Ranch: continuous
+  08:45–13:30 fragmented into 3 no-finish "Unconfirmed" $0 entries because rural GMS fence flutter
+  fires same-site same-day duplicate ENTERs (garbage EXIT accuracy-rejected → fence re-arms →
+  clean re-ENTER accepted) and the builder force-sealed the open session as an incomplete fragment
+  on each. Fix: a same-site + same-date + no-accepted-EXIT-between duplicate ENTER is now ignored
+  and returned in a new `ignored[]` (builder kept pure); `reconstructAndReconcile` logs each as
+  `Enter ignored — session already open (…)`. **Multi-entry capability preserved** — different-site,
+  different-DAY, and accepted-exit re-entries (merge/second-session) all unchanged; only the
+  pathological phantom re-ENTER is deduped. **Additive** — invoice money / v90 seal / v91 rounding /
+  v92 health / v100 / v101 tax UNTOUCHED (zero money/tax fn lines in diff; Firestore rules unchanged;
+  Java capture layer unchanged). Diagnosis: `plans/v92.1_workday_fragmentation_fix.md` (Fable 5).
+  Verified: **82/82 pure** (`test-sessions.js` 24 incl. today-field + 1 Jul control-day regressions +
+  multi-day/multi-site/post-exit-merge guards; `test-tax.js` 38; `test-trips.js` 20), emulator
+  `test-money-math.sh` 7/7 + `test-geo-stop.sh` 6/6, live OTA end-to-end on the emulator. OTA at
+  **1.101.2** (deploy workflow parses `v101.2`). **No DB migration** — the 3 broken 2 Jul rows are
+  in `mcn_unconfirmed` (non-billable review backlog); cleanup is manual via the review UI.
+  **Secondary S1 (dead post-stop flag check) + S2 (GeoLog UTC date misfiling) deferred** per plan
+  (optional, fixer's discretion) — logged in NIGHT_LOG. NOTE: brief said "v92.1" (plan filename) —
+  1.92.1 would be a semver regression under live 1.101.1, so shipped as v101.2 per the plan.
 - **v101.1 Logbook-method audit fixes (point release)** — SHIPPED 2026-07-02. Fixes the two
   HIGH findings from `audits/v100_v101_overseer_review_2026-07-01.md`, both in the LOGBOOK
   method only (cents-per-km path byte-identical). **H1 (per-vehicle logbook %):** the business-use

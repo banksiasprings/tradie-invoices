@@ -2005,7 +2005,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v101.1';
+const APP_VERSION = 'v101.2';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -2679,16 +2679,22 @@ function unconfirmedCount(){return unconfirmedQueue().length}
 // open session (the current live activeDay) and recent same-site unconfirmed
 // sessions (for cross-drain merge), reconstruct the set of work sessions.
 // NO DOM / NO DB / NO Date.now — fully deterministic and unit-testable.
-// Returns { completed:[session…], open:session|null }.
+// Returns { completed:[session…], open:session|null, ignored:[event…] }.
 //   • completed — sessions with a finish, ready to seal into the backlog.
 //   • open      — a session with a start but no finish (still on site) → activeDay.
+//   • ignored   — same-site same-day duplicate ENTERs that were deduped (below).
 // A carried-in session that gets merged/re-opened keeps its ORIGINAL id, so it
 // reappears in completed/open with that id — the caller supersedes by id.
 // Merge rule: an ENTER at the same site within mergeWindowMin AFTER a previous
 // session's EXIT (same calendar date) re-opens that session, banking the gap as
 // lunch (off-site lunch) instead of splitting the day. Different site → always a
-// new session (multi-site day). Enter with a session already open → the open one
-// is pushed as-is (incomplete, no finish) and a new one begins.
+// new session (multi-site day). Enter with a DIFFERENT-site/date session already
+// open → the open one is pushed as-is (incomplete, no finish) and a new one
+// begins. Enter with a SAME-site SAME-date session already open and no accepted
+// EXIT between → IGNORED (rural GMS fence flutter re-arms the fence after an
+// accuracy-rejected garbage EXIT, firing a spurious re-ENTER); the day stays one
+// session and the event is returned in `ignored` for GeoLog. This restores v89's
+// duplicate-ENTER idempotency, which the v90 rewrite dropped (workday fragmentation).
 function buildSessionsFromEvents(events, opts){
   opts = opts || {};
   var mergeWin = (opts.mergeWindowMin != null ? opts.mergeWindowMin : 90);
@@ -2727,6 +2733,7 @@ function buildSessionsFromEvents(events, opts){
     .map(function(x){ return x.e; });
 
   var completed = [];
+  var ignored = [];   // same-site same-day duplicate ENTERs (phantom fence re-arm) — v89 idempotency; surfaced to caller for GeoLog
   var open = opts.openSession ? clone(opts.openSession) : null;
   var mergePool = (opts.recentUnconfirmed||[]).map(clone);
 
@@ -2753,7 +2760,14 @@ function buildSessionsFromEvents(events, opts){
   for(var n=0;n<evs.length;n++){
     var ev = evs[n];
     if(ev.type==='enter'){
-      if(open){ completed.push(open); open=null; } // prior enter never closed
+      if(open && open.site===ev.site && open.date===ev.date){
+        // Same-site same-day re-ENTER with no accepted EXIT between = still on
+        // site (GMS re-armed the fence after an accuracy-rejected garbage EXIT).
+        // v89 semantics: ignore the duplicate. Surface to caller for GeoLog.
+        ignored.push(ev);
+        continue;
+      }
+      if(open){ completed.push(open); open=null; } // prior enter never closed (different site or day)
       var m = tryMerge(ev);
       if(m){
         m.sess.lunchMins = (m.sess.lunchMins||0) + Math.max(0, Math.round(m.gap));
@@ -2772,7 +2786,7 @@ function buildSessionsFromEvents(events, opts){
       } // else stray exit (missed enter) — ignore
     }
   }
-  return { completed: completed, open: open };
+  return { completed: completed, open: open, ignored: ignored };
 }
 //__V90_BUILDER_END__
 // Exposed for the CDP test harness (test-v90-sessions.sh) + cross-script access.
@@ -3733,12 +3747,16 @@ async function reconstructAndReconcile(cleanEvents){
   const openSession=(ad && !ad.finish)?ad:null;
   const s=S();
   const recent=unconfirmedQueue().filter(x=>x.date===todayStr());
-  const {completed,open}=buildSessionsFromEvents(cleanEvents,{
+  const {completed,open,ignored}=buildSessionsFromEvents(cleanEvents,{
     openSession, recentUnconfirmed:recent,
     sessionDefaults:{rate:s.rate,sonrate:s.sonrate||30},
     mergeWindowMin:MERGE_WINDOW_MINUTES,
     mkId:()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7)
   });
+  // v101.2: log same-site same-day duplicate ENTERs the builder deduped (rural
+  // fence flutter). Parity with v89's field-proven 'Enter ignored' line — this is
+  // the visibility that flutter is still occurring without fragmenting the day.
+  (ignored||[]).forEach(e=>GeoLog.add('ignore','Enter ignored — session already open ('+e.site+') at '+e.time));
   // ids in the result supersede any carried-in unconfirmed rows (merges/reopens)
   const resultIds=new Set(completed.map(x=>x.id).concat(open?[open.id]:[]));
   let uc=unconfirmed().filter(x=>!resultIds.has(x.id));
