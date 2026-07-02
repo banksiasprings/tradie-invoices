@@ -22,7 +22,7 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1978) | v101 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1978) | v101.1 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
 | 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.101.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
@@ -810,6 +810,23 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
+- **v101.1 Logbook-method audit fixes (point release)** — SHIPPED 2026-07-02. Fixes the two
+  HIGH findings from `audits/v100_v101_overseer_review_2026-07-01.md`, both in the LOGBOOK
+  method only (cents-per-km path byte-identical). **H1 (per-vehicle logbook %):** the business-use
+  % was computed from ALL vehicles' trips — latent with one vehicle, silently wrong the day a
+  second is added. Now per-vehicle at all 4 call sites (renderTaxExports, renderLogbook card, CSV,
+  PDF) via the new pure `tripsOfVehicle`. **H2 (per-FY logbook %):** exports applied *today's*
+  logbook % to *past*-FY expenses (invalid per ATO). New pure `logbookForFy(logbooks,vehId,fy)`
+  picks the logbook that COVERS the selected FY (started ≤ FY-end, 5-yr validity overlaps FY);
+  a FY with no covering logbook is marked **"insufficient data — no logbook coverage"** instead of
+  borrowing a wrong-FY %. The CSV Business-use % row now names its basis (12-week window dates) so
+  it's self-describing, not silently mixed-basis. New impure glue: `logbookClaimInfo(veh,fy)`.
+  Additive — invoice money / v90 / v91 / v92 / v100 / cents-per-km UNTOUCHED. Verified: **74/74**
+  pure (`test-tax.js` 38 incl. 2 new H1/H2 regressions, 20 v100, 16 v90) + live headless
+  round-trip (A=80%/B=0% per-vehicle, FY25→60%/FY26→80% per-FY, insufficient-FY shows n/a while
+  cents-per-km still claims $44). OTA at 1.101.1 (deploy workflow parses `v101.1`). **Field-install
+  still pending** (phone offline, same as v101). **Deferred (unchanged):** the 7 Mediums (M1–M7) +
+  8 Lows in the audit; recurring-route auto-learn; dead-app screen-off capture (v100.1); Xero → v102.
 - **v101 Trip Log Tax Exports (phase 2 major)** — SHIPPED 2026-07-02. ATO cents-per-km
   (5,000km cap) + 12-week logbook methods, both-method claim comparison, FY selector,
   per-vehicle odometer + expense tracker, CSV export (summary + 12 cols, UTF-8 BOM/CRLF

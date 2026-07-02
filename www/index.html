@@ -2005,7 +2005,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v101';
+const APP_VERSION = 'v101.1';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -8087,6 +8087,27 @@ function taxSummary(list,ratePerKm){
 }
 // Logbook business-use % over a 12-week window starting on a Monday.
 function logbookPct(list,startDate){ return businessUsePct(tripsInRange(list, startDate, logbookEndDate(startDate))); }
+// Filter a trip list to ONE vehicle. Unassigned trips (no vehicle_id) belong to
+// the default vehicle, whose id is passed in (kept pure — no DB read here). H1: the
+// logbook % must be computed per-vehicle, never across the whole fleet.
+function tripsOfVehicle(list,vehId,defaultVehId){
+  return (list||[]).filter(function(t){
+    if(t.vehicle_id) return t.vehicle_id===vehId;
+    return !!(defaultVehId!=null&&defaultVehId===vehId);
+  });
+}
+// H2: the logbook applicable to a given FY for a vehicle — the most-recently-started
+// logbook that began on/before the FY ended AND is still valid during that FY (its
+// 5-yr validity window overlaps the FY). Returns null when NO logbook covers the FY:
+// a future/current logbook must NOT be applied retroactively to a past FY (ATO rule).
+function logbookForFy(logbooks,vehId,fy){
+  var fs=fyStartDate(fy), fe=fyEndDate(fy);
+  var cands=(logbooks||[]).filter(function(l){
+    return l&&l.vehicle_id===vehId&&l.start_date&&l.start_date<=fe&&logbookExpiryDate(l.start_date)>=fs;
+  });
+  cands.sort(function(a,b){ return (b.start_date||'').localeCompare(a.start_date||''); });
+  return cands[0]||null;
+}
 // Apply a business-use % to total actual expenses → logbook-method claim.
 function logbookExpenseClaim(pct,totalExpenses){ return (+pct||0)/100*(+totalExpenses||0); }
 // Sum expense amounts within a financial year.
@@ -8121,10 +8142,7 @@ function _taxVeh(){ var id=_taxVehId(); return id?vehicleById(id):null; }
 // Trips belonging to a vehicle (an unassigned trip counts toward the default vehicle).
 function tripsForVehicle(list,vehId){
   var def=defaultVehicle();
-  return (list||[]).filter(function(t){
-    if(t.vehicle_id) return t.vehicle_id===vehId;
-    return !!(def&&def.id===vehId);
-  });
+  return tripsOfVehicle(list, vehId, def&&def.id);
 }
 // The trip set the current tax config selects (FY + vehicle), before the export
 // category filter is applied.
@@ -8142,6 +8160,27 @@ function activeLogbook(vehId){
   var live=logbooksFor(vehId).filter(function(l){ return logbookExpiryDate(l.start_date)>=today; });
   live.sort(function(a,b){ return (b.start_date||'').localeCompare(a.start_date||''); });
   return live[0]||null;
+}
+// FY-aware, PER-VEHICLE logbook business-use % for exports + the claim box.
+// Fixes H1 (per-vehicle, not fleet-aggregate) and H2 (the logbook that covers the
+// SELECTED FY, never today's logbook applied to a past FY). Returns { pct, lb,
+// insufficient, basis }:
+//   • a logbook covers this FY  → pct from THAT logbook's window over THIS vehicle's
+//     trips; basis names the window (so the % row is self-describing).
+//   • logbooks exist but none covers this FY → insufficient:true, pct:null — no
+//     logbook % is emitted (a logbook can't be applied to a FY it doesn't cover).
+//   • no logbooks at all → indicative business-use % from this FY's own trips,
+//     clearly labelled "no formal logbook set" (not a claimable logbook figure).
+function logbookClaimInfo(veh, fy){
+  if(!veh) return { pct:0, lb:null, insufficient:false, basis:'from all tagged trips this FY (no formal logbook set)' };
+  var vTrips=tripsForVehicle(trips(), veh.id);
+  var lb=logbookForFy(taxPrefs().logbooks, veh.id, fy);
+  if(lb) return { pct:logbookPct(vTrips, lb.start_date), lb:lb, insufficient:false,
+                  basis:'12-week logbook '+fmtDate(lb.start_date)+' – '+fmtDate(logbookEndDate(lb.start_date)) };
+  if(logbooksFor(veh.id).length) return { pct:null, lb:null, insufficient:true,
+                  basis:'insufficient data — no logbook coverage for '+fyLabel(fy) };
+  return { pct:businessUsePct(tripsInFy(vTrips,fy)), lb:null, insufficient:false,
+           basis:'from all tagged trips this FY (no formal logbook set)' };
 }
 function startLogbook(){
   var vehId=_taxVehId();
@@ -8179,10 +8218,11 @@ function renderTaxExports(){
   var fys=fyList(trips(),currentFy());
   var sel=taxSelectedTrips();
   var sum=taxSummary(sel,rate);
-  var lb=veh?activeLogbook(veh.id):null;
-  var bizPct=lb?logbookPct(trips(),lb.start_date):sum.businessPct;
+  var li=logbookClaimInfo(veh,fy);        // FY-aware, per-vehicle (H1 + H2)
+  var lb=li.lb;
+  var bizPct=li.pct;                      // null when logbooks exist but none covers this FY
   var expTotal=veh?expensesInFy(veh.expenses,fy):0;
-  var lbClaim=logbookExpenseClaim(bizPct,expTotal);
+  var lbClaim=li.insufficient?null:logbookExpenseClaim(bizPct,expTotal);
 
   var html='';
   // Method radio
@@ -8207,10 +8247,18 @@ function renderTaxExports(){
     '<div><div class="tax-claim-name">Cents per km</div>'+
     '<div class="tax-claim-sub">'+sum.claimKm.toFixed(0)+' business km @ $'+rate.toFixed(2)+(sum.capped?(' (capped at '+CENTS_KM_CAP.toLocaleString()+')'):'')+'</div></div>'+
     '<div class="tax-claim-amt">'+fmtMoney(sum.centsClaim)+'</div></div>';
+  var lbSub, lbAmt;
+  if(li.insufficient){                    // H2: logbooks exist but none covers this FY
+    lbSub='Insufficient data — no logbook coverage for '+fyLabel(fy);
+    lbAmt='n/a';
+  } else {
+    lbSub=bizPct.toFixed(1)+'% business use'+(lb?'':' · start a logbook →')+(expTotal>0?(' · '+fmtMoney(expTotal)+' expenses'):'');
+    lbAmt=(expTotal>0?fmtMoney(lbClaim):(bizPct.toFixed(1)+'%'));
+  }
   html+='<div class="tax-claim-row'+(p.method==='logbook'?' tax-claim-active':'')+'">'+
     '<div><div class="tax-claim-name">Logbook</div>'+
-    '<div class="tax-claim-sub">'+bizPct.toFixed(1)+'% business use'+(lb?'':' · start a logbook →')+(expTotal>0?(' · '+fmtMoney(expTotal)+' expenses'):'')+'</div></div>'+
-    '<div class="tax-claim-amt">'+(expTotal>0?fmtMoney(lbClaim):(bizPct.toFixed(1)+'%'))+'</div></div>';
+    '<div class="tax-claim-sub">'+lbSub+'</div></div>'+
+    '<div class="tax-claim-amt">'+lbAmt+'</div></div>';
   html+='</div>';
 
   // 5,000 km cap banner
@@ -8244,7 +8292,7 @@ function renderLogbook(){
   var html='<div style="font-size:12px;color:var(--text2);margin-bottom:10px">A 12-week continuous logbook sets a business-use % you can apply to actual car expenses for up to 5 years. Keeps <strong>'+escHtml(veh.name)+'</strong>.</div>';
   if(lb){
     var end=logbookEndDate(lb.start_date), expiry=logbookExpiryDate(lb.start_date);
-    var pct=logbookPct(trips(),lb.start_date);
+    var pct=logbookPct(tripsForVehicle(trips(),veh.id),lb.start_date);  // H1: per-vehicle, matches the km line below
     var inWindow=tripsInRange(trips(),lb.start_date,end);
     var wk=kmByCat(tripsForVehicle(inWindow,veh.id));
     var done=todayStr()>end;
@@ -8301,8 +8349,8 @@ function exportTripsCSV(){
     var rows=_taxExportRows();                      // detail rows honour the category filter
     if(!sel.length){ toast('No trips for that year/vehicle'); return; }
     var sum=taxSummary(sel,rate);
-    var lb=veh?activeLogbook(veh.id):null;
-    var bizPct=lb?logbookPct(trips(),lb.start_date):sum.businessPct;
+    var li=logbookClaimInfo(veh,fy);       // FY-aware, per-vehicle (H1 + H2)
+    var lb=li.lb, bizPct=li.pct;
     var expTotal=veh?expensesInFy(veh.expenses,fy):0;
     var L=[];
     var pair=function(a,b){ L.push(_csvCell(a)+','+_csvCell(b)); };
@@ -8315,13 +8363,15 @@ function exportTripsCSV(){
     pair('Business km',sum.businessKm.toFixed(1));
     pair('Personal km',sum.personalKm.toFixed(1));
     pair('Commute km',sum.commuteKm.toFixed(1));
-    pair('Business-use %',bizPct.toFixed(1)+'%');
+    pair('Business-use %', li.insufficient ? ('n/a — no logbook coverage for '+fyLabel(fy)) : (bizPct.toFixed(1)+'% ('+li.basis+')'));
     pair('Cents-per-km claim',fmtMoney(sum.centsClaim)+' ('+sum.claimKm.toFixed(0)+' km @ $'+rate.toFixed(2)+(sum.capped?', capped at '+CENTS_KM_CAP:'')+')');
-    if(expTotal>0){
+    if(li.insufficient){
+      pair('Logbook claim','Insufficient data — no logbook coverage for '+fyLabel(fy));
+    } else if(expTotal>0){
       pair('Actual expenses (FY)',fmtMoney(expTotal));
-      pair('Logbook claim',fmtMoney(logbookExpenseClaim(bizPct,expTotal))+' ('+bizPct.toFixed(1)+'% of expenses)');
+      pair('Logbook claim',fmtMoney(logbookExpenseClaim(bizPct,expTotal))+' ('+bizPct.toFixed(1)+'% of expenses · '+li.basis+')');
     } else {
-      pair('Logbook claim',bizPct.toFixed(1)+'% of actual expenses (log expenses on the vehicle to compute $)');
+      pair('Logbook claim',bizPct.toFixed(1)+'% of actual expenses ('+li.basis+'; log expenses on the vehicle to compute $)');
     }
     pair('','');
     var hdr=['Date','Vehicle','Start Time','End Time','Distance (km)','Category','Start Address','End Address','Notes','Linked Site','Linked Invoice','Purpose'];
@@ -8356,8 +8406,8 @@ async function exportTripsPDF(){
     var doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
     var veh=_taxVeh(), fy=_taxFy(), rate=vehicleRate(veh);
     var sum=taxSummary(sel,rate);
-    var lb=veh?activeLogbook(veh.id):null;
-    var bizPct=lb?logbookPct(trips(),lb.start_date):sum.businessPct;
+    var li=logbookClaimInfo(veh,fy);       // FY-aware, per-vehicle (H1 + H2)
+    var lb=li.lb, bizPct=li.pct;
     var expTotal=veh?expensesInFy(veh.expenses,fy):0;
     var rows=_taxExportRows();
     var NAVY=[28,42,68], AMBER=[193,88,58], GREEN=[22,163,74], GREY=[120,132,150];
@@ -8393,12 +8443,17 @@ async function exportTripsPDF(){
     // Logbook block
     doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(40,40,40);
     doc.text('Logbook (business-use %)',M,y);
-    doc.setTextColor(GREEN[0],GREEN[1],GREEN[2]); doc.text(bizPct.toFixed(1)+'%',W-M,y,{align:'right'}); y+=6;
+    doc.setTextColor(GREEN[0],GREEN[1],GREEN[2]);
+    doc.text(li.insufficient?'n/a':(bizPct.toFixed(1)+'%'),W-M,y,{align:'right'}); y+=6;
     doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(GREY[0],GREY[1],GREY[2]);
     // jsPDF core (helvetica) is WinAnsi-encoded — no U+2192 arrow; use en-dash range / ASCII arrow so it renders.
-    var lbLine=lb?('12-week logbook '+fmtDate(lb.start_date)+' – '+fmtDate(logbookEndDate(lb.start_date))):'From all tagged trips this FY (no formal logbook set)';
-    doc.text(lbLine,M,y); y+=5;
-    if(expTotal>0){ doc.text('Actual expenses '+fmtMoney(expTotal)+' -> claim '+fmtMoney(logbookExpenseClaim(bizPct,expTotal)),M,y); y+=5; }
+    if(li.insufficient){                    // H2: no logbook covers the selected FY
+      doc.text('Insufficient data — no logbook coverage for '+fyLabel(fy),M,y,{maxWidth:W-2*M}); y+=5;
+    } else {
+      var lbLine=lb?('12-week logbook '+fmtDate(lb.start_date)+' – '+fmtDate(logbookEndDate(lb.start_date))):'From all tagged trips this FY (no formal logbook set)';
+      doc.text(lbLine,M,y); y+=5;
+      if(expTotal>0){ doc.text('Actual expenses '+fmtMoney(expTotal)+' -> claim '+fmtMoney(logbookExpenseClaim(bizPct,expTotal)),M,y); y+=5; }
+    }
     if(sum.capped){
       y+=4; doc.setFillColor(252,243,235); doc.roundedRect(M,y,W-2*M,16,2,2,'F');
       doc.setTextColor(AMBER[0],AMBER[1],AMBER[2]); doc.setFontSize(9); doc.setFont('helvetica','bold');
