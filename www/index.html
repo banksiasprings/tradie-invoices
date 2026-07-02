@@ -362,6 +362,24 @@
   .trip-fab .fab-start{background:var(--amber);color:#fff}
   .trip-fab .fab-stop{background:var(--red,#dc3545);color:#fff}
   .trip-fab .fab-add{background:var(--surface);color:var(--text);border:1.5px solid var(--border)}
+  /* Weekly claimable chip */
+  .trip-claim-chip{font-size:12px;font-weight:800;color:var(--green);background:var(--success-light);padding:4px 10px;border-radius:999px;white-space:nowrap}
+
+  /* ═══════════════ v101 TAX EXPORTS ═══════════════ */
+  .tax-radio-row{display:flex;gap:8px}
+  .tax-radio{flex:1;text-align:center;padding:10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;font-weight:700;color:var(--text2);cursor:pointer;transition:all .15s}
+  .tax-radio.on{border-color:var(--amber);background:var(--amber-light);color:var(--amber)}
+  .tax-claim-box{margin-top:14px;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden}
+  .tax-claim-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border)}
+  .tax-claim-row:last-child{border-bottom:none}
+  .tax-claim-active{background:var(--amber-light)}
+  .tax-claim-name{font-size:14px;font-weight:700;color:var(--text)}
+  .tax-claim-sub{font-size:11px;color:var(--text2);margin-top:2px}
+  .tax-claim-amt{font-family:'Montserrat',system-ui,sans-serif;font-size:19px;font-weight:800;color:var(--amber);white-space:nowrap}
+  .tax-cap-banner{margin-top:12px;background:var(--amber-light);border:1px solid var(--amber);border-radius:var(--radius-sm);padding:12px 14px;font-size:12.5px;line-height:1.5;color:var(--amber)}
+  .lb-active{border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px}
+  .lb-pct{font-family:'Montserrat',system-ui,sans-serif;font-size:30px;font-weight:800;color:var(--green);line-height:1;margin-bottom:8px}
+  .lb-meta{font-size:12.5px;color:var(--text2);margin-top:4px}
 </style>
 <script>
 // Apply theme immediately to prevent flash of wrong mode
@@ -1904,6 +1922,21 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         </div>
       </div>
     </div>
+    <!-- v101 Tax exports: ATO cents-per-km / logbook methods + CSV/PDF export -->
+    <div class="card card-collapsible" id="tax-exports-card" data-collapse-default="collapsed">
+      <div class="card-title">📊 Tax exports</div>
+      <div class="card-body">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Turn your logged trips into an ATO-ready km claim. Compare both methods, then export CSV or PDF for your accountant.</div>
+        <div id="tax-exports-body"><!-- rendered by renderTaxExports() --></div>
+      </div>
+    </div>
+    <!-- v101 ATO 12-week logbook -->
+    <div class="card card-collapsible" id="logbook-card" data-collapse-default="collapsed">
+      <div class="card-title">📒 ATO Logbook (12-week)</div>
+      <div class="card-body">
+        <div id="logbook-body"><!-- rendered by renderLogbook() --></div>
+      </div>
+    </div>
     <!-- Work sites (GPS) and Plant/Materials now appear near top of settings -->
     <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
     <div style="height:12px"></div>
@@ -1972,7 +2005,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v100';
+const APP_VERSION = 'v101';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -2260,10 +2293,32 @@ function forceAppUpdate(){ return otaCheck(false); }
       <div class="field"><label>Model</label><input id="vm-model" class="ti-input" placeholder="Ranger"></div>
     </div>
     <div class="field"><label>Cents per km ($/km)</label><input id="vm-rate" type="number" class="ti-input" step="0.01" min="0" placeholder="0.88">
-      <div style="font-size:11px;color:var(--text2);margin-top:4px">ATO rate 2025–26: $0.88/km. Used for claim estimates.</div></div>
+      <div style="font-size:11px;color:var(--text2);margin-top:4px">ATO rate 2025–26: $0.88/km. Set from the <a href="https://www.ato.gov.au/tax-rates-and-codes/cents-per-kilometre-method" target="_blank" rel="noopener" style="color:var(--amber)">current ATO rate</a>. Used for claim estimates.</div></div>
+    <div class="field-row">
+      <div class="field"><label>Odometer — start of FY</label><input id="vm-odo-start" type="number" class="ti-input" min="0" placeholder="e.g. 84500"></div>
+      <div class="field"><label>Odometer — end of FY</label><input id="vm-odo-end" type="number" class="ti-input" min="0" placeholder="e.g. 96200"></div>
+    </div>
+    <div style="font-size:11px;color:var(--text2);margin:-4px 0 10px">Odometer readings are required for the logbook method (records <span id="vm-odo-fy">this FY</span>).</div>
     <div class="toggle-row" style="padding:8px 0">
       <div style="font-size:14px;font-weight:600">Default vehicle</div>
       <label class="toggle"><input type="checkbox" id="vm-default"><span class="toggle-slider"></span></label>
+    </div>
+    <!-- v101 actual-expense tracker (logbook method) -->
+    <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:12px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:2px">Vehicle expenses <span style="font-weight:400;color:var(--text2);font-size:12px">(optional)</span></div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:8px">Log fuel, servicing, insurance &amp; rego. The logbook method applies your business-use % to these.</div>
+      <div id="vm-expenses-list"></div>
+      <div class="field-row" style="margin-top:6px">
+        <div class="field"><label>Date</label><input id="vm-exp-date" type="date" class="ti-input"></div>
+        <div class="field"><label>Type</label><select id="vm-exp-cat" class="ti-input">
+          <option value="fuel">⛽ Fuel</option><option value="servicing">🔧 Servicing</option>
+          <option value="insurance">🛡️ Insurance</option><option value="rego">📋 Rego</option>
+          <option value="other">➕ Other</option></select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Amount ($)</label><input id="vm-exp-amt" type="number" class="ti-input" step="0.01" min="0" placeholder="0.00"></div>
+        <div class="field" style="display:flex;align-items:flex-end"><button class="btn btn-secondary" style="width:100%" onclick="addVehicleExpense()">+ Add expense</button></div>
+      </div>
     </div>
     <button class="btn btn-primary" style="margin-top:6px" onclick="saveVehicle()">Save vehicle</button>
     <button class="btn btn-secondary" id="vm-delete" style="margin-top:8px;display:none;color:var(--red,#dc3545)" onclick="deleteVehicle()">Delete vehicle</button>
@@ -5391,6 +5446,9 @@ function loadSettings(){
   const tad=document.getElementById('s-trip-autodetect');
   if(tad) tad.checked=!!(s.tripAutoDetect);
   if(window.renderVehicles) renderVehicles();
+  // v101 Tax exports + logbook
+  if(window.renderTaxExports) renderTaxExports();
+  if(window.renderLogbook) renderLogbook();
   // Employee fields
   const enEl=document.getElementById('s-employee-name');if(enEl) enEl.value=s.employeeName||'';
   const erEl=document.getElementById('s-employer-name');if(erEl) erEl.value=s.employerName||'';
@@ -7598,13 +7656,57 @@ function openVehicleModal(id){
   document.getElementById('vm-rate').value=v?(v.cents_per_km!=null?v.cents_per_km:0.88):(S().travelKmRate||0.88);
   document.getElementById('vm-default').checked=v?!!v.is_default:!vehicles().length;
   document.getElementById('vm-delete').style.display=v?'block':'none';
+  // v101: odometer for the selected tax FY + expenses list
+  var fy=(typeof currentFy==='function')?(taxPrefs().fy||currentFy()):null;
+  var odo=(v&&v.odometers&&fy&&v.odometers[fy])||{};
+  document.getElementById('vm-odo-start').value=odo.start!=null?odo.start:'';
+  document.getElementById('vm-odo-end').value=odo.end!=null?odo.end:'';
+  if(fy&&document.getElementById('vm-odo-fy')) document.getElementById('vm-odo-fy').textContent=fyLabel(fy);
+  document.getElementById('vm-exp-date').value=todayStr();
+  document.getElementById('vm-exp-amt').value='';
+  renderVehicleExpenses();
   document.getElementById('vehicle-modal').classList.add('open');
+}
+function renderVehicleExpenses(){
+  var el=document.getElementById('vm-expenses-list'); if(!el) return;
+  var v=_editVehicleId?vehicleById(_editVehicleId):null;
+  var exps=(v&&v.expenses)||[];
+  if(!exps.length){ el.innerHTML='<div style="font-size:12px;color:var(--text2);padding:2px 0 6px">No expenses logged yet.</div>'; return; }
+  var icon={fuel:'⛽',servicing:'🔧',insurance:'🛡️',rego:'📋',other:'➕'};
+  el.innerHTML=exps.slice().sort(function(a,b){return (b.date||'').localeCompare(a.date||'');}).map(function(e){
+    return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">'+
+      '<span>'+(icon[e.category]||'➕')+'</span>'+
+      '<span style="flex:1;min-width:0">'+escHtml(e.category||'other')+' · '+fmtDate(e.date||todayStr())+'</span>'+
+      '<span style="font-weight:600">'+fmtMoney(+e.amount||0)+'</span>'+
+      '<span style="color:var(--red,#dc3545);cursor:pointer;padding:0 4px" onclick="deleteVehicleExpense(\''+e.id+'\')">✕</span></div>';
+  }).join('');
+}
+function addVehicleExpense(){
+  if(!_editVehicleId){ toast('Save the vehicle first, then add expenses'); return; }
+  var amt=parseFloat(document.getElementById('vm-exp-amt').value);
+  if(!(amt>0)){ toast('Enter an amount'); return; }
+  var vs=vehicles(); var v=vs.find(function(x){return x.id===_editVehicleId;}); if(!v) return;
+  if(!v.expenses) v.expenses=[];
+  v.expenses.push({ id:'e'+Date.now().toString(36), date:document.getElementById('vm-exp-date').value||todayStr(),
+    category:document.getElementById('vm-exp-cat').value||'other', amount:+amt.toFixed(2) });
+  setVehicles(vs);
+  document.getElementById('vm-exp-amt').value='';
+  renderVehicleExpenses(); if(window.renderTaxExports) renderTaxExports();
+  toast('Expense added');
+}
+function deleteVehicleExpense(id){
+  var vs=vehicles(); var v=vs.find(function(x){return x.id===_editVehicleId;}); if(!v||!v.expenses) return;
+  v.expenses=v.expenses.filter(function(e){return e.id!==id;});
+  setVehicles(vs); renderVehicleExpenses(); if(window.renderTaxExports) renderTaxExports();
 }
 function closeVehicleModal(){ document.getElementById('vehicle-modal').classList.remove('open'); }
 function saveVehicle(){
   var name=document.getElementById('vm-name').value.trim();
   if(!name){ toast('Give the vehicle a name'); return; }
-  var rec={
+  var vs=vehicles();
+  var existing=_editVehicleId?vs.find(function(v){return v.id===_editVehicleId;}):null;
+  // Merge over the existing record so expenses/odometers survive an edit.
+  var rec=Object.assign({}, existing||{}, {
     id:_editVehicleId||('v'+Date.now().toString(36)),
     name:name,
     registration:document.getElementById('vm-rego').value.trim(),
@@ -7613,14 +7715,25 @@ function saveVehicle(){
     year:parseInt(document.getElementById('vm-year').value)||null,
     cents_per_km:parseFloat(document.getElementById('vm-rate').value)||0,
     is_default:document.getElementById('vm-default').checked
-  };
-  var vs=vehicles();
+  });
+  // Odometer readings recorded against the selected tax FY.
+  var fy=(typeof currentFy==='function')?(taxPrefs().fy||currentFy()):null;
+  if(fy){
+    var os=parseInt(document.getElementById('vm-odo-start').value);
+    var oe=parseInt(document.getElementById('vm-odo-end').value);
+    if(!isNaN(os)||!isNaN(oe)){
+      rec.odometers=Object.assign({},rec.odometers||{});
+      rec.odometers[fy]={ start:isNaN(os)?null:os, end:isNaN(oe)?null:oe };
+    }
+  }
   if(rec.is_default) vs.forEach(function(v){ v.is_default=false; });
   var idx=vs.findIndex(function(v){return v.id===rec.id;});
   if(idx>=0) vs[idx]=rec; else vs.push(rec);
   if(!vs.some(function(v){return v.is_default;})&&vs.length) vs[0].is_default=true;
   setVehicles(vs);
   closeVehicleModal(); renderVehicles(); renderTrips();
+  if(window.renderTaxExports) renderTaxExports();
+  if(window.renderLogbook) renderLogbook();
   toast('Vehicle saved');
 }
 function deleteVehicle(){
@@ -7766,7 +7879,11 @@ function _weeklySummaryHtml(agg){
     return '<div class="trip-legend-row"><span class="trip-legend-dot" style="background:'+TRIP_CAT_META[s.c].hex+'"></span>'+
       TRIP_CAT_META[s.c].label+'<span class="trip-legend-km">'+s.km.toFixed(1)+' km</span></div>';
   }).join(''):'<div style="font-size:12px;color:var(--text2)">No km logged this week yet.</div>';
-  return '<div class="card"><div class="card-title" style="margin-bottom:12px">This week</div>'+
+  // v101: "$X claimable this week" chip — business km × default vehicle rate.
+  var rate=(typeof vehicleRate==='function')?vehicleRate(defaultVehicle()):0.88;
+  var claim=(agg.byCat.business.km||0)*rate;
+  var chip=claim>0?('<span class="trip-claim-chip">'+fmtMoney(claim)+' claimable</span>'):'';
+  return '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div class="card-title" style="margin:0">This week</div>'+chip+'</div>'+
     '<div class="trip-pie-wrap">'+pie+'<div class="trip-legend">'+legend+
       '<div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;font-size:11px;color:var(--text2)">'+
       agg.totalKm.toFixed(1)+' km · '+agg.count+' trips · '+agg.daysDriven+' day'+(agg.daysDriven===1?'':'s')+' driven · avg '+agg.avgKm.toFixed(1)+' km</div>'+
@@ -7898,6 +8015,461 @@ function initTripLog(){
   var el=document.getElementById('s-trip-autodetect'); if(el) el.checked=!!S().tripAutoDetect;
 }
 window.initTripLog=initTripLog;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v101 TAX EXPORTS — ATO cents-per-km + logbook methods, CSV/PDF export.
+// STRICTLY ADDITIVE on top of the v100 trip log. Reads mcn_trips / mcn_vehicles;
+// NEVER touches invoice/day money paths. This is the DRIVER's expense-claim math
+// for their own tax return — wholly separate from invoice-side money math.
+// All export config persists in S().tax_prefs (rides the settings blob → synced).
+// ═══════════════════════════════════════════════════════════════════════════
+
+//__V101_TAX_PURE_START__  (extracted verbatim by test-tax.js — keep pure: no DOM/DB/argless Date)
+var CENTS_KM_CAP = 5000;            // ATO cents-per-km method: max 5,000 business km/vehicle/FY
+var LOGBOOK_WEEKS = 12;             // ATO logbook: 12 continuous weeks
+var LOGBOOK_VALID_YEARS = 5;        // a logbook stays valid for 5 years
+
+// Australian financial year (Jul 1 – Jun 30) of a YYYY-MM-DD date → 'YYYY-YY'.
+function fyOf(dateStr){
+  if(!dateStr) return null;
+  var y=+dateStr.slice(0,4), m=+dateStr.slice(5,7);
+  var startY=(m>=7)?y:y-1;
+  return startY+'-'+String((startY+1)%100).padStart(2,'0');
+}
+function fyStartDate(fy){ return fy.slice(0,4)+'-07-01'; }
+function fyEndDate(fy){ return (parseInt(fy.slice(0,4),10)+1)+'-06-30'; }
+function fyLabel(fy){ return 'FY '+fy.slice(0,4)+'–'+fy.slice(5); }  // en-dash
+
+// Deterministic date-string arithmetic (parse a fixed date — never argless Date()).
+function _isoDate(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function addDaysStr(dateStr,n){ var d=new Date(dateStr+'T00:00:00'); d.setDate(d.getDate()+n); return _isoDate(d); }
+function addYearsStr(dateStr,n){ var d=new Date(dateStr+'T00:00:00'); d.setFullYear(d.getFullYear()+n); return _isoDate(d); }
+function mondayOf(dateStr){ var d=new Date(dateStr+'T00:00:00'); var w=d.getDay(); var diff=(w===0?-6:1-w); d.setDate(d.getDate()+diff); return _isoDate(d); }
+
+// A logbook's derived 12-week window + 5-year expiry, from its Monday start.
+function logbookEndDate(startDate){ return addDaysStr(startDate, LOGBOOK_WEEKS*7-1); }   // inclusive last day
+function logbookExpiryDate(startDate){ return addYearsStr(startDate, LOGBOOK_VALID_YEARS); }
+
+// Trips whose date is within [start,end] inclusive (string compare on YYYY-MM-DD).
+function tripsInRange(list,start,end){
+  return (list||[]).filter(function(t){ return t.date && t.date>=start && t.date<=end; });
+}
+function tripsInFy(list,fy){ return tripsInRange(list, fyStartDate(fy), fyEndDate(fy)); }
+
+// Km summed per category + grand total. Unknown/mixed counted in total, not business.
+function kmByCat(list){
+  var o={business:0,personal:0,commute:0,mixed:0,unknown:0,total:0};
+  (list||[]).forEach(function(t){
+    var c=(o[t.category]!=null&&t.category!=='total')?t.category:'unknown';
+    var km=+t.distance_km||0; o[c]+=km; o.total+=km;
+  });
+  return o;
+}
+// Business-use % = business km / total km × 100 (0 when no km). Commute is private
+// per ATO, so it lands in the denominator (total) but never the numerator (business).
+function businessUsePct(list){ var k=kmByCat(list); return k.total>0?(k.business/k.total*100):0; }
+
+// Full cents-per-km summary for a trip list at a given $/km rate, applying the
+// 5,000 business-km cap.
+function taxSummary(list,ratePerKm){
+  var k=kmByCat(list);
+  var businessKm=k.business;
+  var capped=businessKm>CENTS_KM_CAP;
+  var claimKm=Math.min(businessKm,CENTS_KM_CAP);
+  var rate=+ratePerKm||0;
+  return {
+    km:k, totalKm:k.total, businessKm:businessKm,
+    personalKm:k.personal, commuteKm:k.commute, mixedKm:k.mixed, unknownKm:k.unknown,
+    businessPct:k.total>0?(businessKm/k.total*100):0,
+    cap:CENTS_KM_CAP, capped:capped, claimKm:claimKm, rate:rate,
+    centsClaim:claimKm*rate, centsClaimUncapped:businessKm*rate
+  };
+}
+// Logbook business-use % over a 12-week window starting on a Monday.
+function logbookPct(list,startDate){ return businessUsePct(tripsInRange(list, startDate, logbookEndDate(startDate))); }
+// Apply a business-use % to total actual expenses → logbook-method claim.
+function logbookExpenseClaim(pct,totalExpenses){ return (+pct||0)/100*(+totalExpenses||0); }
+// Sum expense amounts within a financial year.
+function expensesInFy(expenses,fy){
+  return (expenses||[]).filter(function(e){ return e&&e.date&&fyOf(e.date)===fy; })
+    .reduce(function(s,e){ return s+(+e.amount||0); },0);
+}
+// Distinct FYs present in a trip list, plus a supplied current FY, newest first.
+function fyList(list,currentFyStr){
+  var set={};
+  (list||[]).forEach(function(t){ var f=fyOf(t.date); if(f) set[f]=true; });
+  if(currentFyStr) set[currentFyStr]=true;
+  return Object.keys(set).sort().reverse();
+}
+//__V101_TAX_PURE_END__
+
+// ── Tax prefs (persisted in the settings blob → synced) ─────────────────────
+function taxPrefs(){
+  var s=S(); if(!s.tax_prefs) s.tax_prefs={};
+  var p=s.tax_prefs;
+  if(!p.method) p.method='cents';
+  if(!p.category) p.category='all';
+  if(!p.logbooks) p.logbooks=[];
+  return p;
+}
+function setTaxPrefs(patch){ var s=S(); s.tax_prefs=Object.assign(taxPrefs(),patch||{}); DB.set('settings',s); }
+function currentFy(){ return fyOf(todayStr()); }
+function vehicleRate(v){ return (v&&v.cents_per_km!=null)?+v.cents_per_km:(+S().travelKmRate||0.88); }
+function _taxVehId(){ var p=taxPrefs(); return p.vehicle_id||(defaultVehicle()&&defaultVehicle().id)||null; }
+function _taxFy(){ return taxPrefs().fy||currentFy(); }
+function _taxVeh(){ var id=_taxVehId(); return id?vehicleById(id):null; }
+// Trips belonging to a vehicle (an unassigned trip counts toward the default vehicle).
+function tripsForVehicle(list,vehId){
+  var def=defaultVehicle();
+  return (list||[]).filter(function(t){
+    if(t.vehicle_id) return t.vehicle_id===vehId;
+    return !!(def&&def.id===vehId);
+  });
+}
+// The trip set the current tax config selects (FY + vehicle), before the export
+// category filter is applied.
+function taxSelectedTrips(){
+  var vehId=_taxVehId(), fy=_taxFy();
+  var byVeh=vehId?tripsForVehicle(trips(),vehId):trips();
+  return tripsInFy(byVeh,fy);
+}
+
+// ── Logbook helpers ─────────────────────────────────────────────────────────
+function logbooksFor(vehId){ return taxPrefs().logbooks.filter(function(l){ return l.vehicle_id===vehId; }); }
+// Latest non-expired logbook for a vehicle (or null).
+function activeLogbook(vehId){
+  var today=todayStr();
+  var live=logbooksFor(vehId).filter(function(l){ return logbookExpiryDate(l.start_date)>=today; });
+  live.sort(function(a,b){ return (b.start_date||'').localeCompare(a.start_date||''); });
+  return live[0]||null;
+}
+function startLogbook(){
+  var vehId=_taxVehId();
+  if(!vehId){ toast('Add a vehicle first'); return; }
+  var start=mondayOf(todayStr());
+  var p=taxPrefs();
+  if(p.logbooks.some(function(l){ return l.vehicle_id===vehId&&l.start_date===start; })){ toast('Logbook already started this week'); return; }
+  p.logbooks.push({ id:'lb'+Date.now().toString(36), vehicle_id:vehId, start_date:start, created_at:Date.now() });
+  setTaxPrefs({logbooks:p.logbooks});
+  toast('12-week logbook started');
+  renderLogbook(); renderTaxExports();
+}
+function deleteLogbook(id){
+  if(!confirm('Delete this logbook record?')) return;
+  var p=taxPrefs(); p.logbooks=p.logbooks.filter(function(l){ return l.id!==id; });
+  setTaxPrefs({logbooks:p.logbooks});
+  renderLogbook(); renderTaxExports();
+}
+
+// ── Tax-export change handlers ──────────────────────────────────────────────
+function onTaxMethodChange(v){ setTaxPrefs({method:v}); renderTaxExports(); }
+function onTaxFyChange(v){ setTaxPrefs({fy:v}); renderTaxExports(); renderLogbook(); }
+function onTaxVehicleChange(v){ setTaxPrefs({vehicle_id:v}); renderTaxExports(); renderLogbook(); }
+function onTaxCatChange(v){ setTaxPrefs({category:v}); }
+
+// ── Rendering: Tax exports card ─────────────────────────────────────────────
+function renderTaxExports(){
+  var el=document.getElementById('tax-exports-body'); if(!el) return;
+  var vs=vehicles();
+  if(!vs.length){
+    el.innerHTML='<div style="font-size:13px;color:var(--text2);padding:6px 0">Add a vehicle above to enable tax exports.</div>';
+    return;
+  }
+  var p=taxPrefs(), fy=_taxFy(), veh=_taxVeh(), rate=vehicleRate(veh);
+  var fys=fyList(trips(),currentFy());
+  var sel=taxSelectedTrips();
+  var sum=taxSummary(sel,rate);
+  var lb=veh?activeLogbook(veh.id):null;
+  var bizPct=lb?logbookPct(trips(),lb.start_date):sum.businessPct;
+  var expTotal=veh?expensesInFy(veh.expenses,fy):0;
+  var lbClaim=logbookExpenseClaim(bizPct,expTotal);
+
+  var html='';
+  // Method radio
+  html+='<div style="font-size:13px;color:var(--text2);margin-bottom:8px">Claim method</div>';
+  html+='<div class="tax-radio-row">'+
+    _taxRadio('cents','Cents per km',p.method==='cents')+
+    _taxRadio('logbook','Logbook',p.method==='logbook')+'</div>';
+  // FY + vehicle selectors
+  html+='<div class="field-row" style="margin-top:12px">'+
+    '<div class="field"><label>Financial year</label><select class="ti-input" onchange="onTaxFyChange(this.value)">'+
+      fys.map(function(f){ return '<option value="'+f+'"'+(f===fy?' selected':'')+'>'+fyLabel(f)+'</option>'; }).join('')+'</select></div>'+
+    '<div class="field"><label>Vehicle</label><select class="ti-input" onchange="onTaxVehicleChange(this.value)">'+
+      vs.map(function(v){ return '<option value="'+v.id+'"'+(v.id===_taxVehId()?' selected':'')+'>'+escHtml(v.name)+'</option>'; }).join('')+'</select></div></div>';
+  // Export category filter
+  html+='<div class="field"><label>Include categories (export)</label><select class="ti-input" onchange="onTaxCatChange(this.value)">'+
+    [['all','All categories'],['business','Business only'],['personal','Personal only'],['commute','Commute only']]
+      .map(function(o){ return '<option value="'+o[0]+'"'+(p.category===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')+'</select></div>';
+
+  // Claim comparison box (both methods, so the user can compare)
+  html+='<div class="tax-claim-box">';
+  html+='<div class="tax-claim-row'+(p.method==='cents'?' tax-claim-active':'')+'">'+
+    '<div><div class="tax-claim-name">Cents per km</div>'+
+    '<div class="tax-claim-sub">'+sum.claimKm.toFixed(0)+' business km @ $'+rate.toFixed(2)+(sum.capped?(' (capped at '+CENTS_KM_CAP.toLocaleString()+')'):'')+'</div></div>'+
+    '<div class="tax-claim-amt">'+fmtMoney(sum.centsClaim)+'</div></div>';
+  html+='<div class="tax-claim-row'+(p.method==='logbook'?' tax-claim-active':'')+'">'+
+    '<div><div class="tax-claim-name">Logbook</div>'+
+    '<div class="tax-claim-sub">'+bizPct.toFixed(1)+'% business use'+(lb?'':' · start a logbook →')+(expTotal>0?(' · '+fmtMoney(expTotal)+' expenses'):'')+'</div></div>'+
+    '<div class="tax-claim-amt">'+(expTotal>0?fmtMoney(lbClaim):(bizPct.toFixed(1)+'%'))+'</div></div>';
+  html+='</div>';
+
+  // 5,000 km cap banner
+  if(sum.capped){
+    html+='<div class="tax-cap-banner">⚠️ You’ve driven '+sum.businessKm.toFixed(0)+' business km — over the '+CENTS_KM_CAP.toLocaleString()+' km cents-per-km cap. '+
+      'The logbook method may give you a bigger claim. '+
+      '<a href="https://www.ato.gov.au/individuals-and-families/income-deductions-offsets-and-records/deductions-you-can-claim/cars-transport-and-travel/motor-vehicle-and-car-expenses" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">Learn more</a></div>';
+  }
+
+  // Selection summary + export buttons
+  html+='<div style="font-size:12px;color:var(--text2);margin:12px 0 8px">'+
+    sel.length+' trip'+(sel.length===1?'':'s')+' · '+sum.totalKm.toFixed(1)+' km total · '+sum.businessKm.toFixed(1)+' business · '+sum.personalKm.toFixed(1)+' personal · '+sum.commuteKm.toFixed(1)+' commute</div>';
+  html+='<div style="display:flex;gap:8px">'+
+    '<button class="btn btn-secondary" style="flex:1" onclick="exportTripsCSV()">⬇ CSV</button>'+
+    '<button class="btn btn-primary" style="flex:1" onclick="exportTripsPDF()">⬇ PDF</button></div>';
+  html+='<div style="font-size:11px;color:var(--text2);margin-top:8px">ATO rates change yearly — set your vehicle’s $/km from the '+
+    '<a href="https://www.ato.gov.au/tax-rates-and-codes/cents-per-kilometre-method" target="_blank" rel="noopener" style="color:var(--amber)">current ATO rate</a>.</div>';
+
+  el.innerHTML=html;
+}
+function _taxRadio(val,label,on){
+  return '<label class="tax-radio'+(on?' on':'')+'"><input type="radio" name="tax-method" value="'+val+'"'+(on?' checked':'')+' onchange="onTaxMethodChange(\''+val+'\')" style="display:none">'+label+'</label>';
+}
+
+// ── Rendering: Logbook card ─────────────────────────────────────────────────
+function renderLogbook(){
+  var el=document.getElementById('logbook-body'); if(!el) return;
+  var veh=_taxVeh();
+  if(!veh){ el.innerHTML='<div style="font-size:13px;color:var(--text2);padding:6px 0">Add a vehicle to keep an ATO logbook.</div>'; return; }
+  var lb=activeLogbook(veh.id);
+  var html='<div style="font-size:12px;color:var(--text2);margin-bottom:10px">A 12-week continuous logbook sets a business-use % you can apply to actual car expenses for up to 5 years. Keeps <strong>'+escHtml(veh.name)+'</strong>.</div>';
+  if(lb){
+    var end=logbookEndDate(lb.start_date), expiry=logbookExpiryDate(lb.start_date);
+    var pct=logbookPct(trips(),lb.start_date);
+    var inWindow=tripsInRange(trips(),lb.start_date,end);
+    var wk=kmByCat(tripsForVehicle(inWindow,veh.id));
+    var done=todayStr()>end;
+    html+='<div class="lb-active">'+
+      '<div class="lb-pct">'+pct.toFixed(1)+'%<span style="font-size:13px;font-weight:600;color:var(--text2)"> business use</span></div>'+
+      '<div class="lb-meta">Period: '+fmtDate(lb.start_date)+' → '+fmtDate(end)+(done?' ✓ complete':' · in progress')+'</div>'+
+      '<div class="lb-meta">Expires: '+fmtDate(expiry)+'</div>'+
+      '<div class="lb-meta">'+wk.total.toFixed(1)+' km logged in window ('+wk.business.toFixed(1)+' business)</div>';
+    var odo=(veh.odometers||{})[_taxFy()];
+    if(odo&&(odo.start||odo.end)) html+='<div class="lb-meta">Odometer: '+(odo.start||'—')+' → '+(odo.end||'—')+'</div>';
+    html+='<button class="btn btn-secondary" style="margin-top:10px;color:var(--red,#dc3545)" onclick="deleteLogbook(\''+lb.id+'\')">Delete logbook</button></div>';
+  } else {
+    var monday=mondayOf(todayStr());
+    html+='<div style="background:var(--surface2);border-radius:10px;padding:12px;font-size:13px;margin-bottom:10px">No active logbook. Starting one locks a 12-week window from <strong>'+fmtDate(monday)+'</strong> (this Monday) to <strong>'+fmtDate(logbookEndDate(monday))+'</strong>.</div>'+
+      '<button class="btn btn-primary" style="width:100%" onclick="startLogbook()">Start new 12-week logbook</button>';
+  }
+  html+='<div style="font-size:11px;color:var(--text2);margin-top:10px">Tip: set start/end-of-year odometer readings on the vehicle for a complete logbook record.</div>';
+  el.innerHTML=html;
+}
+
+// ── Address labelling for exports (no external geocode — offline-safe) ───────
+function _tripAddr(t,which){
+  if(which==='start'){
+    if(t.from_label) return t.from_label;
+    if(t.start_lat!=null&&t.start_lng!=null) return (+t.start_lat).toFixed(5)+','+(+t.start_lng).toFixed(5);
+    return '';
+  }
+  if(t.to_label) return t.to_label;
+  if(t.suggest_site_name) return t.suggest_site_name;
+  if(t.end_lat!=null&&t.end_lng!=null) return (+t.end_lat).toFixed(5)+','+(+t.end_lng).toFixed(5);
+  return '';
+}
+function _siteNameById(id){ if(!id) return ''; var s=sites().find(function(x){ return (x.id||x.name)===id; }); return s?s.name:String(id); }
+function _tripPurpose(t){
+  if(t.notes) return t.notes;
+  if(t.suggest_site_name) return 'Site visit: '+t.suggest_site_name;
+  var m={business:'Business travel',commute:'Home ↔ work commute',personal:'Personal',mixed:'Mixed use'};
+  return m[t.category]||'';
+}
+function _vehSlug(veh){ return ((veh&&veh.name)||'vehicle').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'vehicle'; }
+// The rows a tax export includes: FY + vehicle selection, then the category filter.
+function _taxExportRows(){
+  var p=taxPrefs();
+  var list=taxSelectedTrips();
+  if(p.category&&p.category!=='all') list=list.filter(function(t){ return (t.category||'unknown')===p.category; });
+  return list.slice().sort(function(a,b){ return (a.date||'').localeCompare(b.date||'')||((a.start_time||0)-(b.start_time||0)); });
+}
+
+// ── CSV export (accountant-ready) ───────────────────────────────────────────
+function exportTripsCSV(){
+  try{
+    var veh=_taxVeh(), fy=_taxFy(), rate=vehicleRate(veh);
+    var sel=taxSelectedTrips();                    // summary reflects the whole FY+vehicle
+    var rows=_taxExportRows();                      // detail rows honour the category filter
+    if(!sel.length){ toast('No trips for that year/vehicle'); return; }
+    var sum=taxSummary(sel,rate);
+    var lb=veh?activeLogbook(veh.id):null;
+    var bizPct=lb?logbookPct(trips(),lb.start_date):sum.businessPct;
+    var expTotal=veh?expensesInFy(veh.expenses,fy):0;
+    var L=[];
+    var pair=function(a,b){ L.push(_csvCell(a)+','+_csvCell(b)); };
+    pair('McNichol Trip Log','Tax export');
+    pair('Financial year',fyLabel(fy));
+    pair('Vehicle',(veh?veh.name:'')+(veh&&veh.registration?(' ('+veh.registration+')'):''));
+    pair('Generated',fmtDate(todayStr()));
+    pair('','');
+    pair('Total km',sum.totalKm.toFixed(1));
+    pair('Business km',sum.businessKm.toFixed(1));
+    pair('Personal km',sum.personalKm.toFixed(1));
+    pair('Commute km',sum.commuteKm.toFixed(1));
+    pair('Business-use %',bizPct.toFixed(1)+'%');
+    pair('Cents-per-km claim',fmtMoney(sum.centsClaim)+' ('+sum.claimKm.toFixed(0)+' km @ $'+rate.toFixed(2)+(sum.capped?', capped at '+CENTS_KM_CAP:'')+')');
+    if(expTotal>0){
+      pair('Actual expenses (FY)',fmtMoney(expTotal));
+      pair('Logbook claim',fmtMoney(logbookExpenseClaim(bizPct,expTotal))+' ('+bizPct.toFixed(1)+'% of expenses)');
+    } else {
+      pair('Logbook claim',bizPct.toFixed(1)+'% of actual expenses (log expenses on the vehicle to compute $)');
+    }
+    pair('','');
+    var hdr=['Date','Vehicle','Start Time','End Time','Distance (km)','Category','Start Address','End Address','Notes','Linked Site','Linked Invoice','Purpose'];
+    L.push(hdr.map(_csvCell).join(','));
+    rows.forEach(function(t){
+      var vn=vehicleById(t.vehicle_id); vn=vn?vn.name:(veh?veh.name:'');
+      L.push([
+        t.date||'', vn,
+        t.start_time?fmtTime(t.start_time):'', t.end_time?fmtTime(t.end_time):'',
+        (+t.distance_km||0).toFixed(2),
+        (TRIP_CAT_META[t.category]?TRIP_CAT_META[t.category].label:(t.category||'')),
+        _tripAddr(t,'start'), _tripAddr(t,'end'),
+        t.notes||'', _siteNameById(t.linked_site_id), t.linked_invoice_id||'', _tripPurpose(t)
+      ].map(_csvCell).join(','));
+    });
+    // UTF-8 BOM + CRLF so Excel (Windows) opens it cleanly (en-dash in FY label);
+    // Google Sheets strips the BOM fine. RFC 4180 line endings.
+    var blob=new Blob(['﻿'+L.join('\r\n')],{type:'text/csv;charset=utf-8'});
+    shareOrDownload(blob,'trip_log_'+fy+'_'+_vehSlug(veh)+'_'+todayStr()+'.csv');
+    toast('Exported '+rows.length+' trips to CSV');
+  }catch(e){ console.warn('exportTripsCSV',e); toast('CSV export failed'); }
+}
+
+// ── PDF export (summary page + one page per week, vector jsPDF) ──────────────
+async function exportTripsPDF(){
+  var sel=taxSelectedTrips();
+  if(!sel.length){ toast('No trips for that year/vehicle'); return; }
+  toast('Building PDF…');
+  try{
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    var jsPDF=window.jspdf.jsPDF;
+    var doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    var veh=_taxVeh(), fy=_taxFy(), rate=vehicleRate(veh);
+    var sum=taxSummary(sel,rate);
+    var lb=veh?activeLogbook(veh.id):null;
+    var bizPct=lb?logbookPct(trips(),lb.start_date):sum.businessPct;
+    var expTotal=veh?expensesInFy(veh.expenses,fy):0;
+    var rows=_taxExportRows();
+    var NAVY=[28,42,68], AMBER=[193,88,58], GREEN=[22,163,74], GREY=[120,132,150];
+    var W=210, M=16, y=0, ln='McNichol Invoices';
+
+    // ── Summary page ──────────────────────────────────────────────────────
+    doc.setFillColor(NAVY[0],NAVY[1],NAVY[2]); doc.rect(0,0,W,30,'F');
+    doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(18);
+    doc.text('Trip Log — Tax Summary',M,14);
+    doc.setFont('helvetica','normal'); doc.setFontSize(11);
+    doc.text(fyLabel(fy)+'   ·   '+(veh?veh.name:'All vehicles')+(veh&&veh.registration?('  ('+veh.registration+')'):''),M,22);
+    y=44;
+    doc.setTextColor(NAVY[0],NAVY[1],NAVY[2]); doc.setFont('helvetica','bold'); doc.setFontSize(13);
+    doc.text('Kilometres',M,y); y+=8;
+    doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(40,40,40);
+    var kmRow=function(label,val){ doc.text(label,M,y); doc.text(val,W-M,y,{align:'right'}); y+=7; };
+    kmRow('Total km',sum.totalKm.toFixed(1));
+    kmRow('Business km',sum.businessKm.toFixed(1));
+    kmRow('Personal km',sum.personalKm.toFixed(1));
+    kmRow('Commute km',sum.commuteKm.toFixed(1));
+    if(sum.mixedKm>0.05) kmRow('Mixed km',sum.mixedKm.toFixed(1));
+    if(sum.unknownKm>0.05) kmRow('Untagged km',sum.unknownKm.toFixed(1));
+    y+=4;
+    doc.setDrawColor(220,220,220); doc.line(M,y,W-M,y); y+=10;
+    doc.setTextColor(NAVY[0],NAVY[1],NAVY[2]); doc.setFont('helvetica','bold'); doc.setFontSize(13);
+    doc.text('Claim methods',M,y); y+=9;
+    // Cents-per-km block
+    doc.setFontSize(11); doc.setTextColor(40,40,40); doc.setFont('helvetica','bold');
+    doc.text('Cents per km',M,y);
+    doc.setTextColor(AMBER[0],AMBER[1],AMBER[2]); doc.text(fmtMoney(sum.centsClaim),W-M,y,{align:'right'}); y+=6;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(GREY[0],GREY[1],GREY[2]);
+    doc.text(sum.claimKm.toFixed(0)+' business km @ $'+rate.toFixed(2)+'/km'+(sum.capped?(' (capped at '+CENTS_KM_CAP+' km)'):''),M,y); y+=9;
+    // Logbook block
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(40,40,40);
+    doc.text('Logbook (business-use %)',M,y);
+    doc.setTextColor(GREEN[0],GREEN[1],GREEN[2]); doc.text(bizPct.toFixed(1)+'%',W-M,y,{align:'right'}); y+=6;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(GREY[0],GREY[1],GREY[2]);
+    // jsPDF core (helvetica) is WinAnsi-encoded — no U+2192 arrow; use en-dash range / ASCII arrow so it renders.
+    var lbLine=lb?('12-week logbook '+fmtDate(lb.start_date)+' – '+fmtDate(logbookEndDate(lb.start_date))):'From all tagged trips this FY (no formal logbook set)';
+    doc.text(lbLine,M,y); y+=5;
+    if(expTotal>0){ doc.text('Actual expenses '+fmtMoney(expTotal)+' -> claim '+fmtMoney(logbookExpenseClaim(bizPct,expTotal)),M,y); y+=5; }
+    if(sum.capped){
+      y+=4; doc.setFillColor(252,243,235); doc.roundedRect(M,y,W-2*M,16,2,2,'F');
+      doc.setTextColor(AMBER[0],AMBER[1],AMBER[2]); doc.setFontSize(9); doc.setFont('helvetica','bold');
+      doc.text('Over the 5,000 km cents-per-km cap — the logbook method may claim more.',M+4,y+7,{maxWidth:W-2*M-8}); y+=20;
+    }
+
+    // ── Weekly pages ──────────────────────────────────────────────────────
+    var weeks={};
+    rows.forEach(function(t){ var wk=mondayOf(t.date); (weeks[wk]=weeks[wk]||[]).push(t); });
+    var wkKeys=Object.keys(weeks).sort();
+    var PAGEH=297, BOTTOM=284;
+    wkKeys.forEach(function(wk){
+      doc.addPage(); y=20;
+      doc.setTextColor(NAVY[0],NAVY[1],NAVY[2]); doc.setFont('helvetica','bold'); doc.setFontSize(13);
+      doc.text('Week of '+fmtDate(wk),M,y);
+      var wkList=weeks[wk];
+      var wkKm=wkList.reduce(function(s,t){ return s+(+t.distance_km||0); },0);
+      var wkBiz=wkList.filter(function(t){ return t.category==='business'; }).reduce(function(s,t){ return s+(+t.distance_km||0); },0);
+      doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(GREY[0],GREY[1],GREY[2]);
+      doc.text(wkKm.toFixed(1)+' km · '+wkBiz.toFixed(1)+' business',W-M,y,{align:'right'});
+      y+=8;
+      doc.setDrawColor(225,225,225); doc.line(M,y,W-M,y); y+=6;
+      var days={};
+      wkList.forEach(function(t){ (days[t.date]=days[t.date]||[]).push(t); });
+      Object.keys(days).sort().forEach(function(dt){
+        if(y>BOTTOM-16){ doc.addPage(); y=20; }
+        doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(NAVY[0],NAVY[1],NAVY[2]);
+        doc.text(fmtDate(dt),M,y); y+=6;
+        days[dt].forEach(function(t){
+          if(y>BOTTOM-10){ doc.addPage(); y=20; }
+          var meta=TRIP_CAT_META[t.category]||TRIP_CAT_META.unknown;
+          var route=(_tripAddr(t,'start')||'Start')+'  ->  '+(_tripAddr(t,'end')||'End');
+          var tm=(t.start_time?fmtTime(t.start_time):'')+(t.end_time?('–'+fmtTime(t.end_time)):'');
+          doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(50,50,50);
+          doc.text(tm,M+2,y);
+          doc.text(route,M+24,y,{maxWidth:W-M-24-40});
+          doc.setTextColor(AMBER[0],AMBER[1],AMBER[2]); doc.setFont('helvetica','bold');
+          doc.text((+t.distance_km||0).toFixed(1)+' km',W-M,y,{align:'right'}); y+=5;
+          doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(GREY[0],GREY[1],GREY[2]);
+          var sub=meta.label+(_tripPurpose(t)?('  ·  '+_tripPurpose(t)):'');
+          doc.text(sub,M+24,y,{maxWidth:W-M-24-10}); y+=6;
+        });
+        y+=2;
+      });
+    });
+
+    // ── Footer on every page ──────────────────────────────────────────────
+    var n=doc.getNumberOfPages();
+    for(var i=1;i<=n;i++){
+      doc.setPage(i);
+      doc.setFontSize(8); doc.setTextColor(GREY[0],GREY[1],GREY[2]); doc.setFont('helvetica','normal');
+      doc.text('Generated by '+ln+' · '+fmtDate(todayStr()),M,292);
+      doc.text('Page '+i+' of '+n,W-M,292,{align:'right'});
+    }
+
+    var pdfName='trip_log_'+fy+'_'+_vehSlug(veh)+'_'+todayStr()+'.pdf';
+    if(window.Capacitor&&window.Capacitor.isNativePlatform()){
+      var b64=doc.output('datauristring').split(',')[1];
+      var P=window.Capacitor.Plugins;
+      await P.Filesystem.writeFile({path:pdfName,data:b64,directory:'CACHE'});
+      var uri=(await P.Filesystem.getUri({path:pdfName,directory:'CACHE'})).uri;
+      await P.Share.share({title:pdfName,url:uri,dialogTitle:'Share Trip Log PDF'});
+    } else {
+      await shareOrDownload(doc.output('blob'),pdfName);
+    }
+    toast('PDF ready ('+rows.length+' trips)');
+  }catch(e){ console.error('exportTripsPDF',e); toast('PDF export failed'); }
+}
+
+window.renderTaxExports=renderTaxExports;
+window.renderLogbook=renderLogbook;
 
 window.initApp = function() {
   if(!DB.get('settings')){
