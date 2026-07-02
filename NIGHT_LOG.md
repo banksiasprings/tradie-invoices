@@ -4,6 +4,82 @@ Running log of autonomous/agent work sessions. Newest first.
 
 ---
 
+## 2026-07-02 — v101.5 — Settings toggles to show/hide Machine Hire + Building Supplies (Opus 4.8)
+
+Steven doesn't use Machine Hire or Building Supplies and wanted them hidden from the Today
+logging screen. Added two Settings toggles that **mirror the existing Extra Labor toggle
+(`showExtraWorker`) exactly**. Pure-JS, OTA-only. Verified on Steven's phone (Moto Edge 50
+Neo) via CDP. Commit `3e43217`, branch `main`. OTA live at **1.101.5**; phone confirmed
+running v101.5 (screen had to be awake for the cold-launch `otaCheck` to apply — see lesson).
+
+### The pattern mirrored (for future reference)
+- **Extra Labor toggle** lives in the **"Standard Rate"** settings card (`index.html` ~line
+  1873): a `.toggle-row` `#s-show-extra-worker` → `saveExtraWorkerPref()`; setting
+  `S().showExtraWorker` (DEFAULTS `showExtraWorker:false`); gated on the Today tab by
+  `applyTradeVisibility()` via `showExtra = !emp && (S().showExtraWorker||false)` toggling
+  `idle-extra-worker-row` / `active-extra-worker-row` / `me-extra-worker-card`; loaded into
+  the checkbox in `loadSettings()` (~5465).
+
+### What changed (all in `www/index.html`, +46/−7 lines, 3 files incl. 2 capacitor configs)
+- **DEFAULTS:** `showMachineHire:false`, `showBuildingSupplies:false` — identical default to
+  `showExtraWorker` (per brief: mirror the default, don't invent policy). Default OFF = hidden,
+  which is also exactly what Steven wants.
+- **Settings UI:** two new `.toggle-row`s (`#s-show-machine-hire`, `#s-show-building-supplies`)
+  in the same Standard Rate card, right after Extra worker billing. Same widget + copy pattern.
+- **Save fns:** `saveMachineHirePref()` / `saveBuildingSuppliesPref()` mirror
+  `saveExtraWorkerPref()` (read checkbox → `DB.set('settings',s)` → `applyTradeVisibility()` →
+  `CloudSync.pushAll()`).
+- **`applyTradeVisibility()`:** machine rows now gated `hasMachines && showMachineHire`
+  (idle/active/me-machine-row); materials sections gated by `showMaterials = !emp &&
+  showBuildingSupplies` — **using the CORRECT element IDs** `materials-idle-section` /
+  `materials-active-section` (+ new `materials-me-section` id added to the Manual-Entry
+  materials card). *Note:* the old materials line referenced non-existent IDs
+  `idle-/active-materials-section` and was a silent no-op; fixing the IDs to gate the toggle
+  also (as a natural consequence) restores the originally-intended employee-mode hide.
+- **`loadSettings()`:** populate the two new checkboxes from settings.
+- **Capgo builtin `version` → 1.101.5** (root + android assets) per the v82 cache-trap rule.
+
+### Non-negotiables held
+- **Money/tax paths byte-identical** — 0 diff lines match
+  `logbookPct|taxSummary|kmByCat|logbookForFy|tripsOfVehicle|dayTotals|generateInvoice|
+  cents_per_km|logbookClaim`. v101.2 `buildSessionsFromEvents` guard + v101.4 trip
+  watcher/auto-detect untouched. `firestore.rules` unchanged.
+- **Data preserved** — the toggle only hides the input; `machinesLib`/`materialsLib` records
+  are never touched. Turning it back ON restores everything.
+
+### Verification
+- **Pure:** 82/82 (`test-tax.js` 38 + `test-trips.js` 20 + `test-sessions.js` 24). Full inline
+  JS re-parsed clean (both main app `<script>` blocks).
+- **Local preview (CDP):** seeded 1 machine + 1 material, both ON → all 6 surfaces
+  (machine idle/active/me + materials idle/active/me) `block`; both OFF → all `none`; back ON →
+  `block`. `machinesLib`/`materialsLib` intact across the cycle.
+- **On Steven's phone (CDP against the live WebView):** APP_VERSION **v101.5**, both toggles
+  present. His real state: `showMachineHire`/`showBuildingSupplies` unset → default `false` →
+  Machine Hire + Building Supplies **already hidden** on Today out of the box (what he asked
+  for). His **5 machines** (Excavator, Grader, Bobcat, Dozer, Tractor) preserved. Ran the
+  OFF→ON→OFF cycle via the real save fns: before all 6 `none` → ON all 6 `block` → OFF all 6
+  `none`, machines stayed 5 throughout. `showExtraWorker:true` unaffected. Left in the
+  hidden/OFF state Steven wants.
+
+### Lesson (reinforces the phone-OTA-cold-launch memory)
+The phone would NOT apply the OTA on cold launch while its **screen was asleep / another app
+held the foreground** — the invoice activity `handleOnStop`→`App moved to background`→
+`onActivityDestroyed` immediately, so the startup `otaCheck()` never ran the JS. **Waking the
+screen + `wm dismiss-keyguard` + `am start -n .../.MainActivity`** brought it truly to
+foreground, `otaCheck()` ran, and v101.5 applied on that launch. Also: **CapacitorUpdater
+plugin calls invoked from a CDP-injected eval never resolve** (`current()`/`list()` hang) — so
+you can't drive the OTA from CDP; use the app's own cold-launch `otaCheck` (screen awake) or an
+APK reinstall. CDP is fine for reading `APP_VERSION`/DOM/localStorage.
+
+### Deferred / notes
+- No APK rebuild needed (pure JS; OTA carried it). Capgo builtin bumped to 1.101.5 so the
+  *next* APK stays in step (v82 rule). Native `versionCode` still 3 (unchanged — no native build).
+- Visual screenshot skipped: Steven's phone was actively showing a different Claude session
+  (auragold), so grabbing the invoice app's foreground would have interrupted him — the CDP DOM
+  evidence above is authoritative.
+
+---
+
 ## 2026-07-02 — v101.3 + v101.4 — three field fixes, all verified on Steven's phone (Opus 4.8)
 
 Steven home with wireless adb + phone plugged. Three known problems, fixed + shipped +
