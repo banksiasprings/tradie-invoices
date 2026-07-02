@@ -4,6 +4,99 @@ Running log of autonomous/agent work sessions. Newest first.
 
 ---
 
+## 2026-07-02 — v101.3 + v101.4 — three field fixes, all verified on Steven's phone (Opus 4.8)
+
+Steven home with wireless adb + phone plugged. Three known problems, fixed + shipped +
+verified on-device (Moto Edge 50 Neo) via Chrome DevTools Protocol. Shipped as two point
+releases (v101.4 is a same-session follow-on to v101.3). **Money paths byte-identical**
+(0 changed lines match `logbookPct|taxSummary|kmByCat|logbookForFy|tripsOfVehicle|dayTotals|
+generateInvoice|cents_per_km|logbookClaim`); v101.2 `buildSessionsFromEvents` guard untouched;
+`firestore.rules` unchanged. **82/82 pure** (38 tax + 20 trips + 24 sessions) at every step.
+
+### Problem 1 — Settings Health "check unavailable" (NATIVE fix, no JS)
+- **Root cause:** the phone's flashed APK predated the v92 `getHealthStatus`/`openHealthFix`
+  native bridge — confirmed on-device: `Capacitor.Plugins.NativeGeo` had only the pre-v92
+  methods, `getHealthStatus is not a function`, so `Health.run()` returned
+  `bridgeUnavailable:true` → the yellow banner + 9× "Update the app to run this check". (OTA had
+  pulled v101.2 JS overnight; native stayed old.)
+- **Fix:** rebuilt the current-source APK (bridge already in `NativeGeoPlugin.java`) → flashed
+  `adb install -r` (debug key matched, app data preserved). No JS change for this one.
+- **On-device verify:** `getHealthStatus()` now returns a real object; `Health.run()` →
+  `bridgeUnavailable:false`; card shows **"8 of 9 checks passing"** (amber "Minor warnings"),
+  every row a real state. Screenshot `plans/v101.3-shots/shot_health.png`.
+- **Bonus (no manual grant needed):** Background location already = **"Allow all the time"**,
+  battery exempt, Doze exempt, Play services OK. Only advisory = Motorola app-kill list (soft
+  WARN, non-blocking — Steven CAN tap "Tap to fix" to check Moto's autostart list, but nothing
+  is required of him).
+
+### Problem 2 — Analytics tab completely blank [FIXED, ~6-line rename]
+- **Root cause (found + reproduced on-device):** the v100/v101 tax module added a SECOND
+  top-level `function fyLabel(fy:string)` (line 8059) that **hoist-shadowed** the original
+  `fyLabel(startYear:number)` (line 5146). `renderThisYear()` calls `fyLabel(numberYear)` →
+  the string version does `fy.slice(0,4)` on a number → **throws at line 5188**, which aborts
+  the whole `renderAnalytics()` (FY label, weekly hours, YTD, pace, past-FYs, hours-by-week
+  chart, rate history — the entire screen). Went live on the phone only when it OTA-pulled
+  v101.2 JS overnight → matches "worked yesterday, blank today". Steven's "cloud didn't pull"
+  read was a misdiagnosis: data was present (48 days, 2 in the current FY), the render just threw.
+  The bug was invisible because one call site wraps `renderAnalytics` in `try{}catch(_){}`.
+- **Fix:** renamed the number-arg version → `fyLabelYr` and repointed its 5 stats call sites
+  (5146 def + 5188/5258/5321/5338/5364). Tax-module `fyLabel` + its 9 call sites byte-identical.
+- **On-device verify:** `showScreen('analytics')` no longer throws → **FY2026–27, 29.3h weekly,
+  $615.00 YTD, "Behind by $313.50", 8 chart bars with heights, past FY $19,289, tiles $5.8k /
+  $68 / $11.5k / 24.2**. Screenshot `plans/v101.3-shots/shot_analytics.png`.
+
+### Problem 3 — Trip auto-detect manual-only [FIXED: default-ON + vehicle prompt + bg-watcher fix]
+- **State found:** the v100 `TripDetector` was fully wired but the `tripAutoDetect` toggle
+  defaulted OFF, and it silently auto-assigned the default vehicle with no prompt.
+- **Fix 3a (default-ON):** `DEFAULTS.tripAutoDetect:true` + `!==false` at the 3 read sites
+  (5465 / 8033 / 8968). `!==false` preserves an explicit user opt-out (`DB.def` does NOT merge
+  defaults into an existing settings object, so an unset flag now reads ON).
+- **Fix 3b (vehicle prompt):** new `maybePromptTripVehicle()` (called from `initTripLog` on cold
+  start + resume, 1.5s delay). If auto-detect banked a trip while backgrounded, a modal asks
+  **"🚗 Trip auto-detected — Started at HH:MM · X km · Y min. Which vehicle was this?"** with a
+  button per vehicle + **Not now** + **Discard trip**. Handles both the live in-progress trip
+  ("still driving") and a recently-completed (<6h) untagged auto-trip. "Already prompted"
+  tracked in a **local-only** `mcn_tripVehPrompted` key (not synced, NOT part of the trip
+  schema) → trip capture/merge/storage untouched. Manual Start/Add unaffected (auto:false).
+- **Fix 3c (v101.4 — bg watcher never started):** on-device the watcher wouldn't start —
+  `@capacitor-community/background-geolocation`'s `addWatcher` is a **callback method**, so the
+  Capacitor proxy returns the watcher id **synchronously as a string**, NOT a Promise.
+  `setTripBgWatcher` chained `.then()` on that string → threw every call (silently caught) →
+  background trip capture never ran. **Dormant pre-v101.3** (trip watcher was default-OFF; the
+  geofence-fallback watcher is gated behind NativeGeo-unavailable, i.e. never runs on this
+  phone) — but default-ON activated it, so it directly blocked the "auto-start in the
+  background" the request centres on → in-scope. Fixed `setTripBgWatcher` to accept a sync
+  string id OR a Promise (defensive). **Only `setTripBgWatcher` touched** — the geofence-
+  fallback site left byte-identical (don't touch the work-site geo path).
+- **On-device verify:** toggle reads ON (`tripAutoDetect` unset → effective ON); seeded a
+  completed auto-trip → prompt renders ("City · 205VVN" / Not now / Discard); **Assign** sets
+  `vehicle_id`+`edited_by_user`+marks seen+closes; **Discard** removes the trip+closes;
+  `TripDetector._begin` → active auto-trip → prompt shows "still driving". After v101.4:
+  `window._tripWatcherId` = a real id on cold start, `BackgroundGeolocationService`
+  `isForeground=true` with notification **"Trip log — Logging your trip."** (superseded a stray
+  FGS notification my investigation had left). Screenshot `plans/v101.3-shots/shot_tripprompt.png`.
+  **Expected side-effect Steven will see:** a persistent "Trip log — Logging your trip."
+  notification whenever auto-detect is ON (Android FGS requirement for background location) —
+  turn it off in Settings → Trip auto-detect to remove it.
+
+### Ship state
+- Commits `3fb1098` (v101.3) + `5d2e440` (v101.4) on `main`, pushed.
+- OTA **live at 1.101.4** (deploy workflow parsed `v101.4` → semver + checksum + bundle).
+- APK rebuilt (`InvoicePDF-latest.apk`, builtin 1.101.4 + v101.4 www + health bridge) + flashed.
+- **Phone now running:** APP_VERSION v101.4 · OTA bundle 1.101.4 (auto-pulled on cold launch,
+  id unzHlgTx90) · Capgo native builtin 1.101.4 · health bridge present · trip bg-watcher live.
+  Gradle `versionName=1.2 / versionCode=3` unchanged (tracks Play releases separately, by design).
+- **localStorage safety:** snapshotted the phone's 18 mcn_* keys before flashing; verified
+  Steven's real data intact after all tests (48 days, 2 invoices, 1 vehicle, 0 trips, no test
+  artifacts).
+- **Deferred / not chased (per brief):** the audit's "auto-detect OFF toggle doesn't stop
+  foreground detection" Medium (not touched — my default-ON + bg-watcher work didn't close it);
+  the geofence-fallback `addWatcher` `.then` bug (identical shape, but dormant behind
+  NativeGeo-present — left byte-identical to protect the work-site path). Recurring-route
+  auto-learn + Xero → later, unchanged.
+
+---
+
 ## 2026-07-02 — v101.2 — Work Log fragmentation fix (v89 idempotency guard restored inside pure builder per Fable diagnosis)
 
 Source: `plans/v92.1_workday_fragmentation_fix.md` (Fable 5 diagnosis, one field incident).

@@ -22,10 +22,10 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1978) | v101.2 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~1978) | v101.4 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.101.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.101.4 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -810,6 +810,36 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
+- **v101.3 + v101.4 — three field fixes, all verified on Steven's phone** — SHIPPED 2026-07-02
+  (Opus 4.8, wireless-adb + CDP on the Moto Edge 50 Neo). **(1) Settings Health "check
+  unavailable"** — NATIVE fix: the phone's flashed APK predated the v92 `getHealthStatus` bridge
+  (`NativeGeo` had only pre-v92 methods → `bridgeUnavailable:true` → yellow banner). Rebuilt +
+  flashed the current-source APK; on-device now "8 of 9 checks passing" (only advisory = Motorola
+  app-kill list). **(2) Analytics tab completely blank** — the v100/v101 tax module's second
+  top-level `function fyLabel(fy:string)` (line 8059) hoist-shadowed the original
+  `fyLabel(startYear:number)` (5146); `renderThisYear` called `fyLabel(numberYear)` →
+  `fy.slice` on a number → threw at 5188 → aborted the whole `renderAnalytics` (masked by a
+  `try{}catch(_){}` at one call site). Went live only when the phone OTA-pulled v101.2 JS
+  overnight (data was present — 48 days; the "cloud didn't pull" read was a misdiagnosis). Fix:
+  renamed the number-arg version → `fyLabelYr` at its 5 stats call sites; tax `fyLabel`
+  byte-identical. On-device: FY2026–27 / 29.3h / $615 YTD / 8 chart bars. **(3) Trip auto-detect
+  manual-only** — was wired-but-OFF: default-ON (`DEFAULTS.tripAutoDetect:true` + `!==false` at
+  3 read sites, preserving explicit opt-out) + new foreground **"🚗 Which vehicle?"** prompt
+  (`maybePromptTripVehicle`, assign/discard/not-now; seen-set in local-only `mcn_tripVehPrompted`,
+  trip schema untouched) + **v101.4** fix to `setTripBgWatcher` (`addWatcher` returns the id
+  **synchronously** as a string, not a Promise — the old `.then()` threw so the background
+  watcher never started; now handles sync-or-promise). On-device: toggle ON, prompt renders +
+  assign/discard work, bg watcher live (`_tripWatcherId` set, FGS "Trip log" notification).
+  **Money paths byte-identical** (0 lines match the money/tax fn set); v101.2 builder guard +
+  `firestore.rules` untouched; **82/82 pure** (38 tax + 20 trips + 24 sessions). Commits
+  `3fb1098` (v101.3) + `5d2e440` (v101.4); OTA live at **1.101.4**; APK flashed (builtin 1.101.4).
+  Phone now: APP_VERSION v101.4 / OTA 1.101.4 / native 1.101.4 / health bridge present.
+  Screenshots in `plans/v101.3-shots/`. **Note for Steven:** auto-detect ON means a persistent
+  "Trip log — Logging your trip." notification (Android background-location requirement) — turn
+  it off in Settings → Trip auto-detect to remove it. See NIGHT_LOG 2026-07-02 for the full log.
+  **Deferred (per brief):** the "auto-detect OFF doesn't stop foreground detection" Medium (not
+  chased); the geofence-fallback `addWatcher` `.then` bug (identical shape but dormant behind
+  NativeGeo-present — left byte-identical to protect the work-site geo path).
 - **v101.2 Work Log fragmentation fix (point release)** — SHIPPED 2026-07-02. Restores v89's
   duplicate-ENTER idempotency INSIDE the pure v90 builder (`buildSessionsFromEvents`), which the
   v90 rewrite (commit `32f23a8`) dropped. Field incident 2 Jul at Lucas Ranch: continuous
