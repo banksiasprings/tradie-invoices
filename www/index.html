@@ -2005,7 +2005,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v101.2';
+const APP_VERSION = 'v101.3';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -2333,6 +2333,14 @@ function forceAppUpdate(){ return otaCheck(false); }
   </div>
 </div>
 
+<!-- v101.3 AUTO-TRIP VEHICLE PROMPT -->
+<div class="modal-bg" id="trip-veh-prompt-modal">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-title">🚗 Trip auto-detected <button class="modal-close" onclick="dismissTripVehPrompt()">✕</button></div>
+    <div id="trip-veh-prompt-body"></div>
+  </div>
+</div>
+
 <!-- v100 MANUAL TRIP MODAL -->
 <div class="modal-bg" id="manual-trip-modal">
   <div class="modal" style="max-width:360px">
@@ -2641,7 +2649,8 @@ const DEFAULTS={
   linkedBossUID:'',
   linkedBossName:'',
   linkedCode:'',
-  businessCode:''
+  businessCode:'',
+  tripAutoDetect:true
 };
 
 function S(){return DB.def('settings',DEFAULTS)}
@@ -5143,7 +5152,7 @@ function fyForDate(d){
   const dt=(typeof d==='string')?new Date(d+'T00:00:00'):d;
   return (dt.getMonth()<6)?dt.getFullYear()-1:dt.getFullYear();
 }
-function fyLabel(startYear){return 'FY'+startYear+'–'+String(startYear+1).slice(-2);}
+function fyLabelYr(startYear){return 'FY'+startYear+'–'+String(startYear+1).slice(-2);}
 function fyRange(startYear){return{start:startYear+'-07-01',end:(startYear+1)+'-06-30'};}
 
 function onGoalInput(src){
@@ -5185,7 +5194,7 @@ function renderThisYear(){
   const eff=effectiveAvgRate(rate,incpct);
   const weeklyGoal=parseFloat(s.weeklyHrsGoal)||0;
   const annualGoal=parseFloat(s.annualEarningsGoal)||(weeklyGoal>0?weeklyGoal*eff*52:0);
-  document.getElementById('ty-fy-label').textContent=fyLabel(curFY);
+  document.getElementById('ty-fy-label').textContent=fyLabelYr(curFY);
 
   // Current week (Mon–Sun)
   const todayStr=now.toISOString().slice(0,10);
@@ -5255,7 +5264,7 @@ function renderPastFYs(allDays,curFY,rate){
     const h=byFY[fy].hrs, earnings=h*rate;
     const last=i===sorted.length-1;
     return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;${last?'':'border-bottom:1px solid var(--border)'}">
-      <div style="font-size:14px;font-weight:700">${fyLabel(fy)}</div>
+      <div style="font-size:14px;font-weight:700">${fyLabelYr(fy)}</div>
       <div style="font-size:13px;color:var(--text2)">${h.toFixed(1)}h · ${fmtMoney(earnings)}</div>
     </div>`;
   }).join('');
@@ -5318,7 +5327,7 @@ function openYearGoalDetail(){
 
   // Goal projection
   html+='<div style="'+sectionStyle+'">';
-  html+='<div style="'+headStyle+'">Goal projection ('+fyLabel(curFY)+')</div>';
+  html+='<div style="'+headStyle+'">Goal projection ('+fyLabelYr(curFY)+')</div>';
   html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Your hourly rate</span><span style="'+valStyle+'">$'+rate.toFixed(2)+'/hr</span></div>';
   html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Annual rate increase</span><span style="'+valStyle+'">'+incLabel+'</span></div>';
   html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Effective avg rate this year</span><span style="'+valStyle+'">$'+eff.toFixed(2)+'/hr</span></div>';
@@ -5335,7 +5344,7 @@ function openYearGoalDetail(){
 
   // Actual YTD
   html+='<div style="'+sectionStyle+'">';
-  html+='<div style="'+headStyle+'">Actual YTD ('+fyLabel(curFY)+')</div>';
+  html+='<div style="'+headStyle+'">Actual YTD ('+fyLabelYr(curFY)+')</div>';
   html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Total days logged</span><span style="'+valStyle+'">'+fyDays.length+' day'+(fyDays.length===1?'':'s')+'</span></div>';
   html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Total hours worked</span><span style="'+valStyle+'">'+totalH.toFixed(1)+' hrs</span></div>';
   html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Avg hrs/week (weeks elapsed)</span><span style="'+valStyle+'">'+avgHrsPerWeek.toFixed(1)+' hrs/wk</span></div>';
@@ -5361,7 +5370,7 @@ function openYearGoalDetail(){
     pastFys.forEach(pf=>{
       const wkAvg=pf.h/52;
       html+='<div style="padding:8px 0;border-bottom:1px solid var(--border)">';
-      html+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px"><span style="font-size:13px;font-weight:700">'+fyLabel(pf.startYear)+'</span><span style="font-weight:700;color:var(--amber);font-family:\'DM Mono\',ui-monospace,monospace">'+fmtMoney(pf.earn)+'</span></div>';
+      html+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px"><span style="font-size:13px;font-weight:700">'+fyLabelYr(pf.startYear)+'</span><span style="font-weight:700;color:var(--amber);font-family:\'DM Mono\',ui-monospace,monospace">'+fmtMoney(pf.earn)+'</span></div>';
       html+='<div style="font-size:11px;color:var(--text2)">'+pf.days+' days · '+pf.h.toFixed(1)+' hrs · avg '+wkAvg.toFixed(1)+' hrs/wk</div>';
       html+='</div>';
     });
@@ -5462,7 +5471,7 @@ function loadSettings(){
   if(r15) r15.checked=!!(s.roundTo15);
   // v100 Trip Log: auto-detect toggle + vehicles list
   const tad=document.getElementById('s-trip-autodetect');
-  if(tad) tad.checked=!!(s.tripAutoDetect);
+  if(tad) tad.checked=(s.tripAutoDetect!==false);
   if(window.renderVehicles) renderVehicles();
   // v101 Tax exports + logbook
   if(window.renderTaxExports) renderTaxExports();
@@ -7832,7 +7841,7 @@ function renderTrips(){
   html+=_weeklySummaryHtml(weekAgg);
   // Trip list
   if(!all.length){
-    html+='<div class="empty" style="padding:24px 16px"><div class="empty-icon">🛣️</div><h3>No trips yet</h3><p>Drive somewhere with the app open, tap Start trip, or add one manually.</p></div>';
+    html+='<div class="empty" style="padding:24px 16px"><div class="empty-icon">🛣️</div><h3>No trips yet</h3><p>Auto-detect is on — just drive and the app logs the trip, then asks which vehicle. Or tap Start trip / add one manually.</p></div>';
   } else {
     html+='<div class="card-title" style="margin:18px 0 10px">Recent trips</div>';
     html+=all.slice(0,60).map(_tripCardHtml).join('');
@@ -8030,9 +8039,96 @@ function initTripLog(){
     }
   }
   // Reflect the auto-detect toggle.
-  var el=document.getElementById('s-trip-autodetect'); if(el) el.checked=!!S().tripAutoDetect;
+  var el=document.getElementById('s-trip-autodetect'); if(el) el.checked=(S().tripAutoDetect!==false);
+  // v101.3: if auto-detect banked a trip while the app was backgrounded, ask
+  // which vehicle it belongs to now the user is looking. Delayed so the tab
+  // finishes rendering first. Idempotent (guarded by the seen-set + open check).
+  setTimeout(function(){ try{ maybePromptTripVehicle(); }catch(_){} }, 1500);
 }
 window.initTripLog=initTripLog;
+
+// ── v101.3: auto-detected-trip → "Which vehicle?" prompt on foreground ────────
+// When auto-detect starts (or seals) a trip while the app was backgrounded, ask
+// the user which vehicle to attribute it to the next time they open the app —
+// assign a vehicle, or discard the trip. Manual Start/Add paths are unaffected
+// (those trips are auto:false, so never queued here). The "already prompted"
+// tracker is a LOCAL-ONLY key (mcn_tripVehPrompted) — NOT synced and NOT part of
+// the trip schema, so trip capture/merge/storage is untouched.
+var _tripPromptDismissed={};        // in-memory per-session "Not now" set (clears on cold start)
+var _tripPromptCurrentId=null;      // trip currently shown in the modal
+function _tripVehSeen(){ var a=DB.def('tripVehPrompted',[]); return Array.isArray(a)?a:[]; }
+function _markTripVehSeen(id){ var a=_tripVehSeen(); if(a.indexOf(id)<0){ a.push(id); if(a.length>200) a=a.slice(-200); DB.set('tripVehPrompted',a); } }
+// The highest-priority AUTO trip still needing a vehicle decision: the live
+// auto-trip first, else the most recent untagged auto-trip from the last 6h.
+function _pendingTripVehPrompt(){
+  var seen=_tripVehSeen();
+  var ad=activeTrip();
+  if(ad&&ad.auto&&seen.indexOf(ad.id)<0&&!_tripPromptDismissed[ad.id]) return {trip:ad,active:true};
+  var cutoff=Date.now()-6*3600000;   // only nag about the last 6h of driving
+  var cand=trips().filter(function(t){
+    return t&&t.auto&&!t.edited_by_user&&(t.created_at||0)>=cutoff&&seen.indexOf(t.id)<0&&!_tripPromptDismissed[t.id];
+  }).sort(function(a,b){ return (b.created_at||0)-(a.created_at||0); });
+  return cand.length?{trip:cand[0],active:false}:null;
+}
+function maybePromptTripVehicle(){
+  try{
+    if(S().tripAutoDetect===false) return;   // respect an explicit opt-out
+    if(!vehicles().length) return;           // nothing to assign to
+    var login=document.getElementById('screen-login');
+    if(login&&login.offsetParent!==null) return;   // not past auth yet
+    var m=document.getElementById('trip-veh-prompt-modal');
+    if(!m||m.classList.contains('open')) return;   // don't stack prompts
+    var p=_pendingTripVehPrompt(); if(!p) return;
+    _renderTripVehPrompt(p.trip,p.active);
+  }catch(_){}
+}
+function _renderTripVehPrompt(t,isActive){
+  _tripPromptCurrentId=t.id;
+  var endT=isActive?Date.now():(t.end_time||t.created_at||t.start_time);
+  var mins=Math.max(0,Math.round((endT-t.start_time)/60000));
+  var km=(+t.distance_km||0).toFixed(1);
+  var vhtml=vehicles().map(function(v){
+    return '<button class="btn btn-primary" style="width:100%;margin-bottom:8px;text-align:left" onclick="assignTripVehPrompt(\''+t.id+'\',\''+v.id+'\','+(isActive?'true':'false')+')">'+
+      '🚗 '+escHtml(v.name)+(v.registration?(' · '+escHtml(v.registration)):'')+'</button>';
+  }).join('');
+  document.getElementById('trip-veh-prompt-body').innerHTML=
+    '<p style="margin:0 0 14px;font-size:14px;color:var(--text2);line-height:1.5">Started at <strong style="color:var(--text)">'+fmtTime(t.start_time)+'</strong>'+
+      (isActive?' — <span style="color:var(--amber);font-weight:700">still driving</span>':'')+'.<br>'+km+' km · '+mins+' min. Which vehicle was this?</p>'+
+    vhtml+
+    '<div style="display:flex;gap:8px;margin-top:6px">'+
+      '<button class="btn btn-secondary" style="flex:1" onclick="dismissTripVehPrompt()">Not now</button>'+
+      '<button class="btn btn-secondary" style="flex:1;color:var(--red,#dc3545)" onclick="discardTripVehPrompt(\''+t.id+'\','+(isActive?'true':'false')+')">Discard trip</button>'+
+    '</div>';
+  document.getElementById('trip-veh-prompt-modal').classList.add('open');
+}
+function assignTripVehPrompt(id,vid,isActive){
+  if(isActive){ var ad=activeTrip(); if(ad&&ad.id===id){ ad.vehicle_id=vid; setActiveTrip(ad); } }
+  else { var all=trips(); var t=all.find(function(x){return x.id===id;}); if(t){ t.vehicle_id=vid; t.edited_by_user=true; setTrips(all); } }
+  _markTripVehSeen(id);
+  try{ if(navigator.vibrate) navigator.vibrate(15); }catch(_){}
+  toast('Trip assigned to '+((vehicleById(vid)||{}).name||'vehicle'));
+  _closeAndNextTripVehPrompt();
+}
+function discardTripVehPrompt(id,isActive){
+  if(isActive){ var ad=activeTrip(); if(ad&&ad.id===id){ setActiveTrip(null); try{GeoLog.add('ignore','Auto-trip discarded by user (in progress)');}catch(_){} } }
+  else { setTrips(trips().filter(function(x){return x.id!==id;})); try{GeoLog.add('ignore','Auto-trip discarded by user');}catch(_){} }
+  _markTripVehSeen(id);
+  toast('Trip discarded');
+  _closeAndNextTripVehPrompt();
+}
+function dismissTripVehPrompt(){
+  if(_tripPromptCurrentId) _tripPromptDismissed[_tripPromptCurrentId]=true;   // suppress until next cold start
+  document.getElementById('trip-veh-prompt-modal').classList.remove('open');
+  _tripPromptCurrentId=null;
+}
+function _closeAndNextTripVehPrompt(){
+  document.getElementById('trip-veh-prompt-modal').classList.remove('open');
+  _tripPromptCurrentId=null;
+  try{ if(document.getElementById('screen-trips').classList.contains('active')) renderTrips(); }catch(_){}
+  try{ TripUI.refreshLive(); }catch(_){}
+  setTimeout(function(){ try{ maybePromptTripVehicle(); }catch(_){} },350);   // chain to the next pending trip
+}
+window.maybePromptTripVehicle=maybePromptTripVehicle;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // v101 TAX EXPORTS — ATO cents-per-km + logbook methods, CSV/PDF export.
@@ -8965,7 +9061,7 @@ window.initApp = function() {
   // Honour the saved auto-detect preference on cold start.
   try {
     var _s = JSON.parse(localStorage.getItem('mcn_settings') || '{}');
-    if (_s.tripAutoDetect) setTimeout(function(){ try{ window.setTripBgWatcher(true); }catch(_){} }, 2500);
+    if (_s.tripAutoDetect!==false) setTimeout(function(){ try{ window.setTripBgWatcher(true); }catch(_){} }, 2500);
   } catch(_) {}
 
   // ── Real-time geofence event listener ───────────────────────────────────────
