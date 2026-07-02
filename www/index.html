@@ -2005,7 +2005,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v101.3';
+const APP_VERSION = 'v101.4';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -9043,15 +9043,27 @@ window.initApp = function() {
     if (!BackgroundGeolocation) return; // browser/PWA — web GPS watch covers foreground
     if (on) {
       if (window._tripWatcherId) return;
-      BackgroundGeolocation.addWatcher(
-        { backgroundMessage: 'Logging your trip.', backgroundTitle: 'Trip log',
-          requestPermissions: true, stale: false, distanceFilter: 25 },
-        function(location, error) {
-          if (error || !location) return;
-          if (typeof checkNearbySites === 'function') checkNearbySites(location.latitude, location.longitude, location.accuracy);
+      // v101.3: @capacitor-community/background-geolocation registers addWatcher as a
+      // callback method, so the Capacitor proxy returns the watcher id SYNCHRONOUSLY as
+      // a string — it is NOT a Promise. The old `.then(...)` on that string threw every
+      // time (caught silently), so the watcher never started → no background trip
+      // capture. Handle both shapes defensively (string now; Promise on other versions).
+      try {
+        var _w = BackgroundGeolocation.addWatcher(
+          { backgroundMessage: 'Logging your trip.', backgroundTitle: 'Trip log',
+            requestPermissions: true, stale: false, distanceFilter: 25 },
+          function(location, error) {
+            if (error || !location) return;
+            if (typeof checkNearbySites === 'function') checkNearbySites(location.latitude, location.longitude, location.accuracy);
+          }
+        );
+        if (_w && typeof _w.then === 'function') {
+          _w.then(function(id){ window._tripWatcherId = id; console.log('[TripBGGeo] watcher on:', id); })
+            .catch(function(e){ console.warn('[TripBGGeo] failed:', e); });
+        } else {
+          window._tripWatcherId = _w; console.log('[TripBGGeo] watcher on:', _w);
         }
-      ).then(function(id){ window._tripWatcherId = id; console.log('[TripBGGeo] watcher on:', id); })
-       .catch(function(e){ console.warn('[TripBGGeo] failed:', e); });
+      } catch(e){ console.warn('[TripBGGeo] failed:', e); }
     } else if (window._tripWatcherId) {
       try { BackgroundGeolocation.removeWatcher({ id: window._tripWatcherId }); } catch(_){}
       window._tripWatcherId = null;
