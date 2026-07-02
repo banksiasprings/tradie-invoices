@@ -1498,7 +1498,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="materials-me-section">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div class="section-heading" style="margin:0">🧱 Materials / Parts</div>
           <button onclick="openMaterialsStore('me')" style="background:var(--navy);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">📦 Store</button>
@@ -1882,6 +1882,20 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       </div>
       <div class="toggle-row" style="padding:10px 0;border-top:1px solid var(--border)">
         <div>
+          <div style="font-size:14px;font-weight:600">Machine hire</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">Show machine hire option on Today screen</div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="s-show-machine-hire" onchange="saveMachineHirePref()"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row" style="padding:10px 0;border-top:1px solid var(--border)">
+        <div>
+          <div style="font-size:14px;font-weight:600">Building supplies</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">Show materials / parts option on Today screen</div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="s-show-building-supplies" onchange="saveBuildingSuppliesPref()"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row" style="padding:10px 0;border-top:1px solid var(--border)">
+        <div>
           <div style="font-size:14px;font-weight:600">Round times to nearest 15 min</div>
           <div style="font-size:12px;color:var(--text2);margin-top:2px">Rounds start/end times to nearest :00 / :15 / :30 / :45 at Confirm time. Original GPS times preserved for audit.</div>
         </div>
@@ -2005,7 +2019,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v101.4';
+const APP_VERSION = 'v101.5';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -2641,6 +2655,8 @@ const DEFAULTS={
   machinesLib:[],
   materialsLib:[],
   showExtraWorker:false,
+  showMachineHire:false,
+  showBuildingSupplies:false,
   roundTo15:false,
   employeeName:'',
   employerName:'',
@@ -2965,8 +2981,10 @@ function getMaterialsLib(){
 /// Helper: show/hide trade-specific and setting-specific sections on Today screens
 function applyTradeVisibility(){
   const emp = isEmployeeMode();
-  const hasMachines = !emp && getMachines().length > 0;
+  const showMachineHire = !emp && (S().showMachineHire || false);
+  const hasMachines = !emp && showMachineHire && getMachines().length > 0;
   const showExtra = !emp && (S().showExtraWorker || false);
+  const showMaterials = !emp && (S().showBuildingSupplies || false);
   // Idle screen
   ['idle-machine-row'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=hasMachines?'block':'none';});
   ['idle-extra-worker-row'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=showExtra?'block':'none';});
@@ -2978,8 +2996,8 @@ function applyTradeVisibility(){
   // Manual entry
   const meCard=document.getElementById('me-extra-worker-card');
   if(meCard) meCard.style.display=showExtra?'block':'none';
-  // Materials section on Today (hide for employees)
-  ['idle-materials-section','active-materials-section'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=emp?'none':'block';});
+  // Materials / Building supplies section on Today + Manual entry (v101.5 toggle; correct element IDs)
+  ['materials-idle-section','materials-active-section','materials-me-section'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=showMaterials?'block':'none';});
   // Nav label
   const navLabel=document.getElementById('nav-invoice-label');
   if(navLabel) navLabel.textContent=emp?'Timesheet':'Invoice';
@@ -3015,6 +3033,22 @@ function saveExtraWorkerPref(){
   DB.set('settings',s);
   const rateRow=document.getElementById('s-extra-worker-rate');
   if(rateRow) rateRow.style.display=s.showExtraWorker?'block':'none';
+  applyTradeVisibility();
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+}
+function saveMachineHirePref(){
+  const s=S();
+  const cb=document.getElementById('s-show-machine-hire');
+  s.showMachineHire=cb?cb.checked:false;
+  DB.set('settings',s);
+  applyTradeVisibility();
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+}
+function saveBuildingSuppliesPref(){
+  const s=S();
+  const cb=document.getElementById('s-show-building-supplies');
+  s.showBuildingSupplies=cb?cb.checked:false;
+  DB.set('settings',s);
   applyTradeVisibility();
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
 }
@@ -5466,6 +5500,11 @@ function loadSettings(){
   if(ewCb) ewCb.checked=!!(s.showExtraWorker);
   const ewRate=document.getElementById('s-extra-worker-rate');
   if(ewRate) ewRate.style.display=s.showExtraWorker?'block':'none';
+  // Machine hire + Building supplies toggles (v101.5)
+  const mhCb=document.getElementById('s-show-machine-hire');
+  if(mhCb) mhCb.checked=!!(s.showMachineHire);
+  const bsCb=document.getElementById('s-show-building-supplies');
+  if(bsCb) bsCb.checked=!!(s.showBuildingSupplies);
   // Round-to-15 toggle (v91)
   const r15=document.getElementById('s-round-15');
   if(r15) r15.checked=!!(s.roundTo15);
