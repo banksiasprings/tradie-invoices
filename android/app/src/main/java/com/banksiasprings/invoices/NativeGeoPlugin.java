@@ -596,4 +596,101 @@ public class NativeGeoPlugin extends Plugin {
         geofencePendingIntent = GeoRegistrar.getPendingIntent(getContext());
         return geofencePendingIntent;
     }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // v101.6 — TRIP FIX LOGGING (see TripLogService for the full why)
+    //
+    // Replaces the JS-driven BackgroundGeolocation watcher, which died with the
+    // Activity on Steven's Moto and therefore never captured a single trip in
+    // the field. Same contract as the geofence queue: native banks, JS drains.
+    // ════════════════════════════════════════════════════════════════════════
+
+    /** Start the trip-fix foreground service (and remember it across reboots). */
+    @PluginMethod
+    public void startTripLogging(PluginCall call) {
+        try {
+            TripLogService.start(getContext());
+            call.resolve(tripLoggingStatus());
+        } catch (Exception e) {
+            call.reject("startTripLogging failed: " + e.getMessage());
+        }
+    }
+
+    /** Stop it and clear the reboot flag. */
+    @PluginMethod
+    public void stopTripLogging(PluginCall call) {
+        try {
+            TripLogService.stop(getContext());
+            call.resolve(tripLoggingStatus());
+        } catch (Exception e) {
+            call.reject("stopTripLogging failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Honest running-state. `enabled` is what the user asked for; `running` is
+     * whether the service process is ACTUALLY alive right now. The old JS path
+     * reported success purely because addWatcher() returned a callback id —
+     * which it does even when the native side rejects the call.
+     */
+    @PluginMethod
+    public void getTripLoggingStatus(PluginCall call) {
+        call.resolve(tripLoggingStatus());
+    }
+
+    private JSObject tripLoggingStatus() {
+        Context ctx = getContext();
+        SharedPreferences prefs = TripLogService.getPrefs(ctx);
+        JSObject r = new JSObject();
+        r.put("enabled", TripLogService.isEnabled(ctx));
+        r.put("running", isTripServiceRunning(ctx));
+        r.put("pendingFixes", countBankedFixes(prefs));
+        r.put("startedAt", prefs.getLong(TripLogService.STARTED_AT_KEY, 0));
+        String err = prefs.getString(TripLogService.ERROR_KEY, null);
+        r.put("error", err == null ? JSONObject.NULL : err);
+        return r;
+    }
+
+    /**
+     * getRunningServices() is deprecated for OTHER apps' services but still
+     * returns your own — which is exactly the question being asked.
+     */
+    @SuppressWarnings("deprecation")
+    private boolean isTripServiceRunning(Context ctx) {
+        try {
+            android.app.ActivityManager am =
+                    (android.app.ActivityManager) ctx.getSystemService(Context.ACTIVITY_SERVICE);
+            if (am == null) return false;
+            String target = TripLogService.class.getName();
+            for (android.app.ActivityManager.RunningServiceInfo s : am.getRunningServices(Integer.MAX_VALUE)) {
+                if (target.equals(s.service.getClassName())) return true;
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    private int countBankedFixes(SharedPreferences prefs) {
+        try {
+            return new JSONArray(prefs.getString(TripLogService.FIXES_KEY, "[]")).length();
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Atomically read AND clear the banked fix stream — same read-clear race
+     * fix as drainPendingEvents(). The service can append at any moment.
+     */
+    @PluginMethod
+    public void drainTripFixes(PluginCall call) {
+        SharedPreferences prefs = TripLogService.getPrefs(getContext());
+        String json;
+        synchronized (TripLogService.class) {
+            json = prefs.getString(TripLogService.FIXES_KEY, "[]");
+            prefs.edit().putString(TripLogService.FIXES_KEY, "[]").apply();
+        }
+        JSObject result = new JSObject();
+        result.put("fixes", json);
+        call.resolve(result);
+    }
 }

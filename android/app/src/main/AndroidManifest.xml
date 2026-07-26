@@ -55,6 +55,18 @@
             </intent-filter>
         </receiver>
 
+        <!-- v101.6 Trip log fix banking. App-owned so it OUTLIVES MainActivity:
+             the BackgroundGeolocation plugin stops its own service in
+             handleOnDestroy(), and this phone destroys the activity as soon as
+             the app is backgrounded — so the old JS watcher never ran while
+             driving. START_STICKY + BootReceiver bring this back after a
+             low-memory kill or a reboot. -->
+        <service
+            android:name=".TripLogService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
     </application>
 
     <!-- Permissions -->
