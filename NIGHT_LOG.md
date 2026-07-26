@@ -4,6 +4,146 @@ Running log of autonomous/agent work sessions. Newest first.
 
 ---
 
+## 2026-07-27 — v101.6 — trip auto-detect root cause + three field bugs (Opus 5)
+
+Steven: *"The invoice app is still not 100%. Trip monitoring is not automatically coming
+on either."* He was right, and the reason was not the one v101.3/v101.4 fixed. Diagnosed
+from the **mirrored Firestore telemetry** (`users/{uid}/geolog/{date}` + `/data/*`), not
+from guessing — his phone was unreachable (wireless debugging off; ping over Tailscale fine,
+adbd not listening on any scanned port).
+
+### What the telemetry actually said
+- **The app's JS had not run since 2026-07-13 08:36 AEST** — 14 days. `App started (v101.5)`
+  appears on 8, 9, 10 and 13 Jul, then nothing. Crucially, on *every one of those days* the
+  log stops within a minute or two of the morning open. Nothing JS-side ran for the rest of
+  any working day.
+- **`mcn_trips` held exactly ONE trip** — a manual one from 6 Jul (`auto:false`). **Zero
+  auto-detected trips, ever.** No "Trip auto-started", no "Trip logged", no "Trip discarded".
+- **A stuck `activeDay`**: `{site:'Lds', start:'08:30', date:'2026-07-12', finish:null}` — still
+  open. The Today tab had been showing a timer "running" for 360 hours.
+- **`tripAutoDetect` was absent from the settings blob** → `!==false` → auto-detect *was* on.
+  So the toggle was never the problem.
+- Rural accuracy-rejection storm continues (9 Jul: 8 of 10 native geofence events rejected,
+  acc 194m–1503m). Left alone deliberately — see Deferred.
+
+### ROOT CAUSE (the real one)
+`@capacitor-community/background-geolocation` stops its own foreground service when the host
+Activity is destroyed:
+
+```java
+// BackgroundGeolocation.java
+protected void handleOnDestroy() { if (service != null) service.stopService(); }
+```
+
+Steven's Moto Edge 50 Neo **destroys MainActivity the moment the app is backgrounded** — this
+repo already recorded that behaviour in the v101.5 entry (`handleOnStop` → *App moved to
+background* → `onActivityDestroyed` immediately) without connecting it to trip capture. So the
+trip watcher only ever ran while he was looking at the screen, i.e. never while driving. That
+is a perfect match for "zero trips ever" *and* "GeoLog goes silent after each morning open".
+
+v101.4's fix (`addWatcher` returns the id synchronously, not a Promise) was **correct** —
+confirmed against the plugin source (`@PluginMethod(returnType = RETURN_CALLBACK)`). It just
+wasn't the binding constraint. The watcher did start; it was torn down minutes later.
+
+Two things made this invisible for a month:
+1. `_tripWatcherId` being set proves **nothing** — Capacitor returns the callback id even when
+   the native side rejects the call (`addWatcher` → `call.reject("Service not running.")`).
+   The v101.3 verification checked exactly that, in the foreground, where it genuinely works.
+2. The watcher callback swallowed every error: `if (error || !location) return;`.
+
+### The fix — `TripLogService`
+Capture moves to an **app-owned foreground service**, mirroring the architecture that has
+always kept the geofence layer alive: *native banks raw data → JS drains and reconstructs*.
+
+- `TripLogService.java` — START_STICKY, `foregroundServiceType="location"`, fused provider at
+  20s/25m high accuracy. Deliberately **dumb**: it appends `{lat,lng,acc,t}` to a 4000-entry
+  SharedPreferences ring buffer and nothing else. All trip logic stays in the unit-tested JS
+  pure block, and it never touches money or day records.
+- `NativeGeoPlugin` gains `startTripLogging` / `stopTripLogging` / `getTripLoggingStatus` /
+  `drainTripFixes` (atomic drain, same read-clear race fix as `drainPendingEvents`).
+- `BootReceiver` restarts it after a reboot, and now **logs on entry** (it was a silent path).
+- JS `setTripBgWatcher()` prefers the native service and **re-arms on resume** — the old code
+  armed once per WebView load with no re-arm path at all. The plugin watcher stays as the
+  fallback for an APK that predates the native methods, because JS ships by OTA ahead of the
+  APK (that mismatch *was* the v92.1 Health bug).
+- `applyBankedTripFixes()` replays the banked stream through the pure builder. Trip ids are
+  derived from the start instant, so a re-drain can never double-log.
+
+### Three more field bugs, same session
+2. **Stuck activeDay** — `checkNearbySites()` gates auto-START on `!activeDay()`, so an
+   activeDay that never got a finish blocks **every later day's auto-start**, silently and
+   forever. `isStaleActiveDay()` (>20h, longer than any real shift) + `_sealStaleActiveDay()`
+   send it to the review backlog on cold open and resume. **Never into `days[]`**, and
+   `finish` is left unset — the app wasn't running when he left, so no honest end time exists
+   and inventing one could bill hours he never worked.
+3. **Silent failure / false green** — failures now hit the GeoLog, and Setup Health gained a
+   **Trip logging** row sourced from real service state (`enabled` vs *actually* `running`).
+   Never critical, so it can't block Start Day.
+4. **GeoLog date was UTC while its time was local** — every Brisbane morning before 10:00 (the
+   whole window in which the app gets opened) was filed under the *previous* day, in-app and
+   in the Firestore mirror doc key. That is why 13 Jul 08:36 AEST reads as `2026-07-12`. It
+   was actively corrupting the only field-diagnostic tool this project has.
+
+### Verification
+Tests written **first** (red phase confirmed on the missing markers).
+
+- **Pure: 126/126** — 44 new (`test-triplog.js`) + 38 tax + 20 trips + 24 sessions. Was 82.
+  Pins are named for the real records: Steven's actual stuck `activeDay` startTs, and the
+  13 Jul 08:36 AEST entry.
+- **Emulator integration: 10/10** (`test-triplog-service.sh`), including the A/B contrast that
+  demonstrates the mechanism rather than asserting it:
+  - trip logging ON → `am kill` **cannot** reclaim the process (foreground service protects it)
+  - trip logging OFF → the process **is** reclaimed immediately ← what happened every day
+  - `types=00000008` (FOREGROUND_SERVICE_TYPE_LOCATION), survives backgrounding, and **GPS
+    fixes really are banked with the app backgrounded**
+- **Live CDP: 35/35** against the real running app — reconstruction, idempotent replay,
+  mid-drive carry, the stale-day seal (incl. *did not* land in `days[]`), Health row never
+  critical, GeoLog local date.
+- **Regression: money 7/7, geo-stop 6/6.** Money/tax paths **byte-identical** — 0 diff lines
+  match the money/tax fn set.
+- OTA live at **1.101.6**, checksum verified, bundle flat-rooted, carries all four fixes.
+  APK www hash matches the repo exactly.
+
+### Harness notes worth keeping
+- `dumpsys activity services` needs **awk block-scanning**: `isForeground` sits well below the
+  ServiceRecord header (so `grep -A2` misses it), and the `{}` in the record id breaks BRE
+  matchers — note the shell's `grep` here is a **ugrep wrapper**, which made this fail silently.
+- `am kill` is the right kill for this test — it is the *safe* reclaim the OS actually uses, and
+  it refuses a process holding a foreground service. `force-stop` is user-initiated and proves
+  nothing.
+- Capgo reloads the WebView once on cold start, which tears down the JS context mid-eval — CDP
+  tests must poll for readiness (`typeof APP_VERSION === 'string'`) before asserting.
+
+### Deferred, with reasons
+- **Boot-restart is NOT automated.** This emulator delivers neither `BOOT_COMPLETED` (protected;
+  a real `adb reboot` produced no delivery to the package) nor `MY_PACKAGE_REPLACED` via
+  `install -r` — the technique documented in `test-geo-scenarios.sh` has **bit-rotted** on this
+  API level. The code follows the established pattern and rides the same receiver as the
+  geofence re-registration; a blocked start is recorded and surfaced in Health, so if it does
+  fail on the phone it is visible rather than silent. Cold-start + resume re-arming covers the
+  same ground on every app open. **This also means the pre-existing geofence boot path is
+  currently unverifiable on this emulator — worth a dedicated session.**
+- **Accuracy-rejection storm** (8/10 geofence events rejected, rural fused location). A
+  margin-aware gate (accept when `distM + acc < radius`, i.e. when the uncertainty can't change
+  the verdict) would have accepted the real 07:00 enter that was rejected at 194m accuracy
+  inside a 2900m fence. Deliberately **not** touched: it is native, it is the highest-risk area
+  in the app (v89 was about false stops corrupting workdays), and it deserves its own session
+  with field data. **This is the top follow-up.**
+- **`test-health.js` is referenced in CLAUDE.md but does not exist in the repo** — 20 assertions
+  described in the v92.1 entry, file absent. Either never committed or lost. Not recreated here.
+- **Heartbeat feed** (`URGENT_ALERTS.txt`, stale since 2026-06-30): not a dead service — it was
+  never a service. `run_monitor.sh` is a manual one-day field harness started by hand on 30 Jun
+  via `run_in_background`; there is **no launchd job** for it. It also can't run today: it needs
+  adb on `100.122.43.30:5555`, and the phone isn't listening.
+
+### Note for Steven
+Installing the APK brings back the permanent **"Trip log — Recording your km logbook"**
+notification. That notification **is** the fix — it is what stops Android killing the tracker
+when the phone goes in his pocket. Turning it off in Settings → Trip auto-detect turns trip
+capture off with it. Work-site timing (geofences) is unaffected either way.
+
+---
+
 ## 2026-07-02 — v101.5 — Settings toggles to show/hide Machine Hire + Building Supplies (Opus 4.8)
 
 Steven doesn't use Machine Hire or Building Supplies and wanted them hidden from the Today
