@@ -31,6 +31,12 @@
 #
 # Requires a booted emulator + InvoicePDF-latest.apk.
 # Run:  bash test-triplog-service.sh
+#
+# FLAKINESS: T2/T3/T5 depend on emulator timing (when `am kill` is allowed to
+# reclaim a process, and when the fused provider delivers). Both now retry, but
+# a single red run is worth repeating before treating it as a real regression —
+# measured 3 clean runs out of 4 before the retries went in. The pure suite
+# (node test-triplog.js) has no such dependency and is the fast signal.
 set -u
 PKG=com.banksiasprings.invoices
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -118,10 +124,17 @@ ok "…and the service is still foreground after the kill attempt" \
 echo
 echo "=== T3: with trip logging OFF the process IS reclaimed (pre-v101.6) ==="
 launch; wait_ready || true
-node "$DIR/cdp-eval.js" "(async()=>{ await window.setTripBgWatcher(false); return 'off'; })()" >/dev/null 2>&1
-sleep 3
+# Turn it off the way the USER does — through the Settings toggle, which writes
+# mcn_settings.tripAutoDetect. Calling setTripBgWatcher(false) alone leaves the
+# preference ON, so the next resume's ensureTripLogging() correctly re-arms it
+# (that is the designed behaviour, and it made this test flaky until it drove
+# the real path).
+node "$DIR/cdp-eval.js" "(async()=>{ document.getElementById('s-trip-autodetect').checked=false;
+  saveTripAutoDetectPref(); return 'off'; })()" >/dev/null 2>&1
+off=1
+for _ in 1 2 3 4 5; do sleep 3; [ "$(triplog_fg)" -eq 0 ] && { off=0; break; }; done
 ok "no foreground service once trip logging is off" \
-   "$([ "$(triplog_fg)" -eq 0 ] && echo 1 || echo 0)" "count=$(triplog_fg)"
+   "$([ "$off" -eq 0 ] && echo 1 || echo 0)" "count=$(triplog_fg)"
 # `am kill` only reclaims processes that have dropped out of the recently-used
 # tier, so give it time to settle and retry a couple of times before judging.
 $ADB shell input keyevent KEYCODE_HOME >/dev/null 2>&1; sleep 10
@@ -138,7 +151,9 @@ echo
 echo "=== T4/T5: survives backgrounding and banks fixes while backgrounded ==="
 $ADB shell am force-stop $PKG >/dev/null 2>&1
 launch; wait_ready || true
-node "$DIR/cdp-eval.js" "(async()=>{ await window.setTripBgWatcher(true); return 'on'; })()" >/dev/null 2>&1
+# Restore the preference T3 turned off, then arm.
+node "$DIR/cdp-eval.js" "(async()=>{ document.getElementById('s-trip-autodetect').checked=true;
+  saveTripAutoDetectPref(); return 'on'; })()" >/dev/null 2>&1
 sleep 4
 # Clear the banked queue so the count below is unambiguous.
 node "$DIR/cdp-eval.js" "(async()=>{ await window.Capacitor.Plugins.NativeGeo.drainTripFixes(); return 'cleared'; })()" >/dev/null 2>&1
@@ -147,14 +162,16 @@ ok "service still foreground with the app backgrounded" \
    "$([ "$(triplog_fg)" -ge 1 ] && echo 1 || echo 0)"
 
 # Drive ~200m per step so each step clears the 25m displacement filter.
+# The emulator's fused provider delivers on its own schedule, so keep driving
+# until enough fixes land rather than sampling once and hoping.
 lat=-28.650
-for i in $(seq 1 10); do
+n=0
+for i in $(seq 1 18); do
   lat=$(awk -v l="$lat" 'BEGIN{printf "%.6f", l-0.0018}')
   $ADB emu geo fix 151.930 "$lat" >/dev/null 2>&1
   sleep 7
+  [ $((i % 3)) -eq 0 ] && n=$(banked_fixes) && [ "${n:-0}" -ge 3 ] && break
 done
-sleep 5
-n=$(banked_fixes)
 ok "PIN: GPS fixes banked while the app was backgrounded" \
    "$([ "${n:-0}" -ge 3 ] && echo 1 || echo 0)" "banked=$n"
 

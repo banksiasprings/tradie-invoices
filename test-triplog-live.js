@@ -128,6 +128,32 @@ const SEED_FIXES = `(window.__seedFixes || (window.__seedFixes = (function(){
   ok('MONEY/SHIFT GUARD: trip logging is never critical', h.critical === false, h.critical);
   ok('no critical fails introduced', h.criticalFails === 0, h.criticalFails);
 
+  // ── OTA-ahead-of-APK: newer JS on an older APK ─────────────────────────────
+  // This is Steven's actual situation the moment v101.6 OTAs to a phone still
+  // running the v101.4 APK, and it is the exact shape of the v92.1 Health bug
+  // (0-of-0 rendered as a green "All good"). The trip row must degrade to a
+  // greyed n/a — never a false green, and never anything that blocks Start Day.
+  const oldApk = await ev(`(async()=>{
+    const raw = await window.Capacitor.Plugins.NativeGeo.getHealthStatus();
+    delete raw.tripLogging;                      // an APK without the v101.6 bridge
+    const r = await Health.run(raw);
+    const t = r.checks.find(c=>c.id==='triplog');
+    return {status:t&&t.status, critical:t&&t.critical, detail:t&&t.detail,
+            criticalFails:r.criticalFails.length, bridgeUnavailable:r.bridgeUnavailable};})()`);
+  ok('old APK → trip row is n/a, not a false green', oldApk.status === 'na', oldApk);
+  ok('old APK → tells the user to update', /[Uu]pdate the app/.test(oldApk.detail || ''), oldApk.detail);
+  ok('old APK → still never critical', oldApk.critical === false, oldApk.critical);
+  ok('old APK → introduces no critical fails (Start Day stays open)',
+     oldApk.criticalFails === 0, oldApk.criticalFails);
+  ok('old APK → not mistaken for a dead bridge', oldApk.bridgeUnavailable === false, oldApk);
+
+  const browser = await ev(`(async()=>{ const r = await Health.run(null);
+    const t = r.checks.find(c=>c.id==='triplog');
+    return {status:t&&t.status, critical:t&&t.critical};})()`);
+  ok('browser/PWA → trip row is n/a', browser.status === 'na', browser);
+  ok('browser/PWA → never critical', browser.critical === false, browser);
+  await ev(`Health.run()`);   // restore the real state
+
   // ── GeoLog date is local, not UTC ──────────────────────────────────────────
   const gl = await ev(`(function(){ GeoLog.add('info','v101.6 selftest');
     var e=GeoLog.get()[0]; return {date:e.date, time:e.time, today:todayStr()}; })()`);
