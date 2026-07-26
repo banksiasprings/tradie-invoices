@@ -2019,7 +2019,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v101.5';
+const APP_VERSION = 'v101.6';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -3288,7 +3288,10 @@ const GeoLog = {
     entries.unshift({
       ts: now.toISOString(),
       time: now.toTimeString().slice(0,8),
-      date: now.toISOString().slice(0,10),
+      // v101.6: LOCAL date — must match the local `time` above. This was
+      // toISOString() (UTC), so every Brisbane morning before 10:00 was filed
+      // under the previous day, in-app and in the Firestore mirror doc key.
+      date: geoLogDateOf(now),
       type,
       detail
     });
@@ -3764,6 +3767,32 @@ function _resetGeoTriggerFlags(){
   _saveGeoFlags();
   _clearPendingStop();
 }
+// v101.6: rescue a STUCK activeDay. checkNearbySites() gates auto-START on
+// !activeDay(), so an activeDay that never got a finish blocks every later
+// day's auto-start — silently and forever. Steven's phone carried one from
+// 2026-07-12 (Lds, 08:30, finish:null) for 15 days: the Today tab showed a
+// timer "running" for 360h and not one auto-start could fire in that window.
+// Sealing sends it to the REVIEW BACKLOG (mcn_unconfirmed), never to days[] —
+// it is not billable until he confirms it. finish is deliberately left unset:
+// the app was not running when he left the site, so no honest end time exists
+// and inventing one could bill hours he never worked.
+function _sealStaleActiveDay(){
+  try{
+    const ad=activeDay();
+    if(!isStaleActiveDay(ad,Date.now())) return false;
+    const hrs=Math.round((Date.now()-ad.startTs)/3600000);
+    GeoLog.add('error','Stale session sealed: '+(ad.site||'?')+' started '+(ad.date||'?')+' '+(ad.start||'?')+
+                       ' — still open after '+hrs+'h. Moved to review backlog; auto-start re-armed.');
+    _sealSessionToBacklog(ad);
+    DB.set('activeDay',null);
+    _resetGeoTriggerFlags();       // re-arm auto-start for the next arrival
+    try{ clearInterval(timerInterval); }catch(_){}
+    try{ refreshTodayTab(); }catch(_){}
+    return true;
+  }catch(e){ try{ GeoLog.add('error','stale seal failed: '+e.message); }catch(_){} return false; }
+}
+window._sealStaleActiveDay=_sealStaleActiveDay;
+
 function _sealSessionToBacklog(session){
   try{
     const rec=Object.assign({},session);
@@ -7204,8 +7233,17 @@ const Health = {
   async _rawStatus(){
     const ng = this._plugin();
     if(!ng || typeof ng.getHealthStatus !== 'function') return null;
-    try { return await ng.getHealthStatus(); }
+    let raw;
+    try { raw = await ng.getHealthStatus(); }
     catch(e){ console.warn('[Health] getHealthStatus failed:', e); return null; }
+    // v101.6: fold in the real trip-logging service state. Separate call so an
+    // APK without it still returns a valid health object (raw.tripLogging stays
+    // undefined → the check renders "na" rather than breaking the whole card).
+    if(raw && typeof ng.getTripLoggingStatus === 'function'){
+      try { raw.tripLogging = await ng.getTripLoggingStatus(); }
+      catch(e){ console.warn('[Health] getTripLoggingStatus failed:', e); }
+    }
+    return raw;
   },
 
   _bucketName(b){
@@ -7281,6 +7319,25 @@ const Health = {
     push({ id:'fgs', label:'Location service declared', critical:false, fixTarget:null,
       status: !avail ? 'na' : (raw.fgsLocationDeclared ? 'pass' : 'fail'),
       detail: !avail ? na : (raw.fgsLocationDeclared ? 'Foreground-location service present' : 'FOREGROUND_SERVICE_LOCATION missing (build issue)') });
+
+    // 10. Trip logging — v101.6. NEVER critical: the km logbook is a tax
+    // convenience, not the money path, and must never block Start Day.
+    // This reports whether the native service is ACTUALLY alive — the old JS
+    // watcher reported success purely because addWatcher() handed back a
+    // callback id, which it does even when the native side rejects the call.
+    // That false-positive is why "trip auto-detect is on" was believed for a
+    // month while zero trips were being captured.
+    const tl = avail ? raw.tripLogging : null;
+    let tlStatus, tlDetail;
+    if (!avail)            { tlStatus='na';   tlDetail=na; }
+    else if (!tl)          { tlStatus='na';   tlDetail='Update the app to run this check'; }
+    else if (!tl.enabled)  { tlStatus='info'; tlDetail='Turned off in Settings → Trip auto-detect'; }
+    else if (tl.running)   { tlStatus='pass'; tlDetail='Background service running'+
+                               (tl.pendingFixes ? (' · '+tl.pendingFixes+' fixes banked') : ''); }
+    else                   { tlStatus='warn'; tlDetail='Switched on but NOT running'+
+                               (tl.error ? (' — '+tl.error) : ' — reopen the app, or check location permission'); }
+    push({ id:'triplog', label:'Trip logging (km logbook)', critical:false, fixTarget:'location',
+      status: tlStatus, detail: tlDetail });
 
     return checks;
   },
@@ -7537,13 +7594,100 @@ function detectTripsFromFixes(fixes,cfg){
 }
 function _finalizePure(c){
   var poly=c.poly.slice();
+  // v101.6: start_time/end_time/polyline are additive — reconstructTripsFromFixes
+  // needs real timestamps to tell a completed trip from one still in progress,
+  // and the polyline to build a full trip record from a natively-banked stream.
   return { start_lat:c.start.lat, start_lng:c.start.lng,
            end_lat:c.end.lat, end_lng:c.end.lng,
+           start_time:c.start.t, end_time:c.end.t, polyline:poly,
            distance_km:+polylineKm(poly).toFixed(2),
            duration_min:+((c.end.t-c.start.t)/60000).toFixed(1),
            points:poly.length };
 }
 //__V100_TRIP_PURE_END__
+
+//__V101_6_PURE_START__  (extracted verbatim by test-triplog.js — keep pure)
+// ═══ v101.6 PURE LOGIC ═══════════════════════════════════════════════════════
+// Three field bugs found 2026-07-27 from the mirrored Firestore telemetry.
+// Everything here is a pure predicate/transform so it is unit-testable without
+// a device (the only clock touch is geoLogDateOf()'s no-arg default, which
+// mirrors the existing todayStr() helper).
+
+// ── 1. Stuck activeDay ───────────────────────────────────────────────────────
+// checkNearbySites() gates auto-START on !activeDay(). A finished-but-unsealed
+// or simply abandoned activeDay therefore blocks EVERY later day's auto-start,
+// silently and forever. Steven's phone carried one from 2026-07-12 for 15 days.
+// 20h is deliberately longer than any real shift but shorter than a day, so a
+// genuine long day is never sealed out from under him.
+var STALE_ACTIVE_DAY_H = 20;
+function isStaleActiveDay(ad, nowMs, thresholdH){
+  if(!ad || ad.startTs==null) return false;   // malformed — leave it alone
+  if(ad.finish) return false;                 // finished: the seal path owns it
+  var h=(nowMs-ad.startTs)/3600000;
+  if(!(h>0)) return false;                    // clock skew / future start
+  return h >= (thresholdH==null ? STALE_ACTIVE_DAY_H : thresholdH);
+}
+
+// ── 2. Trips rebuilt from a natively-banked fix stream ───────────────────────
+// The BackgroundGeolocation plugin stops its own foreground service in
+// handleOnDestroy(), and Steven's Moto destroys MainActivity the instant the
+// app is backgrounded — so the JS watcher only ever ran while he was looking at
+// the screen. Capture moved to an app-owned native service that BANKS FIXES to
+// SharedPreferences (same architecture as the geofence event queue). This
+// replays that stream into trips, exactly like the geofence queue replays into
+// sessions. No movement for settleMs ⇒ the vehicle is parked and the last trip
+// is complete; otherwise the trailing trip is still in progress and is carried
+// forward as the live activeTrip rather than force-closed.
+var TRIP_FIX_SETTLE_MS = 10*60*1000;
+function reconstructTripsFromFixes(fixes, cfg, nowMs, settleMs){
+  cfg=cfg||TRIP_CFG;
+  if(settleMs==null) settleMs=TRIP_FIX_SETTLE_MS;
+  var out={trips:[],carry:null};
+  var usable=[];
+  if(fixes&&fixes.length){
+    for(var i=0;i<fixes.length;i++){
+      var f=fixes[i];
+      if(!f||f.t==null||f.lat==null||f.lng==null) continue;
+      usable.push(f);
+    }
+  }
+  if(!usable.length) return out;
+  usable.sort(function(a,b){ return a.t-b.t; });   // native queue order isn't guaranteed
+  var all=detectTripsFromFixes(usable,cfg);
+  if(!all.length) return out;
+  // The state machine skips poor-accuracy fixes outright, so "end of stream"
+  // must be measured against the fixes it actually consumed.
+  var lastUsedT=null;
+  for(var j=usable.length-1;j>=0;j--){
+    if(usable[j].acc==null||usable[j].acc<=cfg.maxAccM){ lastUsedT=usable[j].t; break; }
+  }
+  var warm=(lastUsedT!=null)&&((nowMs-lastUsedT)<settleMs);
+  for(var k=0;k<all.length;k++){
+    var t=all[k];
+    // A trip still open when the stream ran out is force-closed at its last
+    // SAMPLED point (≤ sampleMs before the final fix). A genuinely completed
+    // trip ends when movement ceased — at least stopSustainMs earlier. That
+    // gap is what distinguishes them.
+    var forceClosed=(k===all.length-1)&&(lastUsedT!=null)&&
+                    ((lastUsedT-t.end_time)<=(cfg.sampleMs+1000));
+    if(forceClosed&&warm) out.carry=t; else out.trips.push(t);
+  }
+  return out;
+}
+// Deterministic id derived from the start instant: re-draining an overlapping
+// window produces the SAME id, so replay can never double-log a trip.
+function bankedTripId(startMs){ return 'tf'+Number(startMs).toString(36); }
+
+// ── 3. GeoLog local date ─────────────────────────────────────────────────────
+// GeoLog stored `time` as LOCAL but `date` as UTC, so every Brisbane morning
+// before 10:00 — i.e. the entire window in which the app actually gets opened —
+// was filed under the PREVIOUS day, both in the in-app log and in the Firestore
+// mirror doc key. Same formatting as todayStr().
+function geoLogDateOf(d){
+  var n=d||new Date();
+  return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');
+}
+//__V101_6_PURE_END__
 
 // ── Auto-linking heuristics (impure: reads sites) ───────────────────────────
 // Nearest saved site to a point, within radius m. Returns {site,dist} or null.
@@ -8061,6 +8205,62 @@ function saveManualTrip(){
   var all=trips(); all.push(rec); setTrips(all);
   closeManualTripModal(); renderTrips(); toast('Trip added');
 }
+
+// ── v101.6: replay the fix stream banked by the native TripLogService ────────
+// The native service banks raw {lat,lng,acc,t} while the app is dead; this is
+// the JS side that turns that stream into trips — exactly the same shape as
+// processPendingGeoEvents() turning banked geofence events into sessions.
+// Idempotent: ids are derived from the trip start instant, so a re-drain of
+// overlapping fixes can never double-log.
+function _tripRecordFromReconstructed(t){
+  var v=defaultVehicle();
+  var d=new Date(t.start_time);
+  var rec={
+    id:bankedTripId(t.start_time), vehicle_id:v?v.id:null, category:'unknown',
+    start_time:t.start_time, end_time:t.end_time,
+    start_lat:t.start_lat, start_lng:t.start_lng, end_lat:t.end_lat, end_lng:t.end_lng,
+    polyline:(t.polyline||[]).map(function(p){ return {lat:p.lat,lng:p.lng,t:p.t}; }),
+    distance_km:t.distance_km, duration_min:t.duration_min, notes:'',
+    linked_site_id:null, linked_invoice_id:null,
+    date:d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'),
+    auto:true, edited_by_user:false, created_at:t.start_time
+  };
+  try{ suggestTripLinks(rec); }catch(_){}
+  return rec;
+}
+// Returns the number of NEW trips logged.
+function applyBankedTripFixes(fixes){
+  if(!fixes||!fixes.length) return 0;
+  var out;
+  try{ out=reconstructTripsFromFixes(fixes,TRIP_CFG,Date.now()); }
+  catch(e){ try{ GeoLog.add('error','Trip replay failed: '+e.message); }catch(_){} return 0; }
+  var all=trips(), have={}, added=0;
+  all.forEach(function(t){ if(t&&t.id) have[t.id]=true; });
+  out.trips.forEach(function(t){
+    var rec=_tripRecordFromReconstructed(t);
+    if(have[rec.id]) return;                       // already replayed — skip
+    if((+rec.distance_km||0)<0.3) return;          // same <0.3km noise floor as live capture
+    have[rec.id]=true; all.push(rec); added++;
+  });
+  if(added){
+    setTrips(all);
+    try{ GeoLog.add('info','Trip replay: '+added+' trip(s) rebuilt from '+fixes.length+' banked fixes'); }catch(_){}
+  }
+  // A trip still in progress becomes the live activeTrip so the foreground
+  // detector picks it up mid-drive instead of starting a second one.
+  if(out.carry && !activeTrip()){
+    var live=_tripRecordFromReconstructed(out.carry);
+    live.end_time=null; live.end_lat=null; live.end_lng=null;
+    setActiveTrip(live);
+    try{ GeoLog.add('info','Trip in progress recovered from banked fixes ('+live.distance_km+'km so far)'); }catch(_){}
+  }
+  if(added||out.carry){
+    try{ TripUI.refreshLive(); }catch(_){}
+    try{ if(document.getElementById('screen-trips').classList.contains('active')) renderTrips(); }catch(_){}
+  }
+  return added;
+}
+window.applyBankedTripFixes=applyBankedTripFixes;
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 function initTripLog(){
@@ -8711,6 +8911,7 @@ window.initApp = function() {
     }
   }
   migrateToV90(); // one-time: seed the unconfirmed queue + tag existing days CONFIRMED
+  _sealStaleActiveDay(); // v101.6: clear a stuck activeDay so auto-start can fire again
   try{ initTripLog(); }catch(e){ console.warn('initTripLog:',e); } // v100 trip log stores + stale-trip recovery
   // Restore GST toggle state
   const gstEl=document.getElementById('toggle-gst');
@@ -9078,42 +9279,105 @@ window.initApp = function() {
   // streams while the vehicle is moving, so battery cost is near-zero at rest.
   // Feeds checkNearbySites() → TripDetector.onFix(), the same sink as every
   // other fix. NativeGeo geofences remain the owner of work-site enter/exit.
-  window.setTripBgWatcher = function(on) {
-    if (!BackgroundGeolocation) return; // browser/PWA — web GPS watch covers foreground
+  // v101.6: the trip watcher now prefers the app's OWN native service.
+  //
+  // WHY. @capacitor-community/background-geolocation stops its own foreground
+  // service in handleOnDestroy(), and this phone destroys MainActivity the
+  // instant the app is backgrounded. So the plugin watcher only ever ran while
+  // the user was looking at the screen — i.e. never while driving. Field
+  // telemetry: zero auto-detected trips across all of July, and zero GeoLog
+  // entries after each morning's app open. TripLogService is app-owned,
+  // START_STICKY, and restarted by BootReceiver, so it survives all of that.
+  //
+  // The old plugin watcher stays as the fallback for an APK that predates the
+  // native methods (JS ships by OTA ahead of the APK — the v92.1 Health bug was
+  // exactly this mismatch), so an old build degrades to previous behaviour
+  // rather than losing trip capture entirely.
+  var _hasNativeTripLog = !!(NativeGeo && typeof NativeGeo.startTripLogging === 'function');
+
+  function _tripWatcherFallback(on) {
+    if (!BackgroundGeolocation) return;
     if (on) {
       if (window._tripWatcherId) return;
-      // v101.3: @capacitor-community/background-geolocation registers addWatcher as a
-      // callback method, so the Capacitor proxy returns the watcher id SYNCHRONOUSLY as
-      // a string — it is NOT a Promise. The old `.then(...)` on that string threw every
-      // time (caught silently), so the watcher never started → no background trip
-      // capture. Handle both shapes defensively (string now; Promise on other versions).
+      // addWatcher is a RETURN_CALLBACK plugin method, so the Capacitor proxy
+      // hands back the callback id SYNCHRONOUSLY as a string — not a Promise
+      // (v101.4). Both shapes handled defensively.
       try {
         var _w = BackgroundGeolocation.addWatcher(
           { backgroundMessage: 'Logging your trip.', backgroundTitle: 'Trip log',
             requestPermissions: true, stale: false, distanceFilter: 25 },
           function(location, error) {
-            if (error || !location) return;
+            // v101.6: never swallow the error again. A rejected watcher used to
+            // look identical to a working one, because the callback id is
+            // returned even when the native side rejects the call.
+            if (error) {
+              try { GeoLog.add('error','Trip watcher error: '+(error.code||'')+' '+(error.message||error)); } catch(_){}
+              return;
+            }
+            if (!location) return;
             if (typeof checkNearbySites === 'function') checkNearbySites(location.latitude, location.longitude, location.accuracy);
           }
         );
         if (_w && typeof _w.then === 'function') {
-          _w.then(function(id){ window._tripWatcherId = id; console.log('[TripBGGeo] watcher on:', id); })
-            .catch(function(e){ console.warn('[TripBGGeo] failed:', e); });
+          _w.then(function(id){ window._tripWatcherId = id; })
+            .catch(function(e){ try{ GeoLog.add('error','Trip watcher failed: '+(e&&e.message||e)); }catch(_){} });
         } else {
-          window._tripWatcherId = _w; console.log('[TripBGGeo] watcher on:', _w);
+          window._tripWatcherId = _w;
         }
-      } catch(e){ console.warn('[TripBGGeo] failed:', e); }
+      } catch(e){ try{ GeoLog.add('error','Trip watcher failed: '+e.message); }catch(_){} }
     } else if (window._tripWatcherId) {
       try { BackgroundGeolocation.removeWatcher({ id: window._tripWatcherId }); } catch(_){}
       window._tripWatcherId = null;
-      console.log('[TripBGGeo] watcher off');
+    }
+  }
+
+  window.setTripBgWatcher = function(on) {
+    if (_hasNativeTripLog) {
+      var p = on ? NativeGeo.startTripLogging() : NativeGeo.stopTripLogging();
+      return Promise.resolve(p).then(function(st){
+        window._tripLogStatus = st || null;
+        if (on && st && st.running === false) {
+          GeoLog.add('error','Trip logging did NOT start'+(st.error?(' — '+st.error):'')+'. Check location permission + battery settings.');
+        } else {
+          GeoLog.add('info','Trip logging '+(on?'ON':'OFF')+(on&&st?(' (native service running)'):''));
+        }
+        return st;
+      }).catch(function(e){
+        try { GeoLog.add('error','Trip logging '+(on?'start':'stop')+' failed: '+(e&&e.message||e)); } catch(_){}
+      });
+    }
+    _tripWatcherFallback(on);   // old APK — degrade to the v101.4 behaviour
+    return Promise.resolve(null);
+  };
+
+  // Drain the natively-banked fix stream and rebuild any trips that happened
+  // while the app was dead. Safe to call repeatedly (atomic drain + id dedup).
+  window.drainTripFixes = async function() {
+    if (!_hasNativeTripLog || typeof NativeGeo.drainTripFixes !== 'function') return 0;
+    try {
+      const res = await NativeGeo.drainTripFixes();
+      let fixes = [];
+      try { fixes = JSON.parse((res && res.fixes) || '[]'); } catch(_) { fixes = []; }
+      if (!Array.isArray(fixes) || !fixes.length) return 0;
+      return (typeof applyBankedTripFixes === 'function') ? applyBankedTripFixes(fixes) : 0;
+    } catch(e) {
+      try { GeoLog.add('error','Trip fix drain failed: '+(e&&e.message||e)); } catch(_){}
+      return 0;
     }
   };
-  // Honour the saved auto-detect preference on cold start.
-  try {
-    var _s = JSON.parse(localStorage.getItem('mcn_settings') || '{}');
-    if (_s.tripAutoDetect!==false) setTimeout(function(){ try{ window.setTripBgWatcher(true); }catch(_){} }, 2500);
-  } catch(_) {}
+
+  // Arm on cold start, and RE-ARM on every resume. The old code armed exactly
+  // once per WebView load with no re-arm path at all, so anything that stopped
+  // the watcher stopped trip capture until the next cold start.
+  window.ensureTripLogging = function() {
+    try {
+      var _s = JSON.parse(localStorage.getItem('mcn_settings') || '{}');
+      if (_s.tripAutoDetect === false) return;      // explicit opt-out
+      window.setTripBgWatcher(true);
+    } catch(_) {}
+  };
+  setTimeout(function(){ try{ window.ensureTripLogging(); }catch(_){} }, 2500);
+  setTimeout(function(){ try{ window.drainTripFixes(); }catch(_){} }, 3000);
 
   // ── Real-time geofence event listener ───────────────────────────────────────
   // The native receiver LocalBroadcasts each transition; the plugin forwards it
@@ -9189,6 +9453,9 @@ window.initApp = function() {
     if (geoAutoStartDate !== _today) { geoAutoStartTriggered = false; geoAutoStartDate = null; }
     if (geoAutoStopDate !== _today) { geoAutoStopTriggered = false; geoAutoStopDate = null; }
     _saveGeoFlags();
+    // v101.6: clear a stuck activeDay BEFORE replaying — otherwise every
+    // banked ENTER is swallowed by the !activeDay() guard in checkNearbySites.
+    try { if (window._sealStaleActiveDay) window._sealStaleActiveDay(); } catch(_){}
     processPendingGeoEvents();
     // v92: re-check Setup Health after returning — e.g. the user just came back
     // from a settings deep-link fired by a "Tap to fix" button, or is on Settings.
@@ -9205,6 +9472,11 @@ window.initApp = function() {
       if (window.initTripLog) initTripLog();
       if (document.getElementById('screen-trips') && document.getElementById('screen-trips').classList.contains('active') && window.renderTrips) renderTrips();
     } catch(_){}
+    // v101.6: re-arm trip logging and replay anything banked while we were away.
+    // Order matters — drain AFTER ensureTripLogging so a service that had died
+    // is back up before we ask it for its queue.
+    try { if (window.ensureTripLogging) window.ensureTripLogging(); } catch(_){}
+    try { if (window.drainTripFixes) window.drainTripFixes(); } catch(_){}
   });
 
   // Expose so app can call it directly (e.g. after permission grant)
