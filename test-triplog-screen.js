@@ -194,6 +194,19 @@ ok('chained trips collapse the shared stop',
 ok('unlabelled trips = empty string (caller falls back)', routeLabelOf([{ id: 'x' }]) === '');
 ok('partial labels still render', routeLabelOf([{ to_label: 'Lucas Ranch' }]) === 'Lucas Ranch');
 ok('empty list = empty string', routeLabelOf([]) === '');
+// A busy day must not grow the floating header until it pushes the map away.
+const busy = [
+  { from_label: 'Home', to_label: 'Stanthorpe' },
+  { from_label: 'Stanthorpe', to_label: 'Lucas Ranch' },
+  { from_label: 'Lucas Ranch', to_label: 'Lds' },
+  { from_label: 'Lds', to_label: 'Cotton Vale' },
+  { from_label: 'Cotton Vale', to_label: 'Home' },
+];
+ok('6 stops uncapped renders in full', routeLabelOf(busy).split('→').length === 6);
+ok('6 stops capped at 4 collapses the middle', routeLabelOf(busy, 4) === 'Home → … → Home', routeLabelOf(busy, 4));
+ok('at the cap, nothing is collapsed',
+   routeLabelOf([{ from_label: 'A', to_label: 'B' }, { from_label: 'B', to_label: 'C' }], 4) === 'A → B → C');
+ok('cap ignored when no cap given', routeLabelOf(busy, 0).split('→').length === 6);
 
 // ── REGRESSION PIN ───────────────────────────────────────────────────────────
 // test_trip_log_screen_renders_from_mcn_trips

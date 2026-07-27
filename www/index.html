@@ -2062,6 +2062,13 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
           </div>
           <label class="toggle"><input type="checkbox" id="s-trip-autodetect" onchange="saveTripAutoDetectPref()"><span class="toggle-slider"></span></label>
         </div>
+        <div class="toggle-row">
+          <div>
+            <div style="font-size:14px;font-weight:600">Name places on the trip log</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:2px">Turns "Trip · 41 pts" into "Stanthorpe → Lucas Ranch". Your saved job sites are matched on the phone. For anywhere else, the start/end coordinate is sent to OpenStreetMap to look up the nearest town, then remembered so it's only ever looked up once. Off = names come only from your saved sites.</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="s-name-places" onchange="saveNamePlacesPref()"><span class="toggle-slider"></span></label>
+        </div>
       </div>
     </div>
     <!-- v101 Tax exports: ATO cents-per-km / logbook methods + CSV/PDF export -->
@@ -5668,6 +5675,8 @@ function loadSettings(){
   // v100 Trip Log: auto-detect toggle + vehicles list
   const tad=document.getElementById('s-trip-autodetect');
   if(tad) tad.checked=(s.tripAutoDetect!==false);
+  const nps=document.getElementById('s-name-places');
+  if(nps) nps.checked=(s.namePlaces!==false);
   if(window.renderVehicles) renderVehicles();
   // v101 Tax exports + logbook
   if(window.renderTaxExports) renderTaxExports();
@@ -7975,13 +7984,17 @@ function daySegments(ts){
 // "A → B → C" from whatever labels the trips carry, collapsing repeats where
 // one trip ends where the next begins. Empty string when nothing is labelled
 // yet — the caller falls back to a km/points summary rather than showing "→".
-function routeLabelOf(ts){
+// maxStops caps a busy day so the floating header can't grow to five lines and
+// shove the map off screen; nothing is lost, because the sheet below lists
+// every leg in full.
+function routeLabelOf(ts,maxStops){
   var out=[];
   (ts||[]).forEach(function(t){
     [t.from_label,t.to_label].forEach(function(p){
       if(p&&(!out.length||out[out.length-1]!==p)) out.push(p);
     });
   });
+  if(maxStops&&out.length>maxStops) return out[0]+' → … → '+out[out.length-1];
   return out.join(' → ');
 }
 //__V102_TRIPLOG_PURE_END__
@@ -8274,6 +8287,118 @@ function saveTripAutoDetectPref(){
   toast(on?'Auto-detect on':'Auto-detect off');
 }
 
+// ── v101.7 Place labels ──────────────────────────────────────────────────────
+// The trip log captures coordinates, never names, so a real trip renders as
+// "Trip · 41 pts" — useless for a review screen whose whole point is "A → B",
+// and useless to an accountant, who wants a route on a logbook line.
+//
+// Resolution order, cheapest and most trustworthy first:
+//   1. a saved work site the point falls inside  → the site's own name
+//   2. the Home marker                            → "Home"
+//   3. the local place cache                      → previously resolved name
+//   4. OpenStreetMap reverse geocoding            → nearest locality
+//
+// Only steps 1–3 are free and offline. Step 4 sends the coordinate to a third
+// party, so it is a settings toggle and is only ever run for the day the user
+// is actually looking at, one request at a time. Results are written into the
+// EXISTING v100 from_label/to_label fields — no schema change — so a name is
+// resolved once and then travels with the trip, including to CSV and Firestore.
+var TL_GEO_ENDPOINT='https://nominatim.openstreetmap.org/reverse';
+var _tlGeoBusy=false;
+function tlPlaceNamingOn(){ return S().namePlaces!==false; }        // default ON
+function _tlPlaceCache(){ var c=DB.def('placeCache',{}); return (c&&typeof c==='object')?c:{}; }
+// ~11 m buckets: tight enough not to merge two real places, loose enough that
+// the same driveway resolves to one cache entry across trips.
+function _tlPlaceKey(lat,lng){ return (+lat).toFixed(4)+','+(+lng).toFixed(4); }
+// Steps 1–3 only. Synchronous, offline, free — safe to call while rendering.
+function tlKnownPlace(lat,lng){
+  if(lat==null||lng==null) return null;
+  try{
+    var near=nearestSiteTo(lat,lng,TRIP_CFG.linkRadiusM);
+    if(near) return near.site.name;
+    var h=homePoint();
+    if(h&&dist(lat,lng,h.lat,h.lng)<TRIP_CFG.linkRadiusM) return 'Home';
+  }catch(_){}
+  var c=_tlPlaceCache(); return c[_tlPlaceKey(lat,lng)]||null;
+}
+// Step 4. Never throws, never blocks a render, and returns null on any failure
+// so the caller simply keeps its fallback label.
+function tlLookupPlace(lat,lng){
+  if(!tlPlaceNamingOn()||!navigator.onLine) return Promise.resolve(null);
+  var url=TL_GEO_ENDPOINT+'?format=jsonv2&zoom=14&addressdetails=1&lat='+
+          encodeURIComponent(lat)+'&lon='+encodeURIComponent(lng);
+  return fetch(url,{headers:{'Accept':'application/json'}})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(j){
+      if(!j) return null;
+      var a=j.address||{};
+      var name=a.village||a.town||a.suburb||a.hamlet||a.city||a.locality||a.municipality||
+               a.county||(j.display_name?String(j.display_name).split(',')[0]:null);
+      if(!name) return null;
+      var c=_tlPlaceCache(); c[_tlPlaceKey(lat,lng)]=name;
+      // Cap the cache so a lot of driving can't grow localStorage unbounded.
+      var keys=Object.keys(c);
+      if(keys.length>500){ keys.slice(0,keys.length-500).forEach(function(k){ delete c[k]; }); }
+      DB.set('placeCache',c);                    // local-only key — not in SYNC_KEYS
+      return name;
+    })
+    .catch(function(){ return null; });
+}
+// Fill in from_label/to_label for the trips of ONE day, then re-render once.
+// Sequential with a gap, per the OSM usage policy — this is a courtesy request
+// against a free community service, not an API we are entitled to hammer.
+function tlNamePlacesForDay(dayTrips){
+  if(_tlGeoBusy||!dayTrips||!dayTrips.length) return;
+  var wants=[];
+  dayTrips.forEach(function(t){
+    if(!t.from_label&&t.start_lat!=null) wants.push({id:t.id,which:'from_label',lat:t.start_lat,lng:t.start_lng});
+    if(!t.to_label&&t.end_lat!=null)     wants.push({id:t.id,which:'to_label',  lat:t.end_lat,  lng:t.end_lng});
+  });
+  if(!wants.length) return;
+  // Anything already knowable offline is applied immediately, without a request.
+  var immediate=false;
+  var all=trips();
+  wants=wants.filter(function(w){
+    var known=tlKnownPlace(w.lat,w.lng);
+    if(!known) return true;
+    var t=all.filter(function(x){return x.id===w.id;})[0];
+    if(t&&!t[w.which]){ t[w.which]=known; immediate=true; }
+    return false;
+  });
+  if(immediate){ setTrips(all); tlAfterNaming(); }
+  if(!wants.length||!tlPlaceNamingOn()||!navigator.onLine) return;
+  _tlGeoBusy=true;
+  var i=0;
+  (function step(){
+    if(i>=wants.length){ _tlGeoBusy=false; return; }
+    var w=wants[i++];
+    tlLookupPlace(w.lat,w.lng).then(function(name){
+      if(name){
+        var cur=trips();
+        var t=cur.filter(function(x){return x.id===w.id;})[0];
+        if(t&&!t[w.which]){ t[w.which]=name; setTrips(cur); tlAfterNaming(); }
+      }
+      setTimeout(step,1100);                     // ≥1 req/sec, per OSM policy
+    });
+  })();
+}
+// Refresh only the parts that show a label, so naming never yanks the map.
+function tlAfterNaming(){
+  try{
+    tlRenderRouteLabel();
+    if(tlSel){ var row=tlDayRow(tlSel); if(row&&row.count) tlRenderSheet(row); }
+  }catch(_){}
+}
+function saveNamePlacesPref(){
+  var on=document.getElementById('s-name-places').checked;
+  var s=S(); s.namePlaces=on; DB.set('settings',s);
+  toast(on?'Place names on':'Place names off');
+  if(on&&tlSel){ var row=tlDayRow(tlSel); if(row) tlNamePlacesForDay(row.trips); }
+}
+window.saveNamePlacesPref=saveNamePlacesPref;
+window.tlKnownPlace=tlKnownPlace;
+window.tlNamePlacesForDay=tlNamePlacesForDay;
+
 // ── Rendering: Trips tab ─────────────────────────────────────────────────────
 var TripUI={
   refreshLive:function(){
@@ -8395,7 +8520,7 @@ function tlRenderRouteLabel(){
   if(!tlSel){ el.className='tl-route'; el.innerHTML=''; return; }
   var day=buildDayStrip(tlMonthTrips(),tlMonth).filter(function(r){return r.date===tlSel;})[0];
   if(!day||!day.count){ el.className='tl-route'; el.innerHTML=''; return; }
-  var label=routeLabelOf(day.trips);
+  var label=routeLabelOf(day.trips,4);
   if(!label) label=day.count+' trip'+(day.count===1?'':'s')+' · route not named yet';
   el.className='tl-route on';
   el.innerHTML='<div>'+escHtml(label)+'</div>'+
@@ -8646,6 +8771,9 @@ function tlOpenSheet(date){
   // Re-fit once the sheet has finished sliding up, so the route sits in the
   // strip of map still visible above it.
   setTimeout(function(){ try{ tlDraw(); }catch(_){} },240);
+  // Name this day's endpoints if they aren't named yet — scoped to the day the
+  // user actually opened, so browsing a month never fans out into a request storm.
+  try{ tlNamePlacesForDay(row.trips); }catch(_){}
 }
 function tlCloseSheet(){
   var s=document.getElementById('tl-sheet'); if(!s||!s.classList.contains('open')) return;
