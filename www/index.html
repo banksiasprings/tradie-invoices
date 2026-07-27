@@ -7689,6 +7689,175 @@ function geoLogDateOf(d){
 }
 //__V101_6_PURE_END__
 
+//__V102_TRIPLOG_PURE_START__  (extracted verbatim by test-triplog-screen.js — keep pure)
+// ═══ v101.7 TRIP LOG REVIEW SCREEN — pure logic ══════════════════════════════
+// Everything the day-strip / map / approval UI needs, expressed as pure
+// transforms over the mcn_trips array so it is unit-testable without a device.
+// NOTHING here reads the clock (the only Date use is explicit-arg month
+// arithmetic), touches the DOM, or hits DB — same discipline as the v100/v101
+// pure blocks. This is a REVIEW layer: it never computes money or tax.
+
+// ── Review status ────────────────────────────────────────────────────────────
+// Three states, derived from fields the v100 schema already carries plus the
+// one additive stamp `approved_at`:
+//   pending  — never categorised (category 'unknown' or absent)
+//   tagged   — has a category but was never confirmed here (legacy swipe-tags,
+//              and every trip that existed before v101.7)
+//   approved — the user explicitly confirmed it in the review UI
+// Deliberately NOT a lock: a mis-tag must stay correctable, so 'approved' is an
+// audit stamp, not a write barrier.
+function tripReviewStatus(t){
+  if(!t) return 'pending';
+  if(t.approved_at) return 'approved';
+  var c=t.category;
+  return (c&&c!=='unknown')?'tagged':'pending';
+}
+function isPendingTrip(t){ return tripReviewStatus(t)==='pending'; }
+// ATO treats commute as private, so the review screen groups it with personal
+// everywhere EXCEPT the business total. Mirrors kmByCat() in the v101 tax block.
+function isPrivateCat(c){ return c==='personal'||c==='commute'; }
+
+// ── Period helpers ───────────────────────────────────────────────────────────
+function monthKeyOf(dateStr){ return typeof dateStr==='string'?dateStr.slice(0,7):''; }
+// Days in a 'YYYY-MM'. Explicit-arg Date = deterministic, reads no clock.
+function daysInMonthKey(mk){
+  if(typeof mk!=='string'||mk.length<7) return 0;
+  var y=+mk.slice(0,4), m=+mk.slice(5,7);
+  if(!y||!m||m<1||m>12) return 0;
+  return new Date(y,m,0).getDate();
+}
+// Distinct months present in a trip list, NEWEST FIRST (drives the month picker).
+function tripMonthKeys(list){
+  var seen={},out=[];
+  (list||[]).forEach(function(t){ var k=monthKeyOf(t&&t.date); if(k&&!seen[k]){ seen[k]=1; out.push(k); } });
+  return out.sort().reverse();
+}
+// Filter mode for the strip + map: all | business | private | pending.
+function filterTripsBy(list,mode){
+  list=(list||[]).slice();
+  if(mode==='business') return list.filter(function(t){ return t.category==='business'; });
+  if(mode==='private')  return list.filter(function(t){ return isPrivateCat(t.category); });
+  if(mode==='pending')  return list.filter(isPendingTrip);
+  return list;
+}
+
+// ── Day strip ────────────────────────────────────────────────────────────────
+// A day's rollup status. 'none' = nothing driven, so the chip renders flat.
+function dayStatus(ts){
+  if(!ts||!ts.length) return 'none';
+  var anyPending=false, allApproved=true;
+  ts.forEach(function(t){
+    var s=tripReviewStatus(t);
+    if(s==='pending') anyPending=true;
+    if(s!=='approved') allApproved=false;
+  });
+  if(anyPending) return 'pending';
+  return allApproved?'approved':'tagged';
+}
+// One row per calendar day of the month, oldest → newest. ALWAYS the full month
+// (not just days with trips) so the strip reads like a calendar and a gap is
+// visible as a gap. `bar` is 0–100, normalised to the biggest day in the month,
+// which is what makes the chips comparable at a glance.
+function buildDayStrip(list,monthKey){
+  var n=daysInMonthKey(monthKey); if(!n) return [];
+  var byDate={};
+  (list||[]).forEach(function(t){
+    if(!t||monthKeyOf(t.date)!==monthKey) return;
+    (byDate[t.date]||(byDate[t.date]=[])).push(t);
+  });
+  var rows=[], maxKm=0;
+  for(var d=1;d<=n;d++){
+    var ds=monthKey+'-'+String(d).padStart(2,'0');
+    var ts=(byDate[ds]||[]).slice().sort(function(a,b){ return (a.start_time||0)-(b.start_time||0); });
+    var km=0,bkm=0,pkm=0,pend=0;
+    ts.forEach(function(t){
+      var k=+t.distance_km||0; km+=k;
+      if(t.category==='business') bkm+=k; else if(isPrivateCat(t.category)) pkm+=k;
+      if(isPendingTrip(t)) pend++;
+    });
+    if(km>maxKm) maxKm=km;
+    rows.push({ date:ds, day:d, trips:ts, count:ts.length,
+                km:+km.toFixed(2), businessKm:+bkm.toFixed(2), privateKm:+pkm.toFixed(2),
+                pending:pend, status:dayStatus(ts), bar:0 });
+  }
+  rows.forEach(function(r){ r.bar = maxKm>0 ? Math.round((r.km/maxKm)*100) : 0; });
+  return rows;
+}
+// Period totals over built day rows.
+// NOTE businessPct here is a REVIEW-SCREEN display figure over the selected
+// month. It is NOT the ATO logbook business-use % — that is logbookPct() in the
+// v101 tax block, computed over a locked 12-week window per vehicle. Do not
+// wire this into any claim calculation.
+function periodSummary(rows){
+  var o={daysDriven:0,totalKm:0,businessKm:0,privateKm:0,trips:0,pending:0,businessPct:0};
+  (rows||[]).forEach(function(r){
+    if(r.count) o.daysDriven++;
+    o.totalKm+=r.km; o.businessKm+=r.businessKm; o.privateKm+=r.privateKm;
+    o.trips+=r.count; o.pending+=r.pending;
+  });
+  o.totalKm=+o.totalKm.toFixed(2); o.businessKm=+o.businessKm.toFixed(2); o.privateKm=+o.privateKm.toFixed(2);
+  o.businessPct = o.totalKm>0 ? Math.round((o.businessKm/o.totalKm)*100) : 0;
+  return o;
+}
+
+// ── Approval ─────────────────────────────────────────────────────────────────
+// Apply a category. PURE — returns a NEW object, never mutates the input, so a
+// caller can diff before committing. `approved_at` is the single additive field
+// v101.7 introduces; every other reader of mcn_trips ignores it.
+function applyTripCategory(t,cat,nowMs){
+  var out={};
+  for(var k in t) if(Object.prototype.hasOwnProperty.call(t,k)) out[k]=t[k];
+  out.category=cat; out.edited_by_user=true; out.approved_at=nowMs;
+  return out;
+}
+// Send a trip back to pending (the "unapprove" path — a mis-tag must be
+// recoverable). Drops the stamp and the category, keeps everything else.
+function clearTripCategory(t){
+  var out={};
+  for(var k in t) if(Object.prototype.hasOwnProperty.call(t,k)) out[k]=t[k];
+  out.category='unknown'; out.edited_by_user=true; delete out.approved_at;
+  return out;
+}
+// What "Approve all" would do for a day: every trip that already carries a
+// decision (explicit category, else the auto suggestion) is approved as-is; a
+// trip with neither has no honest default, so it stays pending and the UI says
+// so rather than silently guessing business.
+function approvalPlan(ts){
+  var approve=[], skip=[];
+  (ts||[]).forEach(function(t){
+    if(tripReviewStatus(t)==='approved') return;
+    var c=(t.category&&t.category!=='unknown')?t.category:(t.suggest_category||null);
+    if(c) approve.push({id:t.id,category:c}); else skip.push(t.id);
+  });
+  return {approve:approve,skip:skip};
+}
+// Per-trip rows for the day sheet: A→B, times, km, average km/h.
+function daySegments(ts){
+  return (ts||[]).map(function(t){
+    var mins=+t.duration_min||0, km=+t.distance_km||0;
+    return { id:t.id, km:+km.toFixed(2), min:Math.round(mins),
+             kmh: mins>0 ? +(km/(mins/60)).toFixed(1) : 0,
+             start_time:t.start_time, end_time:t.end_time,
+             from:t.from_label||null, to:t.to_label||null,
+             category:(t.category&&t.category!=='unknown')?t.category:null,
+             suggest:t.suggest_category||null,
+             status:tripReviewStatus(t) };
+  });
+}
+// "A → B → C" from whatever labels the trips carry, collapsing repeats where
+// one trip ends where the next begins. Empty string when nothing is labelled
+// yet — the caller falls back to a km/points summary rather than showing "→".
+function routeLabelOf(ts){
+  var out=[];
+  (ts||[]).forEach(function(t){
+    [t.from_label,t.to_label].forEach(function(p){
+      if(p&&(!out.length||out[out.length-1]!==p)) out.push(p);
+    });
+  });
+  return out.join(' → ');
+}
+//__V102_TRIPLOG_PURE_END__
+
 // ── Auto-linking heuristics (impure: reads sites) ───────────────────────────
 // Nearest saved site to a point, within radius m. Returns {site,dist} or null.
 function nearestSiteTo(lat,lng,radiusM){
