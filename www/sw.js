@@ -11,7 +11,7 @@ const ASSETS = [
   './manifest.json',
   './tradie-app/icons/icon-192.png',
   './tradie-app/icons/icon-512.png',
-  'https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap',
+  'https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Montserrat:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap',
   'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js',
   'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js',
   'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js',
