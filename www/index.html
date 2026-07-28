@@ -411,6 +411,14 @@
   .day-chip__pill{display:inline-block;margin-top:7px;padding:2px 8px;border-radius:999px;font-size:9.5px;font-weight:800;
     letter-spacing:.4px;text-transform:uppercase;white-space:nowrap}
   .pill-pending{background:var(--accent-tint);color:var(--accent)}
+  .pill-onsite{background:var(--line-soft);color:var(--ink-soft)}
+  /* On-site movement: present but visibly secondary to travel, everywhere. */
+  .day-chip__onsite{display:block;font-size:10px;font-weight:600;color:var(--ink-soft);margin-top:2px}
+  .day-chip--all .day-chip__onsite{color:rgba(255,255,255,.7)}
+  .tl-metrics .tl-onsite{color:var(--ink-soft);font-weight:600}
+  .tl-seg.is-onsite{background:var(--paper-dim);border-style:dashed;opacity:.82}
+  .tl-seg.is-onsite .tl-seg-route,.tl-seg.is-onsite .tl-seg-km{color:var(--ink-soft)}
+  .tl-seg-onsite{font-size:11.5px;font-weight:600;color:var(--ink-soft);margin-top:9px}
   .pill-approved{background:#e8f5ec;color:#1a7f42}
   .pill-tagged{background:var(--line-soft);color:var(--ink-soft)}
   .dark .pill-approved{background:rgba(34,197,94,.16);color:#5fd48a}
@@ -7857,6 +7865,97 @@ function isPendingTrip(t){ return tripReviewStatus(t)==='pending'; }
 // everywhere EXCEPT the business total. Mirrors kmByCat() in the v101 tax block.
 function isPrivateCat(c){ return c==='personal'||c==='commute'; }
 
+// ── Intra-site movement ──────────────────────────────────────────────────────
+// Driving a buggy around a paddock is not travel. Any trip whose ENTIRE GPS
+// trail sits inside ONE work-site fence is "on-site movement": kept, shown, and
+// excluded from km, from the business/private split, and from the review queue
+// (it is neither business nor private, so demanding a decision on it is noise).
+//
+// The fences here are CIRCLES — `setCircularRegion(lat,lng,radius)` natively and
+// `dist(...) < site.radius` in JS — not polygons, so the predicate is a geodesic
+// distance compared against the radius. That is deliberately the SAME test the
+// geofence auto-start/stop uses, so a trip can never be judged "on site" by a
+// rule that disagrees with the one that started the timer.
+var TRIP_INTRA_SITE_CFG = {
+  // GPS drift near a boundary must not turn a real paddock lap into travel, so
+  // the fence is treated as slightly generous. 50m is well under the smallest
+  // real fence (1050m) and well over typical drift.
+  boundary_slack_m: 50
+};
+// Geodesic metres between two points. Self-contained so the pure block stays
+// extractable; identical formula to dist() in the app.
+function _fenceHaversine(la1,lo1,la2,lo2){
+  var R=6371000,tr=Math.PI/180,p1=la1*tr,p2=la2*tr,dp=(la2-la1)*tr,dl=(lo2-lo1)*tr;
+  var a=Math.sin(dp/2)*Math.sin(dp/2)+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)*Math.sin(dl/2);
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+// Is a point within this circular fence, allowing `slackM` beyond the edge?
+function pointInFence(lat,lng,site,slackM){
+  if(!site||site.lat==null||site.lng==null||lat==null||lng==null) return false;
+  var r=(+site.radius||150)+(slackM||0);
+  return _fenceHaversine(lat,lng,site.lat,site.lng)<=r;
+}
+// Every point that describes where a trip went. Prefers the GPS trail; falls
+// back to the endpoints so a manually-entered trip with coordinates is still
+// judged, and yields nothing when there is nothing to judge.
+function tripPoints(t){
+  if(!t) return [];
+  if(t.polyline&&t.polyline.length) return t.polyline.filter(function(p){ return p&&p.lat!=null&&p.lng!=null; });
+  var out=[];
+  if(t.start_lat!=null&&t.start_lng!=null) out.push({lat:t.start_lat,lng:t.start_lng});
+  if(t.end_lat!=null&&t.end_lng!=null) out.push({lat:t.end_lat,lng:t.end_lng});
+  return out;
+}
+// Classify one trip. Returns {intraSite, site_id, site_name, reason}.
+//
+// A trip is on-site iff SOME single fence contains ALL of its points. That one
+// sentence handles every edge case without special-casing:
+//   • Site A → Site B  — no single fence holds both ends       → travel
+//   • 30m boundary drift — still inside radius+slack           → on-site
+//   • 200m excursion   — outside radius+slack                  → travel
+//   • transit through a site — the far endpoints are outside   → travel
+//   • no fences / no points — nothing contains everything      → travel (safe default)
+// The default always falls to "real trip", so a missing or mis-sized fence can
+// never silently erase kilometres Steven actually drove.
+function classifyIntraSite(trip, siteList, cfg){
+  var slack=(cfg&&cfg.boundary_slack_m!=null)?cfg.boundary_slack_m:TRIP_INTRA_SITE_CFG.boundary_slack_m;
+  var pts=tripPoints(trip);
+  if(!pts.length) return {intraSite:false,site_id:null,site_name:null,reason:'no positions to judge'};
+  var list=siteList||[];
+  if(!list.length) return {intraSite:false,site_id:null,site_name:null,reason:'no sites defined'};
+  for(var i=0;i<list.length;i++){
+    var s=list[i], all=true;
+    for(var j=0;j<pts.length;j++){
+      if(!pointInFence(pts[j].lat,pts[j].lng,s,slack)){ all=false; break; }
+    }
+    if(all) return {intraSite:true,site_id:(s.id||s.name||null),site_name:(s.name||null),
+                    reason:'every position inside '+(s.name||'a site')};
+  }
+  return {intraSite:false,site_id:null,site_name:null,reason:'not contained by a single site'};
+}
+// Has the user overridden the automatic call? Then never re-classify — an
+// explicit human decision outranks the heuristic, permanently.
+function intraSiteLocked(t){ return !!(t&&t.intraSite_manual); }
+// The flag the UI and the day maths read.
+function isIntraSite(t){ return !!(t&&t.intraSite); }
+// Recompute flags for a list of trips. PURE — returns {trips, changed}; the
+// caller decides whether to persist. Trips the user reclassified are untouched.
+function applyIntraSiteFlags(list, siteList, cfg){
+  var changed=0;
+  var out=(list||[]).map(function(t){
+    if(intraSiteLocked(t)) return t;
+    var c=classifyIntraSite(t,siteList,cfg);
+    if(!!t.intraSite===c.intraSite && (t.intraSite_site||null)===(c.site_id||null)) return t;
+    changed++;
+    var n={};
+    for(var k in t) if(Object.prototype.hasOwnProperty.call(t,k)) n[k]=t[k];
+    n.intraSite=c.intraSite;
+    if(c.intraSite) n.intraSite_site=c.site_id; else delete n.intraSite_site;
+    return n;
+  });
+  return {trips:out,changed:changed};
+}
+
 // ── Period helpers ───────────────────────────────────────────────────────────
 function monthKeyOf(dateStr){ return typeof dateStr==='string'?dateStr.slice(0,7):''; }
 // Days in a 'YYYY-MM'. Explicit-arg Date = deterministic, reads no clock.
@@ -7872,21 +7971,29 @@ function tripMonthKeys(list){
   (list||[]).forEach(function(t){ var k=monthKeyOf(t&&t.date); if(k&&!seen[k]){ seen[k]=1; out.push(k); } });
   return out.sort().reverse();
 }
-// Filter mode for the strip + map: all | business | private | pending.
+// Filter mode for the strip + map: all | business | private | pending | onsite.
+// business/private/pending are all TRAVEL concepts, so on-site movement is
+// excluded from each of them; 'onsite' isolates it for inspection.
 function filterTripsBy(list,mode){
   list=(list||[]).slice();
-  if(mode==='business') return list.filter(function(t){ return t.category==='business'; });
-  if(mode==='private')  return list.filter(function(t){ return isPrivateCat(t.category); });
-  if(mode==='pending')  return list.filter(isPendingTrip);
+  if(mode==='business') return list.filter(function(t){ return !isIntraSite(t)&&t.category==='business'; });
+  if(mode==='private')  return list.filter(function(t){ return !isIntraSite(t)&&isPrivateCat(t.category); });
+  if(mode==='pending')  return list.filter(function(t){ return !isIntraSite(t)&&isPendingTrip(t); });
+  if(mode==='onsite')   return list.filter(isIntraSite);
   return list;
 }
 
 // ── Day strip ────────────────────────────────────────────────────────────────
 // A day's rollup status. 'none' = nothing driven, so the chip renders flat.
+// On-site movement is excluded: it is neither business nor private, so it can
+// neither make a day "pending" nor hold one back from "approved". A day of
+// nothing but paddock laps is settled, not waiting on Steven.
 function dayStatus(ts){
   if(!ts||!ts.length) return 'none';
+  var travel=ts.filter(function(t){ return !isIntraSite(t); });
+  if(!travel.length) return 'onsite';
   var anyPending=false, allApproved=true;
-  ts.forEach(function(t){
+  travel.forEach(function(t){
     var s=tripReviewStatus(t);
     if(s==='pending') anyPending=true;
     if(s!=='approved') allApproved=false;
@@ -7909,14 +8016,19 @@ function buildDayStrip(list,monthKey){
   for(var d=1;d<=n;d++){
     var ds=monthKey+'-'+String(d).padStart(2,'0');
     var ts=(byDate[ds]||[]).slice().sort(function(a,b){ return (a.start_time||0)-(b.start_time||0); });
-    var km=0,bkm=0,pkm=0,pend=0;
+    var km=0,bkm=0,pkm=0,pend=0,onKm=0,onCount=0;
     ts.forEach(function(t){
-      var k=+t.distance_km||0; km+=k;
+      var k=+t.distance_km||0;
+      // On-site movement is tracked separately and NEVER folded into travel km,
+      // the business/private split, or the review queue.
+      if(isIntraSite(t)){ onKm+=k; onCount++; return; }
+      km+=k;
       if(t.category==='business') bkm+=k; else if(isPrivateCat(t.category)) pkm+=k;
       if(isPendingTrip(t)) pend++;
     });
     if(km>maxKm) maxKm=km;
     rows.push({ date:ds, day:d, trips:ts, count:ts.length,
+                travelCount:ts.length-onCount, onSiteCount:onCount, onSiteKm:+onKm.toFixed(2),
                 km:+km.toFixed(2), businessKm:+bkm.toFixed(2), privateKm:+pkm.toFixed(2),
                 pending:pend, status:dayStatus(ts), bar:0 });
   }
@@ -7928,14 +8040,21 @@ function buildDayStrip(list,monthKey){
 // month. It is NOT the ATO logbook business-use % — that is logbookPct() in the
 // v101 tax block, computed over a locked 12-week window per vehicle. Do not
 // wire this into any claim calculation.
+// totalKm/businessPct are TRAVEL only — on-site movement is reported alongside
+// (onSiteKm/onSiteCount) and never mixed in, so the headline km is the number
+// Steven would actually put on a logbook.
 function periodSummary(rows){
-  var o={daysDriven:0,totalKm:0,businessKm:0,privateKm:0,trips:0,pending:0,businessPct:0};
+  var o={daysDriven:0,totalKm:0,businessKm:0,privateKm:0,trips:0,pending:0,businessPct:0,
+         onSiteKm:0,onSiteCount:0,travelTrips:0};
   (rows||[]).forEach(function(r){
     if(r.count) o.daysDriven++;
     o.totalKm+=r.km; o.businessKm+=r.businessKm; o.privateKm+=r.privateKm;
     o.trips+=r.count; o.pending+=r.pending;
+    o.onSiteKm+=(r.onSiteKm||0); o.onSiteCount+=(r.onSiteCount||0);
+    o.travelTrips+=(r.travelCount!=null?r.travelCount:r.count);
   });
-  o.totalKm=+o.totalKm.toFixed(2); o.businessKm=+o.businessKm.toFixed(2); o.privateKm=+o.privateKm.toFixed(2);
+  o.totalKm=+o.totalKm.toFixed(2); o.businessKm=+o.businessKm.toFixed(2);
+  o.privateKm=+o.privateKm.toFixed(2); o.onSiteKm=+o.onSiteKm.toFixed(2);
   o.businessPct = o.totalKm>0 ? Math.round((o.businessKm/o.totalKm)*100) : 0;
   return o;
 }
@@ -7965,6 +8084,7 @@ function clearTripCategory(t){
 function approvalPlan(ts){
   var approve=[], skip=[];
   (ts||[]).forEach(function(t){
+    if(isIntraSite(t)) return;                       // on-site movement: nothing to decide
     if(tripReviewStatus(t)==='approved') return;
     var c=(t.category&&t.category!=='unknown')?t.category:(t.suggest_category||null);
     if(c) approve.push({id:t.id,category:c}); else skip.push(t.id);
@@ -7981,7 +8101,8 @@ function daySegments(ts){
              from:t.from_label||null, to:t.to_label||null,
              category:(t.category&&t.category!=='unknown')?t.category:null,
              suggest:t.suggest_category||null,
-             status:tripReviewStatus(t) };
+             intraSite:isIntraSite(t), siteName:t.intraSite_site||null,
+             status:isIntraSite(t)?'onsite':tripReviewStatus(t) };
   });
 }
 // "A → B → C" from whatever labels the trips carry, collapsing repeats where
@@ -8435,7 +8556,8 @@ var tlSat=false;           // satellite base layer on/off
 var tlMap=null, tlBaseTopo=null, tlBaseSat=null, tlBaseSatRef=null;
 var tlRouteLayer=null;     // LayerGroup holding the drawn trails
 var TL_FILTERS=[{k:'all',label:'All trips'},{k:'business',label:'Business only'},
-                {k:'private',label:'Private only'},{k:'pending',label:'Needs review'}];
+                {k:'private',label:'Private only'},{k:'pending',label:'Needs review'},
+                {k:'onsite',label:'On-site movement'}];
 var TL_MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 function tlMonthLabel(mk){
@@ -8453,11 +8575,30 @@ function tlDefaultMonth(){
 function tlMonthTrips(){
   return filterTripsBy(trips().filter(function(t){ return monthKeyOf(t&&t.date)===tlMonth; }), tlFilter);
 }
+// Recompute the on-site flags against the CURRENT sites and persist only if
+// something actually changed. Run on render so editing a site's radius (or
+// adding one) re-settles history instead of leaving a stale flag behind; the
+// no-change path writes nothing, so this never spams Firestore. Trips the user
+// reclassified by hand are skipped by applyIntraSiteFlags.
+function tlSyncIntraSite(){
+  try{
+    var res=applyIntraSiteFlags(trips(),sites(),TRIP_INTRA_SITE_CFG);
+    if(res.changed){
+      setTrips(res.trips);
+      try{ GeoLog.add('info','On-site movement: '+res.changed+' trip(s) reclassified'); }catch(_){}
+    }
+    return res.changed;
+  }catch(e){
+    try{ GeoLog.add('error','On-site classify failed: '+e.message); }catch(_){}
+    return 0;                                    // fail open: everything stays travel
+  }
+}
 
 // ── Main render ──────────────────────────────────────────────────────────────
 function renderTrips(){
   var wrap=document.querySelector('#screen-trips .tl-wrap'); if(!wrap) return;
   if(!tlMonth) tlMonth=tlDefaultMonth();
+  tlSyncIntraSite();                    // settle on-site flags before any maths reads them
   var isActive=document.getElementById('screen-trips').classList.contains('active');
   var vs=vehicles(), all=trips();
   // First-run: nothing to review and nowhere to attribute km.
@@ -8504,7 +8645,8 @@ function tlRenderHead(rows){
   var m=document.getElementById('tl-metrics');
   if(m){
     var bits='<b>'+sum.daysDriven+'</b> day'+(sum.daysDriven===1?'':'s')+
-             ' · <b>'+Math.round(sum.totalKm)+'</b> km';
+             ' · <b>'+Math.round(sum.totalKm)+'</b> km travel';
+    if(sum.onSiteCount>0) bits+=' <span class="tl-onsite">+'+sum.onSiteCount+' on-site</span>';
     if(sum.totalKm>0) bits+=' · <b>'+sum.businessPct+'%</b> business';
     if(sum.pending>0) bits+=' · <span class="tl-pending">'+sum.pending+' to review</span>';
     if(tlFilter!=='all'){
@@ -8532,7 +8674,8 @@ function tlRenderRouteLabel(){
   if(!label) label=day.count+' trip'+(day.count===1?'':'s')+' · route not named yet';
   el.className='tl-route on';
   el.innerHTML='<div>'+escHtml(label)+'</div>'+
-    '<div class="tl-route-sub">'+day.km.toFixed(1)+' km · '+day.count+' trip'+(day.count===1?'':'s')+
+    '<div class="tl-route-sub">'+day.km.toFixed(1)+' km · '+day.travelCount+' trip'+(day.travelCount===1?'':'s')+
+    (day.onSiteCount?(' · +'+day.onSiteCount+' on-site'):'')+
     (day.pending?(' · '+day.pending+' to review'):'')+'</div>';
 }
 
@@ -8552,10 +8695,13 @@ function tlRenderStrip(rows){
   // noise, and the date on each chip already makes gaps legible.
   var driven=rows.filter(function(r){return r.count>0;});
   html+=driven.map(function(r){
+    // Travel km is the headline; on-site movement rides along as a subtle
+    // secondary count so a paddock day still shows it happened.
+    var onsite=r.onSiteCount>0?('<span class="day-chip__onsite">+'+r.onSiteCount+' on-site</span>'):'';
     return '<button class="day-chip'+(tlSel===r.date?' sel':'')+'" data-date="'+r.date+'" onclick="tlSelectDay(\''+r.date+'\')">'+
       '<div class="day-chip__big">'+String(r.day).padStart(2,'0')+'</div>'+
       '<div class="day-chip__date">'+tlDowLabel(r.date)+'</div>'+
-      '<div class="day-chip__km">'+r.km.toFixed(1)+' km</div>'+
+      '<div class="day-chip__km">'+r.km.toFixed(1)+' km'+onsite+'</div>'+
       '<div class="day-chip__bar"><i style="width:'+r.bar+'%"></i></div>'+
       '<span class="day-chip__pill '+tlPillClass(r.status)+'">'+tlPillText(r)+'</span>'+
       '</button>';
@@ -8577,8 +8723,14 @@ function tlDowLabel(ds){
   var mon=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+p[1]-1];
   return dow+' '+(+p[2])+' '+mon;
 }
-function tlPillClass(s){ return s==='approved'?'pill-approved':(s==='pending'?'pill-pending':'pill-tagged'); }
+function tlPillClass(s){
+  if(s==='approved') return 'pill-approved';
+  if(s==='pending') return 'pill-pending';
+  if(s==='onsite') return 'pill-onsite';
+  return 'pill-tagged';
+}
 function tlPillText(r){
+  if(r.status==='onsite') return 'on-site only';
   if(r.status==='pending') return '◉ '+r.pending+' new';
   if(r.status==='approved') return '✓ approved';
   // All categorised but not confirmed here — show the mix rather than a bare tick.
@@ -8634,6 +8786,9 @@ function tlTrailStyle(cat){
   if(c==='unknown') return {color:'#e04a00',dash:'7,8'};
   return {color:TRIP_CAT_META[c].hex,dash:null};
 }
+// On-site movement still draws — it is real GPS and hiding it would make km
+// vanish with no explanation — but muted and thin so it recedes behind travel.
+var TL_ONSITE_STYLE={color:'#7d8a83',dash:'2,5'};
 function tlDraw(){
   var day=null;
   if(tlSel){
@@ -8649,17 +8804,19 @@ function tlDraw(){
   var bounds=null;
   drawable.forEach(function(t){
     var pts=t.polyline.map(function(p){ return [p.lat,p.lng]; });
-    var st=tlTrailStyle(t.category);
+    var onsite=isIntraSite(t);
+    var st=onsite?TL_ONSITE_STYLE:tlTrailStyle(t.category);
     // White casing first so the trail stays legible over satellite imagery.
-    L.polyline(pts,{color:'#ffffff',weight:8,opacity:.65,lineJoin:'round',lineCap:'round'}).addTo(tlRouteLayer);
-    var opts={color:st.color,weight:4,opacity:.95,lineJoin:'round',lineCap:'round'};
+    L.polyline(pts,{color:'#ffffff',weight:onsite?5:8,opacity:onsite?.4:.65,lineJoin:'round',lineCap:'round'}).addTo(tlRouteLayer);
+    var opts={color:st.color,weight:onsite?2.5:4,opacity:onsite?.8:.95,lineJoin:'round',lineCap:'round'};
     if(st.dash) opts.dashArray=st.dash;
     L.polyline(pts,opts).addTo(tlRouteLayer);
     var b=L.latLngBounds(pts);
     bounds=bounds?bounds.extend(b):b;
     // Endpoint dots only when a single day is in view — the whole month would
-    // be a confetti of markers.
-    if(day){
+    // be a confetti of markers. On-site laps get none: their start and end are
+    // the same yard, so the dots say nothing and just crowd the fence.
+    if(day&&!onsite){
       L.circleMarker(pts[0],{radius:6,color:'#fff',weight:2,fillColor:'#1a7f42',fillOpacity:1}).addTo(tlRouteLayer);
       L.circleMarker(pts[pts.length-1],{radius:6,color:'#fff',weight:2,fillColor:'#c2311b',fillOpacity:1}).addTo(tlRouteLayer);
     }
@@ -8793,8 +8950,9 @@ function tlRenderSheet(row){
   var body=document.getElementById('tl-sheet-body'), btn=document.getElementById('tl-approve-all');
   if(!body) return;
   if(h) h.textContent=tlDowLabel(row.date);
-  if(sub) sub.textContent=row.km.toFixed(1)+' km · '+row.count+' trip'+(row.count===1?'':'s')+
-    (row.businessKm>0?(' · '+row.businessKm.toFixed(1)+' km business'):'');
+  if(sub) sub.textContent=row.km.toFixed(1)+' km travel · '+row.travelCount+' trip'+(row.travelCount===1?'':'s')+
+    (row.businessKm>0?(' · '+row.businessKm.toFixed(1)+' km business'):'')+
+    (row.onSiteCount>0?(' · +'+row.onSiteCount+' on-site ('+row.onSiteKm.toFixed(1)+' km)'):'');
   var plan=approvalPlan(row.trips);
   if(btn){
     btn.disabled=!plan.approve.length;
@@ -8810,12 +8968,30 @@ function tlSegHtml(s,i){
   var route=(s.from||s.to)?((s.from||'Start')+' → '+(s.to||'End')):('Trip '+(i+1));
   var when=fmtTime(s.start_time)+(s.end_time?('–'+fmtTime(s.end_time)):'')+' · '+s.min+' min';
   var isPrivate=(s.category==='personal'||s.category==='commute');
-  return '<div class="tl-seg'+(s.status==='approved'?' is-approved':'')+'" id="tlseg-'+s.id+'">'+
-    '<div class="tl-seg-top"><div style="flex:1;min-width:0">'+
+  var head='<div class="tl-seg-top"><div style="flex:1;min-width:0">'+
       '<div class="tl-seg-route">'+escHtml(route)+'</div>'+
       '<div class="tl-seg-when">'+when+(s.status==='approved'?' · ✓ approved':'')+'</div>'+
     '</div><div><div class="tl-seg-km">'+s.km.toFixed(1)+'<span style="font-size:11px;font-weight:600"> km</span></div>'+
-      '<div class="tl-seg-kmh">'+(s.kmh>0?(s.kmh.toFixed(0)+' km/h avg'):'&nbsp;')+'</div></div></div>'+
+      '<div class="tl-seg-kmh">'+(s.kmh>0?(s.kmh.toFixed(0)+' km/h avg'):'&nbsp;')+'</div></div></div>';
+  // On-site movement: shown so it is never a mystery where the km went, but
+  // greyed and given no category buttons — it is neither business nor private.
+  // The one action offered is the escape hatch, because a fence that is too big
+  // would otherwise silently swallow a real trip with no way to say so.
+  if(s.intraSite){
+    // daySegments is pure, so it can only carry the site ID. Resolve the human
+    // name here — "s1" means nothing to Steven.
+    var siteLabel='';
+    try{
+      var sm=sites().filter(function(x){ return (x.id||x.name)===s.siteName; })[0];
+      siteLabel=sm?(sm.name||''):'';
+    }catch(_){}
+    return '<div class="tl-seg is-onsite" id="tlseg-'+s.id+'">'+head+
+      '<div class="tl-seg-onsite">🚜 On-site movement'+(siteLabel?(' · '+escHtml(siteLabel)):'')+
+        ' — not counted as travel</div>'+
+      '<div class="tl-seg-note"><a href="#" onclick="event.preventDefault();tlMarkAsTravel(\''+s.id+'\')" style="color:var(--accent)">Count this as travel →</a></div>'+
+    '</div>';
+  }
+  return '<div class="tl-seg'+(s.status==='approved'?' is-approved':'')+'" id="tlseg-'+s.id+'">'+head+
     '<div class="tl-seg-btns">'+
       '<button class="tl-cat-btn'+(s.category==='business'?' on':'')+'" onclick="tlSetCat(\''+s.id+'\',\'business\')">Business</button>'+
       '<button class="tl-cat-btn'+(isPrivate?' on-private':'')+'" onclick="tlSetCat(\''+s.id+'\',\'personal\')">Private</button>'+
@@ -8825,6 +9001,22 @@ function tlSegHtml(s,i){
     '<div class="tl-seg-note"><a href="#" onclick="event.preventDefault();openTripDetail(\''+s.id+'\')" style="color:var(--accent)">Details, vehicle &amp; notes →</a></div>'+
   '</div>';
 }
+// Manual override: this was called on-site, but it was really travel. Stamped
+// intraSite_manual so the classifier never overrules that decision again.
+function tlMarkAsTravel(id){
+  var all=trips();
+  var i=-1; all.forEach(function(t,n){ if(t.id===id) i=n; });
+  if(i<0) return;
+  var t={}; for(var k in all[i]) if(Object.prototype.hasOwnProperty.call(all[i],k)) t[k]=all[i][k];
+  t.intraSite=false; t.intraSite_manual=true; delete t.intraSite_site;
+  all[i]=t; setTrips(all);
+  try{ GeoLog.add('info','Trip '+id+' manually reclassified as travel'); }catch(_){}
+  toast('Counted as travel — now needs a category');
+  renderTrips();
+  var row=tlSel?tlDayRow(tlSel):null;
+  if(row&&row.count) tlRenderSheet(row);
+}
+window.tlMarkAsTravel=tlMarkAsTravel;
 // Commit a category decision. 'skip' sends the trip back to pending — the
 // deliberate escape hatch for "I don't want to decide this now" and for undoing
 // a mis-tap, which is why approval is a stamp and not a lock.
@@ -8872,20 +9064,24 @@ function tlExportCsv(){
   L.push(['Trip log',tlMonthLabel(tlMonth)].map(q).join(','));
   L.push(['Filter',(TL_FILTERS.filter(function(f){return f.k===tlFilter;})[0]||{}).label||'All trips'].map(q).join(','));
   L.push(['Days driven',sum.daysDriven].map(q).join(','));
-  L.push(['Total km',sum.totalKm.toFixed(2)].map(q).join(','));
+  L.push(['Travel km',sum.totalKm.toFixed(2)].map(q).join(','));
   L.push(['Business km',sum.businessKm.toFixed(2)].map(q).join(','));
   L.push(['Private km',sum.privateKm.toFixed(2)].map(q).join(','));
   L.push(['Business use (this month)',sum.businessPct+'%'].map(q).join(','));
+  // Reported, and explicitly excluded above, so the totals can't be misread.
+  L.push(['On-site movement (excluded from travel km)',
+          sum.onSiteKm.toFixed(2)+' km over '+sum.onSiteCount+' trip'+(sum.onSiteCount===1?'':'s')].map(q).join(','));
   L.push(['Still to review',sum.pending].map(q).join(','));
   L.push('');
-  L.push(['Date','Start','End','From','To','Km','Minutes','Avg km/h','Category','Review status','Vehicle','Notes'].map(q).join(','));
+  L.push(['Date','Start','End','From','To','Km','Minutes','Avg km/h','Category','Review status','On-site','Vehicle','Notes'].map(q).join(','));
   flat.forEach(function(t){
     var s=daySegments([t])[0];
     var v=vehicleById(t.vehicle_id);
     L.push([t.date,fmtTime(t.start_time),t.end_time?fmtTime(t.end_time):'',
             t.from_label||'',t.to_label||'',s.km.toFixed(2),s.min,s.kmh?s.kmh.toFixed(1):'',
-            (t.category&&t.category!=='unknown')?t.category:'untagged',
-            s.status,v?v.name:'',t.notes||''].map(q).join(','));
+            s.intraSite?'on-site':((t.category&&t.category!=='unknown')?t.category:'untagged'),
+            s.status,s.intraSite?('yes'+(s.siteName?(' ('+s.siteName+')'):'')):'',
+            v?v.name:'',t.notes||''].map(q).join(','));
   });
   // UTF-8 BOM + CRLF so Excel on Windows opens it cleanly (same as the v101 export).
   var blob=new Blob(['﻿'+L.join('\r\n')],{type:'text/csv;charset=utf-8;'});

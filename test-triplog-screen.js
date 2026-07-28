@@ -23,10 +23,14 @@ if (!m) { console.error('✗ could not find v102 trip-log pure markers in www/in
 const api = new Function(m[1] + `
 return {tripReviewStatus,isPendingTrip,isPrivateCat,monthKeyOf,daysInMonthKey,tripMonthKeys,
         filterTripsBy,dayStatus,buildDayStrip,periodSummary,applyTripCategory,clearTripCategory,
-        approvalPlan,daySegments,routeLabelOf};`)();
+        approvalPlan,daySegments,routeLabelOf,
+        pointInFence,tripPoints,classifyIntraSite,isIntraSite,intraSiteLocked,
+        applyIntraSiteFlags,TRIP_INTRA_SITE_CFG};`)();
 const { tripReviewStatus, isPendingTrip, isPrivateCat, monthKeyOf, daysInMonthKey, tripMonthKeys,
         filterTripsBy, dayStatus, buildDayStrip, periodSummary, applyTripCategory, clearTripCategory,
-        approvalPlan, daySegments, routeLabelOf } = api;
+        approvalPlan, daySegments, routeLabelOf,
+        pointInFence, tripPoints, classifyIntraSite, isIntraSite, intraSiteLocked,
+        applyIntraSiteFlags, TRIP_INTRA_SITE_CFG } = api;
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
@@ -208,6 +212,217 @@ ok('at the cap, nothing is collapsed',
    routeLabelOf([{ from_label: 'A', to_label: 'B' }, { from_label: 'B', to_label: 'C' }], 4) === 'A → B → C');
 ok('cap ignored when no cap given', routeLabelOf(busy, 0).split('→').length === 6);
 
+// ── Intra-site movement ──────────────────────────────────────────────────────
+// Fences in this app are CIRCLES (setCircularRegion natively, dist() < radius in
+// JS), not polygons — so the shipped predicate is geodesic-distance-vs-radius.
+// Synthetic Granite Belt coordinates; this repo is public.
+console.log('Intra-site: fence predicate');
+const SITE_A = { id: 'sA', name: 'Lucas Ranch', lat: -28.7200, lng: 152.0600, radius: 2900 };
+const SITE_B = { id: 'sB', name: 'Lds', lat: -28.5100, lng: 151.9400, radius: 1050 };
+const SITES = [SITE_A, SITE_B];
+
+// metres → degrees latitude. MUST use the same spherical earth radius the
+// predicate uses (R·π/180 ≈ 111,194.9 m/deg), not the WGS84 ellipsoidal
+// 110,574 — otherwise "2890 m from the centre" is really 2906 m to the code
+// under test, and a fixture meant to sit just inside the fence lands outside.
+const M_PER_DEG_LAT = 6371000 * Math.PI / 180;
+const mLat = m => m / M_PER_DEG_LAT;
+const northOf = (site, metres) => ({ lat: site.lat + mLat(metres), lng: site.lng });
+
+ok('centre is inside', pointInFence(SITE_A.lat, SITE_A.lng, SITE_A, 0));
+ok('just inside the radius', pointInFence(northOf(SITE_A, 2890).lat, northOf(SITE_A, 2890).lng, SITE_A, 0));
+ok('just outside the radius', !pointInFence(northOf(SITE_A, 2950).lat, northOf(SITE_A, 2950).lng, SITE_A, 0));
+ok('30m past the edge is inside with 50m slack',
+   pointInFence(northOf(SITE_A, 2930).lat, northOf(SITE_A, 2930).lng, SITE_A, 50));
+ok('200m past the edge is outside even with slack',
+   !pointInFence(northOf(SITE_A, 3100).lat, northOf(SITE_A, 3100).lng, SITE_A, 50));
+ok('default radius 150m when a site omits one',
+   pointInFence(-28.72 + mLat(100), 152.06, { lat: -28.72, lng: 152.06 }, 0) &&
+   !pointInFence(-28.72 + mLat(300), 152.06, { lat: -28.72, lng: 152.06 }, 0));
+ok('malformed site is never "inside"', !pointInFence(-28.72, 152.06, { lat: null, lng: null, radius: 999 }, 0));
+ok('slack default is 50m', TRIP_INTRA_SITE_CFG.boundary_slack_m === 50);
+
+// Build a trip from a list of {lat,lng} points.
+function tripOf(id, pts, extra) {
+  return Object.assign({
+    id, date: '2026-07-06', start_time: 1, distance_km: 4, duration_min: 30, category: 'unknown',
+    start_lat: pts[0].lat, start_lng: pts[0].lng,
+    end_lat: pts[pts.length - 1].lat, end_lng: pts[pts.length - 1].lng,
+    polyline: pts.map((p, i) => ({ lat: p.lat, lng: p.lng, t: i * 60000 })),
+  }, extra || {});
+}
+// A lap around inside Site A.
+const lapInA = [0, 400, 900, 1400, 900, 300].map(d => northOf(SITE_A, d));
+
+console.log('Intra-site: the five specified fixtures');
+// 1. wholly within one fence
+ok('FIXTURE 1: a trip fully inside one fence is intra-site',
+   classifyIntraSite(tripOf('f1', lapInA), SITES).intraSite === true);
+ok('FIXTURE 1: it names the site it was inside',
+   classifyIntraSite(tripOf('f1', lapInA), SITES).site_id === 'sA');
+// 2. across two fences → inter-site travel
+ok('FIXTURE 2: Site A → Site B is NOT intra-site (it is business travel)',
+   classifyIntraSite(tripOf('f2', [northOf(SITE_A, 0), { lat: -28.62, lng: 152.00 }, northOf(SITE_B, 0)]), SITES).intraSite === false);
+// 3. 30m boundary excursion, twice, returning
+ok('FIXTURE 3: two 30m drifts beyond the edge stay intra-site',
+   classifyIntraSite(tripOf('f3', [
+     northOf(SITE_A, 0), northOf(SITE_A, 2930), northOf(SITE_A, 1200),
+     northOf(SITE_A, 2925), northOf(SITE_A, 500),
+   ]), SITES).intraSite === true);
+// 4. 200m excursion → a real trip
+ok('FIXTURE 4: a 200m excursion makes it a real trip',
+   classifyIntraSite(tripOf('f4', [
+     northOf(SITE_A, 0), northOf(SITE_A, 3100), northOf(SITE_A, 500),
+   ]), SITES).intraSite === false);
+// 5. transit: starts and ends far outside, ~30% of points inside a fence
+const transit = [];
+for (let i = 0; i < 10; i++) transit.push({ lat: -28.90 + i * 0.02, lng: 152.06 });   // sweeps through A
+ok('FIXTURE 5: transit through a site is NOT intra-site',
+   classifyIntraSite(tripOf('f5', transit), SITES).intraSite === false);
+const insideCount = transit.filter(p => pointInFence(p.lat, p.lng, SITE_A, 50)).length;
+ok('FIXTURE 5: …and it genuinely does pass through the fence (some points inside)',
+   insideCount > 0 && insideCount < transit.length, { insideCount, of: transit.length });
+
+console.log('Intra-site: safe defaults');
+ok('no sites defined → real trip', classifyIntraSite(tripOf('n1', lapInA), []).intraSite === false);
+ok('no sites defined → reason says so', classifyIntraSite(tripOf('n1', lapInA), []).reason === 'no sites defined');
+ok('no positions → real trip', classifyIntraSite({ id: 'n2', distance_km: 5 }, SITES).intraSite === false);
+ok('null trip → real trip', classifyIntraSite(null, SITES).intraSite === false);
+ok('endpoints used when there is no polyline',
+   tripPoints({ start_lat: 1, start_lng: 2, end_lat: 3, end_lng: 4 }).length === 2);
+ok('polyline preferred over endpoints', tripPoints(tripOf('n3', lapInA)).length === lapInA.length);
+ok('a manual trip with no coordinates is judged on nothing → real',
+   classifyIntraSite({ id: 'n4', distance_km: 12, auto: false }, SITES).intraSite === false);
+
+console.log('Intra-site: flag application respects a human override');
+const flagged = applyIntraSiteFlags([tripOf('a1', lapInA), tripOf('a2', transit)], SITES);
+ok('lap flagged, transit not', isIntraSite(flagged.trips[0]) === true && isIntraSite(flagged.trips[1]) === false);
+ok('site recorded on the flagged trip', flagged.trips[0].intraSite_site === 'sA');
+// Only the positive case is written. A travel trip is left untouched rather
+// than stamped intraSite:false, so classifying does not rewrite every record.
+ok('only the on-site trip is rewritten', flagged.changed === 1, flagged.changed);
+ok('travel trip left byte-identical', !('intraSite' in flagged.trips[1]));
+ok('re-running changes nothing (idempotent)', applyIntraSiteFlags(flagged.trips, SITES).changed === 0);
+ok('inputs are never mutated', tripOf('a1', lapInA).intraSite === undefined);
+const overridden = applyIntraSiteFlags(
+  [tripOf('m1', lapInA, { intraSite: false, intraSite_manual: true })], SITES);
+ok('a user reclassification is never overwritten', overridden.trips[0].intraSite === false);
+ok('…and is not counted as a change', overridden.changed === 0);
+ok('intraSiteLocked detects the override', intraSiteLocked({ intraSite_manual: true }) === true);
+
+console.log('Intra-site: day maths exclude it');
+const dayMix = [
+  tripOf('d1', lapInA, { date: '2026-07-06', distance_km: 6.0, category: 'unknown', intraSite: true }),
+  tripOf('d2', lapInA, { date: '2026-07-06', distance_km: 3.5, category: 'unknown', intraSite: true }),
+  tripOf('d3', transit, { date: '2026-07-06', distance_km: 40.0, category: 'business' }),
+  tripOf('d4', transit, { date: '2026-07-06', distance_km: 10.0, category: 'personal' }),
+];
+const mixStrip = buildDayStrip(dayMix, '2026-07');
+const mixDay = mixStrip[5];
+ok('day km counts travel only (40 + 10, not 49.5)', mixDay.km === 50, mixDay.km);
+ok('on-site km reported separately (9.5)', mixDay.onSiteKm === 9.5, mixDay.onSiteKm);
+ok('on-site count reported (2)', mixDay.onSiteCount === 2, mixDay.onSiteCount);
+ok('travel count excludes on-site (2)', mixDay.travelCount === 2, mixDay.travelCount);
+ok('total count still counts everything (4)', mixDay.count === 4, mixDay.count);
+ok('business km unaffected by on-site', mixDay.businessKm === 40);
+ok('private km unaffected by on-site', mixDay.privateKm === 10);
+ok('untagged on-site trips do NOT make the day pending', mixDay.pending === 0, mixDay.pending);
+ok('day status ignores on-site trips', mixDay.status === 'tagged', mixDay.status);
+const mixSum = periodSummary(mixStrip);
+ok('period total km is travel only', mixSum.totalKm === 50, mixSum.totalKm);
+ok('period business % computed on travel (80%)', mixSum.businessPct === 80, mixSum.businessPct);
+ok('period reports on-site km + count', mixSum.onSiteKm === 9.5 && mixSum.onSiteCount === 2);
+ok('period travelTrips excludes on-site', mixSum.travelTrips === 2, mixSum.travelTrips);
+// A day of nothing but paddock laps is settled, not waiting on a decision.
+const onlyOnSite = buildDayStrip([
+  tripOf('o1', lapInA, { date: '2026-07-09', distance_km: 5, intraSite: true }),
+], '2026-07');
+ok('a day of only on-site movement reads "onsite"', onlyOnSite[8].status === 'onsite', onlyOnSite[8].status);
+ok('…contributes 0 travel km', onlyOnSite[8].km === 0);
+ok('…and is not pending', onlyOnSite[8].pending === 0);
+ok('bar normalisation uses travel km, so an on-site-only day has no bar', onlyOnSite[8].bar === 0);
+
+console.log('Intra-site: approval, filters and segments');
+// d1/d2 are on-site (nothing to decide); d3/d4 are genuine travel with
+// categories, so they remain approvable.
+const mixPlan = approvalPlan(dayMix);
+ok('approve-all offers only the travel trips', mixPlan.approve.map(a => a.id).join(',') === 'd3,d4',
+   mixPlan.approve.map(a => a.id));
+ok('approve-all never lists an on-site trip',
+   !mixPlan.approve.concat(mixPlan.skip.map(id => ({ id }))).some(a => a.id === 'd1' || a.id === 'd2'));
+ok('approve-all skips nothing here', mixPlan.skip.length === 0);
+ok('approve-all still offers a genuine untagged travel trip',
+   approvalPlan([tripOf('x', transit, { category: 'unknown', suggest_category: 'business' })]).approve.length === 1);
+ok('business filter excludes on-site', filterTripsBy(dayMix, 'business').length === 1);
+ok('pending filter excludes on-site', filterTripsBy(dayMix, 'pending').length === 0);
+ok('onsite filter isolates them', filterTripsBy(dayMix, 'onsite').length === 2);
+ok('all still returns everything', filterTripsBy(dayMix, 'all').length === 4);
+const mixSegs = daySegments(dayMix);
+ok('segments flag on-site', mixSegs[0].intraSite === true && mixSegs[2].intraSite === false);
+ok('on-site segment status is "onsite" (never pending)', mixSegs[0].status === 'onsite');
+ok('travel segment keeps its real status', mixSegs[2].status === 'tagged');
+
+// ── CROSS-CHECK: two independent implementations of the same predicate ───────
+// The shipped predicate is geodesic distance vs radius. This checks it against
+// ray-casting point-in-polygon over the SAME fence polygonised — a genuinely
+// different algorithm. Turf.js is used when installed (third-party, independent);
+// a local ray-caster always runs, so the cross-check never silently disappears.
+console.log('Intra-site: cross-check vs an independent implementation');
+function circleToPolygon(site, steps) {
+  const ring = [], R = 6371000, latR = site.lat * Math.PI / 180;
+  for (let i = 0; i < steps; i++) {
+    const th = (i / steps) * 2 * Math.PI;
+    const dLat = (site.radius * Math.cos(th)) / R * (180 / Math.PI);
+    const dLng = (site.radius * Math.sin(th)) / (R * Math.cos(latR)) * (180 / Math.PI);
+    ring.push([site.lng + dLng, site.lat + dLat]);
+  }
+  ring.push(ring[0]);
+  return ring;
+}
+// Classic ray casting (Jordan curve), independent of any distance formula.
+function rayCastInside(lat, lng, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+    if (((yi > lat) !== (yj > lat)) && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+let turf = null;
+try {
+  const c = require('@turf/circle');
+  const b = require('@turf/boolean-point-in-polygon');
+  turf = { circle: c.circle || c.default || c, inside: b.booleanPointInPolygon || b.default || b };
+} catch (_) { /* optional */ }
+
+// Sample a grid around Site A and require both methods to agree. Points within
+// 15m of the boundary are skipped: polygonisation is an approximation there, so
+// disagreement is expected geometry, not a bug in either implementation.
+let compared = 0, disagreeLocal = 0, disagreeTurf = 0;
+const ringA = circleToPolygon(SITE_A, 720);
+const turfA = turf ? turf.circle([SITE_A.lng, SITE_A.lat], SITE_A.radius / 1000, { steps: 720, units: 'kilometers' }) : null;
+for (let dy = -4000; dy <= 4000; dy += 250) {
+  for (let dx = -4000; dx <= 4000; dx += 250) {
+    const lat = SITE_A.lat + mLat(dy);
+    const lng = SITE_A.lng + (dx / 110574) / Math.cos(SITE_A.lat * Math.PI / 180);
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (Math.abs(d - SITE_A.radius) < 15) continue;
+    compared++;
+    const shipped = pointInFence(lat, lng, SITE_A, 0);
+    if (shipped !== rayCastInside(lat, lng, ringA)) disagreeLocal++;
+    if (turfA && shipped !== turf.inside([lng, lat], turfA)) disagreeTurf++;
+  }
+}
+ok('cross-check sampled a meaningful grid', compared > 800, compared);
+ok('shipped predicate agrees with ray-casting point-in-polygon everywhere',
+   disagreeLocal === 0, { disagreements: disagreeLocal, of: compared });
+if (turf) {
+  ok('shipped predicate agrees with Turf.js booleanPointInPolygon everywhere',
+     disagreeTurf === 0, { disagreements: disagreeTurf, of: compared });
+} else {
+  console.log('  … Turf.js not installed — ran the local ray-caster only (npm i -D @turf/circle @turf/boolean-point-in-polygon)');
+}
+
 // ── REGRESSION PIN ───────────────────────────────────────────────────────────
 // test_trip_log_screen_renders_from_mcn_trips
 // Fixture matches the exact record shape v101.6's TripLogService → JS replay
@@ -252,6 +467,39 @@ ok('pin: approve-all adopts the existing business category',
    approvalPlan(pinDay.trips).approve.length === 1 && approvalPlan(pinDay.trips).approve[0].category === 'business');
 // A day with a real trip must never render as 'none' — that would hide driving.
 ok('pin: a day with a trip is never status "none"', pinDay.status !== 'none');
+
+// test_intra_site_trip_filters_from_km_total
+// Steven's ONE real captured trip (2026-07-27, 35.54 km) spans ~24 km between
+// its endpoints, against fences of 2900 m and 1050 m — the real radii. The
+// on-site rule must NOT swallow it: a classifier that erased his only captured
+// trip would be worse than no classifier. Geometry matches the real record;
+// absolute coordinates are synthetic because this repo is public.
+console.log('REGRESSION PIN: test_intra_site_trip_filters_from_km_total');
+const REAL_SITES = [
+  { id: 'sr1', name: 'Big Fence', lat: -28.7300, lng: 152.0700, radius: 2900 },
+  { id: 'sr2', name: 'Small Fence', lat: -28.5100, lng: 151.9400, radius: 1050 },
+];
+const realTrip = REAL_SHAPE[0];
+ok('pin: the real captured trip is NOT classified as on-site',
+   classifyIntraSite(realTrip, REAL_SITES).intraSite === false,
+   classifyIntraSite(realTrip, REAL_SITES));
+ok('pin: …and its 35.54 km stays in the travel total',
+   periodSummary(buildDayStrip(applyIntraSiteFlags([realTrip], REAL_SITES).trips, '2026-07')).totalKm === 35.54);
+ok('pin: …contributing 0 on-site km',
+   periodSummary(buildDayStrip(applyIntraSiteFlags([realTrip], REAL_SITES).trips, '2026-07')).onSiteKm === 0);
+// The complement: a lap inside the big fence IS filtered out of the km total.
+const yardLap = {
+  id: 'yard', date: '2026-07-27', start_time: 5, distance_km: 7.25, duration_min: 40, category: 'unknown',
+  polyline: [0, 800, 1600, 700, 100].map((m, i) => ({
+    lat: REAL_SITES[0].lat + m / M_PER_DEG_LAT, lng: REAL_SITES[0].lng, t: i * 60000 })),
+};
+const bothFlagged = applyIntraSiteFlags([realTrip, yardLap], REAL_SITES).trips;
+const bothSum = periodSummary(buildDayStrip(bothFlagged, '2026-07'));
+ok('pin: a yard lap inside the big fence IS filtered from km total',
+   bothSum.totalKm === 35.54, bothSum.totalKm);
+ok('pin: …and is reported as on-site instead', bothSum.onSiteKm === 7.25, bothSum.onSiteKm);
+ok('pin: …without being deleted', bothFlagged.length === 2);
+ok('pin: the day still shows both trips', buildDayStrip(bothFlagged, '2026-07')[26].count === 2);
 
 console.log('\n' + (fail === 0 ? '✅ ALL PASS' : '❌ FAIL') + `  (${pass} passed, ${fail} failed)`);
 process.exit(fail === 0 ? 0 : 1);

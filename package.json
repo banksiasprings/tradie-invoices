@@ -4,7 +4,7 @@
   "description": "A Progressive Web App (PWA) for tradespeople to manage timesheets, track work hours, and generate professional PDF invoices.",
   "main": "sw.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node test-triplog-screen.js && node test-triplog-screen-live.js"
   },
   "repository": {
     "type": "git",
@@ -28,5 +28,10 @@
     "@capacitor/share": "^8.0.1",
     "@capgo/capacitor-updater": "^8.45.3",
     "capacitor-email-composer": "^8.0.0"
+  },
+  "devDependencies": {
+    "@turf/boolean-point-in-polygon": "^7.3.5",
+    "@turf/circle": "^7.3.5",
+    "@turf/helpers": "^7.3.5"
   }
 }

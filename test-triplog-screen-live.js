@@ -296,6 +296,89 @@ function serve() {
   ok('June shows its single day', await ev(`document.querySelectorAll('#tl-strip .day-chip[data-date]').length`) === 1);
   ok('selection cleared when the month changed', await ev('tlSel') === null);
 
+  console.log('Intra-site movement is classified and excluded live');
+  // Two paddock laps wholly inside the Lucas Ranch fence + one real trip out.
+  // Coordinates are offset in metres using the same spherical constant the
+  // predicate uses, so "inside by 900m" really is inside.
+  await ev(`(function(){
+    var SITE={id:'s1',name:'Lucas Ranch',lat:-28.72,lng:152.06,radius:2900};
+    localStorage.setItem('mcn_sites',JSON.stringify([SITE]));
+    var M=6371000*Math.PI/180;
+    function at(m){ return {lat:SITE.lat+m/M,lng:SITE.lng}; }
+    var D=function(d,h,mi){ return new Date(2026,6,d,h,mi).getTime(); };
+    function lap(id,day,h,offsets,km){
+      var t0=D(day,h,0);
+      var p=offsets.map(function(o,i){ var q=at(o); return {lat:q.lat,lng:q.lng,t:t0+i*60000}; });
+      return {id:id,vehicle_id:'v1',category:'unknown',start_time:t0,end_time:t0+1800000,
+        start_lat:p[0].lat,start_lng:p[0].lng,end_lat:p[p.length-1].lat,end_lng:p[p.length-1].lng,
+        polyline:p,distance_km:km,duration_min:30,notes:'',
+        date:'2026-07-'+String(day).padStart(2,'0'),auto:true,edited_by_user:false,created_at:t0};
+    }
+    var real={id:'r1',vehicle_id:'v1',category:'business',start_time:D(8,7,0),end_time:D(8,8,0),
+      start_lat:SITE.lat,start_lng:SITE.lng,end_lat:-28.51,end_lng:151.94,
+      polyline:[{lat:SITE.lat,lng:SITE.lng,t:D(8,7,0)},{lat:-28.60,lng:152.00,t:D(8,7,30)},{lat:-28.51,lng:151.94,t:D(8,8,0)}],
+      distance_km:30,duration_min:60,notes:'',date:'2026-07-08',auto:true,edited_by_user:true,created_at:D(8,7,0)};
+    setTrips([ lap('l1',8,9,[0,900,1800,900,0],6),
+               lap('l2',8,13,[0,-1200,-400,0],3.5),
+               real ]);
+    tlMonth='2026-07'; tlSel=null; tlFilter='all'; renderTrips();
+    return 1;
+  })()`);
+  await sleep(900);
+  const stored = JSON.parse(await ev(`JSON.stringify(JSON.parse(localStorage.getItem('mcn_trips')))`));
+  const byId = Object.fromEntries(stored.map(t => [t.id, t]));
+  ok('paddock laps flagged intraSite and persisted', byId.l1.intraSite === true && byId.l2.intraSite === true);
+  ok('the flag records which site', byId.l1.intraSite_site === 's1', byId.l1.intraSite_site);
+  ok('the real outbound trip is NOT flagged', !byId.r1.intraSite);
+  ok('nothing was deleted — all 3 trips still stored', stored.length === 3);
+  const d8 = JSON.parse(await ev(`JSON.stringify(tlDayRow('2026-07-08'))`));
+  ok('day km counts travel only (30, not 39.5)', d8.km === 30, d8.km);
+  ok('on-site km reported separately (9.5)', d8.onSiteKm === 9.5, d8.onSiteKm);
+  ok('on-site count is 2', d8.onSiteCount === 2, d8.onSiteCount);
+  ok('untagged laps do not put the day in review', d8.pending === 0, d8.pending);
+  const chipHtml = await ev(`document.querySelector('#tl-strip .day-chip[data-date="2026-07-08"]').textContent`);
+  ok('chip shows travel km', /30\.0 km/.test(chipHtml), chipHtml);
+  ok('chip shows the on-site count as a secondary figure', /\+2 on-site/.test(chipHtml), chipHtml);
+  ok('header metrics label km as travel and carry the on-site count',
+     /km travel/.test(await ev(`document.getElementById('tl-metrics').textContent`)) &&
+     /\+2 on-site/.test(await ev(`document.getElementById('tl-metrics').textContent`)),
+     await ev(`document.getElementById('tl-metrics').textContent`));
+  await ev(`tlSelectDay('2026-07-08')`);
+  await sleep(900);
+  ok('all three legs still visible in the day sheet',
+     await ev(`document.querySelectorAll('#tl-sheet-body .tl-seg').length`) === 3);
+  ok('on-site legs are greyed', await ev(`document.querySelectorAll('#tl-sheet-body .tl-seg.is-onsite').length`) === 2);
+  ok('on-site legs are labelled as such',
+     /On-site movement/.test(await ev(`document.getElementById('tl-sheet-body').textContent`)));
+  // The label must name the site, not leak its internal id.
+  ok('on-site label names the site, not its id',
+     /On-site movement · Lucas Ranch/.test(await ev(`document.getElementById('tl-sheet-body').textContent`)) &&
+     !/· s1 —/.test(await ev(`document.getElementById('tl-sheet-body').textContent`)),
+     await ev(`document.querySelector('#tl-sheet-body .tl-seg.is-onsite .tl-seg-onsite').textContent`));
+  ok('route sub-line counts travel trips, with on-site alongside',
+     /1 trip · \+2 on-site/.test(await ev(`document.getElementById('tl-route').textContent`)),
+     await ev(`document.getElementById('tl-route').textContent`));
+  ok('on-site legs offer no category buttons',
+     await ev(`document.querySelectorAll('#tl-sheet-body .tl-seg.is-onsite .tl-cat-btn').length`) === 0);
+  ok('approve-all only counts the real trip',
+     (await ev(`document.getElementById('tl-approve-all').textContent`)) === 'Approve 1',
+     await ev(`document.getElementById('tl-approve-all').textContent`));
+  ok('on-site trails still drawn on the map (nothing hidden)',
+     await ev('tlRouteLayer.getLayers().length') >= 6, await ev('tlRouteLayer.getLayers().length'));
+  console.log('Manual reclassification wins over the classifier');
+  await ev(`tlMarkAsTravel('l1')`);
+  await sleep(500);
+  const l1 = JSON.parse(await ev(`JSON.stringify(JSON.parse(localStorage.getItem('mcn_trips')).filter(function(t){return t.id==='l1';})[0])`));
+  ok('reclassified to travel', l1.intraSite === false && l1.intraSite_manual === true);
+  ok('now counted in travel km (30 + 6)', await ev(`tlDayRow('2026-07-08').km`) === 36,
+     await ev(`tlDayRow('2026-07-08').km`));
+  ok('and now needs a category', await ev(`tlDayRow('2026-07-08').pending`) === 1);
+  await ev(`renderTrips()`);
+  await sleep(500);
+  ok('a re-render does NOT undo the manual override',
+     await ev(`JSON.parse(localStorage.getItem('mcn_trips')).filter(function(t){return t.id==='l1';})[0].intraSite`) === false);
+  ok('the other lap is still on-site', await ev(`tlDayRow('2026-07-08').onSiteCount`) === 1);
+
   console.log('Empty and offline states');
   await ev(`(function(){ setTrips([]); tlMonth=null; tlSel=null; renderTrips(); return 1; })()`);
   await sleep(500);
