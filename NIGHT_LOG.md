@@ -4,6 +4,73 @@ Running log of autonomous/agent work sessions. Newest first.
 
 ---
 
+## 2026-07-28 — v101.7 — Trip Log review screen (Opus 5)
+
+**Ask:** rebuild the Trips tab in the shape of Ross's AdvPlanner — full-bleed map,
+floating header, horizontal day strip, tap a day to review and approve its trips.
+
+**Shipped.** OTA live at `1.101.7`. APK served at `http://100.107.176.12:8770/`
+(**not** the 8765 in the brief — that port now runs the Freyr/btc-wheel-bot uvicorn API,
+and 8766 runs Voice Task; both are live services, so the APK got its own free port).
+
+### What real data told me before I designed anything
+Read `users/{uid}/data/trips` off Firestore first. It holds **exactly one trip** —
+2026-07-27, 35.54 km, 43.9 min, 41 polyline points. So **v101.6's TripLogService fix
+worked**; that is the first trip auto-capture has ever produced. Two things followed:
+- It is `category:'business'` with `edited_by_user:true` and **no `approved_at`** → the
+  screen shows it as *tagged*, not *approved*. Correct: he tagged it, he never confirmed
+  it here. Calling that "approved" would be the same vacuous-truth mistake v92.1 fixed.
+- It has **no `from_label`/`to_label` and `linked_site_id:null`** (its endpoint matches
+  neither saved site), so the AdvPlanner-style "A → B" header had **nothing to render**.
+  That is what forced the place-label work — it wasn't in the brief, but without it the
+  headline feature reads "Trip · 41 pts".
+
+### Deviations from the brief, and why
+- **Esri tiles, not OSM.** The brief said Leaflet + OSM. The app *already* loads Leaflet
+  1.9.4 (site picker) and *already* uses `server.arcgisonline.com` — the SW even precaches
+  Leaflet. Using Esri for both base layers meant **no new library, no new domain, no new
+  precache entry**, and satellite came free. Same "no billing key" property the brief wanted.
+- **Only driven days get a chip.** A full 31-chip calendar where 29 are blank is noise; the
+  date on each chip already makes gaps legible. The *builder* still models the whole month
+  (and is tested that way) — this is a render-time filter.
+- **Sheet is 54% tall, not a full overlay** — see the fit bug below.
+
+### Three Leaflet traps, all found by looking rather than reasoning
+1. **`fitBounds` is silently dropped during a zoom animation.** Selecting a day fires two
+   fits (once on render, once when the sheet has slid up); the second vanished and the route
+   sat off screen behind the sheet. Every programmatic fit is now `animate:false`. This cost
+   the most time and the symptom was byte-identical screenshots across three "fixes".
+2. **Padding larger than the container makes `fitBounds` give up entirely.** Clamped — but
+   only past 82% of the map height. My first clamp at 66% was *itself* the bug for a round.
+3. **The container is 0-height on the tick the screen is revealed**, so Leaflet initialises
+   into a zero box. The deferred `invalidateSize()` + redraw is the rescue; the live test now
+   asserts the rescue worked rather than pretending layout was instant.
+
+### One bug the browser could never have shown
+The signed-out banner (`#backup-warning`) is `position:sticky; z-index:500`. Every other
+screen flows *under* it; a fixed full-bleed screen sits *behind* it and loses its header —
+the month title was half-covered. Only visible on the emulator, with the banner forced on.
+`--tl-top-h` now measures it at render. Steven only sees that banner when he's been signed
+out, which is exactly when he least wants a broken screen.
+
+### Verification
+229 pure (103 new) · 55 live browser · emulator: money 7/7, geo-stop 6/6, v90 sessions
+15/15, trip service 10/10 + 42/42 live · real-APK render + approve round-trip.
+**Money/tax paths byte-identical** — zero money/tax function lines in the diff.
+
+Also de-pinned the `APP_VERSION` literal in `test-triplog-live.js` (it read `v101.6`); it now
+reads the expected version from `www/index.html`, so it catches a stale emulator build
+instead of failing on every legitimate bump.
+
+### Open / deferred
+- **Trip crossing midnight** is unhandled — a trip is filed under its `date`, so a drive
+  ending after midnight lands wholly on the start day. No real data exercises it yet.
+- **Snap-to-road (OSRM)** not needed at current trail quality — deferred, not dropped.
+- Place naming defaults **ON** and sends a coordinate to OpenStreetMap. Saved sites and Home
+  resolve offline; everything else is one cached lookup. Toggle in Settings if he'd rather not.
+
+---
+
 ## 2026-07-27 — v101.6 — trip auto-detect root cause + three field bugs (Opus 5)
 
 Steven: *"The invoice app is still not 100%. Trip monitoring is not automatically coming

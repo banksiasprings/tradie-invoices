@@ -22,10 +22,10 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2022) | v101.6 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2157) | v101.7 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.101.6 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.101.7 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -418,6 +418,84 @@ continuous capture (v100.1 native foreground-service), Xero mileage push → v10
 
 ---
 
+---
+
+## v101.7 — Trip Log Review Screen ("map, day strip, approve the day")
+
+Phase-2 major (SHIPPED 2026-07-28): the Trips tab is now a **review screen** in the
+shape of the UX Steven liked in his brother Ross's AdvPlanner — full-bleed map,
+floating header, horizontal day strip, tap a day to draw it and approve its trips.
+**STRICTLY ADDITIVE to the data layer** — money/tax paths, the v90 queue, v91
+rounding, v92 health, and the v101.6 `TripLogService` capture are UNTOUCHED (proven:
+zero money/tax function lines in the diff, plus the full emulator suite green). The
+JS is one clearly-marked module in `index.html` (search `═══ v101.7 TRIP LOG REVIEW SCREEN ═══`).
+
+**The screen** (`#screen-trips`, still entered via `renderTrips()` — the name and all
+17 call sites were deliberately kept, so nothing else in the app needed touching):
+- **Map** — the Leaflet that the site picker already loads, with the Esri tiles already
+  trusted (`World_Topo_Map`, satellite = `World_Imagery` + boundaries). **No new library,
+  domain, or API key.** Trails are coloured by category with a white casing so they stay
+  legible over imagery; **untagged trips draw dashed in the accent colour** so the ones
+  needing a decision catch the eye. Saved sites draw as context circles.
+- **Floating header** — month title + `‹ ›` (only offers months that have trips), metrics
+  line (`N days · N km · N% business · N to review`), and the route label for a selected
+  day (`Stanthorpe → Lucas Ranch`).
+- **Day strip** — `All` chip (period totals, dark `--hero-panel`) + one chip per **driven**
+  day (`.day-chip__big/__date/__km/__bar/__pill`). The km bar is normalised to the busiest
+  day in the month. Empty days get no chip — 31 chips where 29 are blank is noise.
+- **Day sheet** — per-leg rows (A→B, times, km, avg km/h) with **[Business] [Private] [Skip]**
+  + **Approve N**.
+- Palette is Ross's tokens **scoped to `#screen-trips`** (`--ink/--paper/--accent/--hero-panel`,
+  light + dark) so the rest of the app keeps navy/amber. Font: **Archivo** (added to the
+  existing Google Fonts URL — keep `www/sw.js` ASSETS in step or the precache misses).
+
+**Review status — 3 states, ONE additive field.** `tripReviewStatus()` derives:
+`pending` (category absent/'unknown'), `tagged` (has a category but was never confirmed
+here — **every trip that existed before v101.7**), `approved` (`approved_at` stamped).
+`approved_at` (ms) is the **only** schema addition; every other reader of `mcn_trips`
+ignores it. It is an **audit stamp, NOT a write lock** — a mis-tag must stay correctable,
+which is what **Skip** does (`clearTripCategory` → back to pending).
+
+**Approve-all refuses to guess.** `approvalPlan()` approves a trip that carries a decision
+(explicit category, else `suggest_category`); a trip with neither has no honest default,
+so it stays pending and the sheet says how many it skipped.
+
+**Place labels** — a captured trip has coordinates and no names, so a real trip rendered as
+"Trip · 41 pts". `tlKnownPlace()` resolves cheapest-first: **saved site → Home → local cache
+→ reverse geocode** (Nominatim). The first three are offline and free. The lookup is a
+settings toggle (`mcn_settings.namePlaces`, default ON), runs **only for the day actually
+opened**, one request at a time with a ≥1s gap (OSM usage policy), and caches into
+`mcn_placeCache` (**local-only — deliberately NOT in SYNC_KEYS**). Names are written into
+the **existing v100 `from_label`/`to_label`** fields, so this is **not a schema change** and
+a resolved name travels with the trip into CSV and Firestore.
+
+**Month CSV** (`tlExportCsv`) is scoped to what's on screen (month + filter), UTF-8 BOM +
+CRLF like the v101 exporter, and is **deliberately independent of the tax exporter** —
+that one is FY/vehicle-scoped and drives the actual ATO claim.
+
+**Don't reintroduce / don't break:**
+- **An animated programmatic `fitBounds`.** Leaflet **silently drops** a `setView` issued
+  while a zoom animation is in flight; selecting a day fires two fits in quick succession,
+  and this left the route stranded off screen behind the sheet. All fits are `animate:false`.
+- **Padding larger than the map container** — `fitBounds` gives up entirely; `tlFitOpts()`
+  clamps it (but only past 82% of the height — clamping earlier re-creates the bug).
+- **Assuming layout is ready on the tick the screen is revealed.** `#tl-map` is 0-height then,
+  so Leaflet initialises into a zero box; the deferred `invalidateSize()` + redraw is the rescue.
+- **Forgetting the sticky signed-out banner.** Every other screen flows under `#backup-warning`;
+  a fixed full-bleed screen sits *behind* it and loses its header. `--tl-top-h` clears it.
+- Treating `businessPct` here as the ATO logbook % (it is a review-screen display figure over
+  the selected month — `logbookPct()` in the v101 tax block is the real one).
+- Syncing `mcn_placeCache`; writing trips into `mcn_days`; touching money/tax code.
+
+**Tests:** `test-triplog-screen.js` (**103 pure**, incl. the regression pin
+`test_trip_log_screen_renders_from_mcn_trips` on the exact record shape v101.6 writes —
+verified against the live Firestore blob; **coords synthetic, this repo is PUBLIC**) and
+`test-triplog-screen-live.js` (**55 live**, headless Chrome + CDP — mount, strip, day
+select, route fit, and a category write proven to reach both localStorage and the Firestore
+sync path via a stubbed `CloudSync.syncKey`, so **no auth needed**). Neither needs an emulator.
+
+---
+
 ## Data Model
 
 ### localStorage Keys
@@ -436,6 +514,7 @@ continuous capture (v100.1 native foreground-service), Xero mileage push → v10
 | `mcn_trips` | Array | **v100 trip log** — completed trips (WorkSession-independent). Synced via SYNC_KEYS. See "v100 — Trip Log" below. |
 | `mcn_vehicles` | Array | **v100** — user vehicles `{id,name,registration,make,model,year,cents_per_km,is_default}`. Synced. |
 | `mcn_activeTrip` | Object | **v100** — the ONE live trip in progress (polyline building). LOCAL-ONLY live buffer — NOT in SYNC_KEYS (avoids Firestore write-spam mid-trip). Sealed into `mcn_trips` on stop. |
+| `mcn_placeCache` | Object | **v101.7** — `{ "lat,lng"(4dp): "Place name" }` resolved place labels, so a coordinate is reverse-geocoded once. LOCAL-ONLY — deliberately NOT in SYNC_KEYS. Capped at 500 entries. |
 | ~~`mcn_processedGeoEvents`~~ | — | REMOVED in v90 (per-event dedup replaced by atomic drain + id-based supersede) |
 
 ### activeDay Record
@@ -601,11 +680,19 @@ signed-in app session — test manually, or read the GeoLog (Settings → Geo Di
 ```bash
 # v101.6 trip-logging service (the regression pin for "trip capture dies with
 # the Activity"). Needs a booted emulator + a built APK:
-bash test-triplog-service.sh   # 10 integration + 35 live-CDP assertions
+bash test-triplog-service.sh   # 10 integration + 42 live-CDP assertions
 node test-triplog.js           # 44 pure cases, sub-second, no emulator
 
 # General CDP helper for poking the live app:
 node cdp-eval.js "APP_VERSION"
+```
+
+```bash
+# v101.7 Trip Log review screen. NEITHER needs an emulator — the screen is
+# ordinary web code, so a real browser exercises all of it in seconds.
+node test-triplog-screen.js        # 103 pure cases (incl. the regression pin)
+node test-triplog-screen-live.js   # 55 live cases, headless Chrome + CDP
+                                   # (starts its own file server; KEEP=1 leaves Chrome up)
 ```
 
 ```bash
@@ -869,6 +956,24 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
+- **v101.7 — Trip Log review screen (map + day strip + approval)** — SHIPPED 2026-07-28 (Opus 5).
+  The Trips tab rebuilt in the shape of Ross's AdvPlanner: full-bleed Leaflet map, floating
+  header, horizontal day strip, tap a day to draw its GPS trail and approve each leg
+  Business/Private/Skip. Adds ONE field to `mcn_trips` (`approved_at`, an audit stamp, not a
+  lock) and populates the EXISTING `from_label`/`to_label` via saved-site match → Home →
+  cache → optional reverse geocode. See the "v101.7 — Trip Log Review Screen" section above.
+  **Verified:** 229 pure (103 new) · 55 live browser · emulator money 7/7, geo-stop 6/6,
+  v90 sessions 15/15, trip service 10/10 + 42/42 live · real-APK render + approve round-trip
+  on the Pixel_7_API34 emulator. Money/tax paths byte-identical (zero money/tax fn lines in
+  the diff). OTA live at **1.101.7**; APK rebuilt (pure JS — **no APK strictly required**,
+  the whole change ships by OTA; APK served for the reliable path given the phone's flaky
+  OTA history). **Found in passing:** Steven's real `mcn_trips` holds exactly **1 trip**
+  (2026-07-27, 35.54 km) — v101.6's TripLogService fix worked, and this is the first real
+  captured trip. It is already `business`-tagged but has **no `approved_at`**, so it renders
+  as *tagged*, not *approved* — correct, he never confirmed it here. **Deferred:** snap-to-road
+  (OSRM) not needed at current trail quality; a "trip crosses midnight" case is unhandled
+  (a trip is filed under its `date`, so a drive ending after midnight lands wholly on the
+  start day) — no real data exercises it yet.
 - **v101.6 — trip auto-detect root cause + 3 field bugs** — SHIPPED 2026-07-27 (Opus 5).
   Diagnosed entirely from the **mirrored Firestore telemetry** (phone unreachable: wireless
   debugging off). Trip capture moved off the JS `BackgroundGeolocation` watcher — which the
