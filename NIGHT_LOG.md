@@ -62,9 +62,42 @@ Also de-pinned the `APP_VERSION` literal in `test-triplog-live.js` (it read `v10
 reads the expected version from `www/index.html`, so it catches a stale emulator build
 instead of failing on every legitimate bump.
 
+### Late addition — Steven's intra-site rule (same day)
+Trips wholly inside a work-site fence are farm/buggy movement, not travel. Integrated into the
+day maths rather than bolted on, per his instruction — retrofitting would have rippled through
+every test.
+
+The rule collapses to one sentence: **some single fence contains all of the trip's points**.
+That alone gets every specified edge case right with no special-casing — A→B fails it because
+no one fence holds both ends; a transit fails it because the far endpoints are outside; a 30m
+drift passes because the fence carries 50m of slack; a 200m excursion doesn't. The default
+falls to "real trip" in every unknown case (no fences, no positions, classify error), because
+a classifier that erased kilometres he actually drove would be far worse than no classifier.
+
+**The fences are circles, not polygons.** The brief asked for ray-casting vs Turf.js
+point-in-polygon; the app's fences are `setCircularRegion(lat,lng,radius)` natively and
+`dist() < radius` in JS. So the shipped predicate is geodesic-distance-vs-radius — deliberately
+the *same* test that starts the work timer, so a trip can't be called on-site by a rule that
+disagrees with the one that started the clock. The cross-check is still done properly and both
+ways: the predicate is verified against a local ray-caster **and** real Turf.js
+`booleanPointInPolygon` over the same fence polygonised, agreeing on every point of an 8 km grid.
+
+One judgement call worth flagging: **untagged on-site trips do not make a day "pending"**. They
+are neither business nor private, so demanding a decision on a paddock lap would be pure noise.
+
+**Verified against his real data:** his one captured trip is NOT flagged, travel km stays 35.54,
+zero flags changed — the rule is currently a no-op on his actual log, which is exactly right.
+
+A test-helper bug worth remembering: I placed fixture points using the WGS84 metres-per-degree
+(110,574) while the predicate uses a spherical earth (111,194.9). A point meant to sit 10 m
+inside a 2900 m fence landed 6 m outside. The fixture helper now uses the same constant as the
+code under test.
+
 ### Open / deferred
 - **Trip crossing midnight** is unhandled — a trip is filed under its `date`, so a drive
   ending after midnight lands wholly on the start day. No real data exercises it yet.
+- **Intra-site + midnight interact**: a lap that straddles midnight is judged on its own points,
+  so classification is unaffected; only the day it lands on is.
 - **Snap-to-road (OSRM)** not needed at current trail quality — deferred, not dropped.
 - Place naming defaults **ON** and sends a coordinate to OpenStreetMap. Saved sites and Home
   resolve offline; everything else is one cached lookup. Toggle in Settings if he'd rather not.

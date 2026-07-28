@@ -460,6 +460,44 @@ which is what **Skip** does (`clearTripCategory` → back to pending).
 (explicit category, else `suggest_category`); a trip with neither has no honest default,
 so it stays pending and the sheet says how many it skipped.
 
+**Intra-site movement is NOT travel (Steven's rule, 2026-07-28).** Driving a buggy around a
+paddock must not inflate the km log. A trip whose **ENTIRE** GPS trail sits inside **ONE**
+work-site fence is `intraSite:true` — **kept and shown, never deleted**, but excluded from
+travel km, from the business/private split, and from the review queue.
+
+That one sentence — *some single fence contains all of the points* — handles every edge case
+with no special-casing:
+
+| Case | Result | Why |
+|---|---|---|
+| Site A → Site B | travel | no single fence holds both ends |
+| 30 m boundary drift | on-site | fence carries `boundary_slack_m: 50` |
+| 200 m excursion | travel | beyond radius + slack |
+| Transit through a site | travel | the far endpoints are outside |
+| No fences / no positions | travel | **safe default — never erase km** |
+
+- **Fences are CIRCLES, not polygons** (`setCircularRegion` natively, `dist() < radius` in JS),
+  so `pointInFence()` is geodesic distance vs radius — **deliberately the same test that starts
+  the work timer**, so a trip can never be called on-site by a rule that disagrees with the one
+  that started the clock.
+- **Untagged on-site trips do NOT make a day pending** — they're neither business nor private,
+  so nagging Steven to categorise a paddock lap would be noise. `dayStatus` returns `'onsite'`
+  for a day of nothing else.
+- `applyIntraSiteFlags()` re-settles flags on every render (so editing a site's radius fixes
+  history) and **writes only when something changed**. Only the positive case is stamped — a
+  travel trip is left byte-identical rather than marked `intraSite:false`.
+- **"Count this as travel"** in the day sheet stamps `intraSite_manual`, which the classifier
+  then **never** overrules. That escape hatch matters: an over-large fence would otherwise
+  swallow a real trip with no way to say so.
+- **Don't reintroduce:** deleting intra-site trips; counting them in km, the split, or `pending`;
+  a classifier that overrides `intraSite_manual`; a fence test that disagrees with the geofence
+  timer's; removing the fail-open default (a classify error must leave everything as travel).
+- **Tests:** the five specified fixtures, plus a **two-way cross-check** — the shipped predicate
+  is verified against *both* a local ray-casting point-in-polygon *and* **Turf.js
+  `booleanPointInPolygon`** over the same fence polygonised, agreeing on every point of an 8 km
+  grid. Turf is a devDependency; the local ray-caster always runs so the cross-check can't
+  silently vanish. Regression pin: `test_intra_site_trip_filters_from_km_total`.
+
 **Place labels** — a captured trip has coordinates and no names, so a real trip rendered as
 "Trip · 41 pts". `tlKnownPlace()` resolves cheapest-first: **saved site → Home → local cache
 → reverse geocode** (Nominatim). The first three are offline and free. The lookup is a
@@ -515,6 +553,12 @@ sync path via a stubbed `CloudSync.syncKey`, so **no auth needed**). Neither nee
 | `mcn_vehicles` | Array | **v100** — user vehicles `{id,name,registration,make,model,year,cents_per_km,is_default}`. Synced. |
 | `mcn_activeTrip` | Object | **v100** — the ONE live trip in progress (polyline building). LOCAL-ONLY live buffer — NOT in SYNC_KEYS (avoids Firestore write-spam mid-trip). Sealed into `mcn_trips` on stop. |
 | `mcn_placeCache` | Object | **v101.7** — `{ "lat,lng"(4dp): "Place name" }` resolved place labels, so a coordinate is reverse-geocoded once. LOCAL-ONLY — deliberately NOT in SYNC_KEYS. Capped at 500 entries. |
+
+**Trip record fields added by v101.7** (all additive; every other reader ignores them):
+`approved_at` (ms — review audit stamp, not a lock) · `intraSite` (bool, **only ever written
+when true**) · `intraSite_site` (the containing site's id) · `intraSite_manual` (bool — the user
+overrode the classifier; it must never be overruled). `from_label`/`to_label` are populated by
+place naming but are **v100 fields**, not new.
 | ~~`mcn_processedGeoEvents`~~ | — | REMOVED in v90 (per-event dedup replaced by atomic drain + id-based supersede) |
 
 ### activeDay Record
@@ -690,8 +734,9 @@ node cdp-eval.js "APP_VERSION"
 ```bash
 # v101.7 Trip Log review screen. NEITHER needs an emulator — the screen is
 # ordinary web code, so a real browser exercises all of it in seconds.
-node test-triplog-screen.js        # 103 pure cases (incl. the regression pin)
-node test-triplog-screen-live.js   # 55 live cases, headless Chrome + CDP
+node test-triplog-screen.js        # 172 pure cases (incl. both regression pins +
+                                   # the intra-site cross-check vs Turf.js)
+node test-triplog-screen-live.js   # 79 live cases, headless Chrome + CDP
                                    # (starts its own file server; KEEP=1 leaves Chrome up)
 ```
 
@@ -962,9 +1007,12 @@ look for `REJECTED` entries in the mirrored GeoLog.
   Business/Private/Skip. Adds ONE field to `mcn_trips` (`approved_at`, an audit stamp, not a
   lock) and populates the EXISTING `from_label`/`to_label` via saved-site match → Home →
   cache → optional reverse geocode. See the "v101.7 — Trip Log Review Screen" section above.
-  **Verified:** 229 pure (103 new) · 55 live browser · emulator money 7/7, geo-stop 6/6,
-  v90 sessions 15/15, trip service 10/10 + 42/42 live · real-APK render + approve round-trip
-  on the Pixel_7_API34 emulator. Money/tax paths byte-identical (zero money/tax fn lines in
+  Also carries **Steven's intra-site rule** (added same day): a trip wholly inside one work-site
+  fence is on-site movement, excluded from travel km / the business split / the review queue,
+  but kept and shown.
+  **Verified:** 298 pure (172 new) · 79 live browser · emulator money 7/7, geo-stop 6/6,
+  v90 sessions 15/15, trip service 10/10 + 42/42 live · real-APK render, approve round-trip,
+  and intra-site classification on the Pixel_7_API34 emulator. Money/tax paths byte-identical (zero money/tax fn lines in
   the diff). OTA live at **1.101.7**; APK rebuilt (pure JS — **no APK strictly required**,
   the whole change ships by OTA; APK served for the reliable path given the phone's flaky
   OTA history). **Found in passing:** Steven's real `mcn_trips` holds exactly **1 trip**
