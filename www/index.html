@@ -345,7 +345,10 @@
   }
   /* Fixed wrap so the map fills everything above the nav bar. --tl-nav-h is
      measured from the real nav element at render (safe-area varies by device). */
-  .tl-wrap{position:fixed;left:0;right:0;top:0;bottom:var(--tl-nav-h,68px);overflow:hidden;background:var(--paper-dim)}
+  /* --tl-top-h clears the sticky "not backing up to cloud" banner: every other
+     screen flows underneath it, but a fixed full-bleed screen would sit behind
+     it and lose the header. Measured at render, 0 when the banner is hidden. */
+  .tl-wrap{position:fixed;left:0;right:0;top:var(--tl-top-h,0px);bottom:var(--tl-nav-h,68px);overflow:hidden;background:var(--paper-dim)}
   #tl-map{position:absolute;inset:0;background:var(--paper-dim);z-index:1}
   /* Lift Leaflet's attribution clear of the day strip (kept visible — Esri's
      terms require it), and tone it down so it reads as a footnote. */
@@ -8486,6 +8489,11 @@ function tlMeasure(){
   var wrap=document.querySelector('#screen-trips .tl-wrap'); if(!wrap) return;
   var nav=document.querySelector('.nav');
   if(nav) wrap.style.setProperty('--tl-nav-h', nav.offsetHeight+'px');
+  // The signed-out banner is sticky, so it would sit ON TOP of this fixed
+  // screen and cover the header. Push the whole screen down by its height.
+  var warn=document.getElementById('backup-warning');
+  var warnH=(warn&&warn.offsetParent!==null)?warn.offsetHeight:0;
+  wrap.style.setProperty('--tl-top-h', warnH+'px');
   var strip=document.getElementById('tl-strip');
   if(strip) wrap.style.setProperty('--tl-strip-h', strip.offsetHeight+'px');
 }

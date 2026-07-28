@@ -37,8 +37,15 @@ const SEED_FIXES = `(window.__seedFixes || (window.__seedFixes = (function(){
   const ev = (e) => evalInApp(ws, e);
 
   // ── version + wiring present ───────────────────────────────────────────────
+  // Read the expected version from source rather than pinning a literal: this
+  // assertion exists to catch "the emulator is running a stale build", not to
+  // fail every time APP_VERSION is legitimately bumped (which it did on v101.7).
+  const SRC_VERSION = (require('fs')
+    .readFileSync(require('path').join(__dirname, 'www', 'index.html'), 'utf8')
+    .match(/const APP_VERSION\s*=\s*'([^']+)'/) || [])[1];
   const ver = await ev('APP_VERSION');
-  ok('app is running v101.6', ver === 'v101.6', ver);
+  ok('emulator is running the build in www/ (' + SRC_VERSION + ')', ver === SRC_VERSION,
+     { running: ver, source: SRC_VERSION });
   ok('applyBankedTripFixes is wired', await ev('typeof applyBankedTripFixes') === 'function');
   ok('_sealStaleActiveDay is wired', await ev('typeof window._sealStaleActiveDay') === 'function');
   ok('ensureTripLogging is wired (re-arm path)', await ev('typeof window.ensureTripLogging') === 'function');
