@@ -22,10 +22,10 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2157) | v101.7 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2234) | v102.0 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.101.7 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.102.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -534,6 +534,152 @@ sync path via a stubbed `CloudSync.syncKey`, so **no auth needed**). Neither nee
 
 ---
 
+## v101.8 — two field bugs (phantom shift + ghost site)
+
+Both diagnosed from the **mirrored Firestore telemetry**, not guesswork — the
+same off-device route that cracked v89 and v101.6.
+
+### The "17:15 – ? · $0.00" phantom shift
+The v81 web-GPS auto-start fallback fires from the GPS watch, which lands
+**before** the native SharedPrefs queue is drained (~1.5s after app open). It
+stamped a session at APP-OPEN time; `reconstructAndReconcile` then carried that
+phantom in as `openSession`, the first banked event was for a different site,
+and `buildSessionsFromEvents` force-sealed it with no finish
+(`if(open){ completed.push(open); open=null; }`). GeoLog 2026-07-29, in order:
+`[enter] [Web GPS fallback] … Lucas Ranch` → `[start] Auto-timer started at 17:13`
+→ `Reconstructed 2 session(s)` → `[start] Live session … since 13:34`.
+Rounded to :15, 17:13 is the row Steven photographed.
+
+**Fix:** `shouldWebFallbackAutoStart()` (pure) refuses to fire on the APK until
+`nativeQueueDrained`. **Fails OPEN** — the queue is marked drained on *every*
+outcome (success, empty, read failure, plugin missing) plus a 20s startup
+backstop, and `markNativeQueueDrained()` re-checks with the last fix so a
+genuinely-missed native enter still starts the day.
+
+A genuine no-finish session (phone died on site) is still captured and **never
+auto-closed** — inventing an end time bills hours possibly not worked, the same
+rule `_sealStaleActiveDay` follows. It carries `no_finish_reason`, the review UI
+explains it in plain language with a one-tap "Set knock-off time", and
+`confirmSession` refuses to push a finish-less session into `days[]`.
+
+**Don't reintroduce:** an auto-start that runs before the native queue is read;
+a gate with no fail-open path; inventing a finish time; confirming a finish-less
+session into the billable store.
+
+### The LDS ghost site
+Sites reference a client by **company NAME**. Deleting a client left its sites in
+`mcn_sites` with a dangling pointer — still geofenced, still starting days. Field
+state 2026-07-29: `clients=[Muirlawn Pty Ltd]`, `sites=[…, Lds → "Church"]`.
+**Renaming** a client did the same thing (the other half of "when I added a
+client … that's not working properly").
+
+**Fix:** `applyClientDeletion()` takes the client's sites with it (confirmed,
+sites named, then `onSitesChanged()` to unregister the fences);
+`applyClientRename()` re-points them; `migrateOrphanedSites()` repairs data
+already broken by an older build — **never deleting**, just clearing the pointer
+and stamping `orphanedFrom` so Unlinked Sites warns it is still arming a fence.
+Day records store the site NAME as a string, so history is never rewritten.
+
+**Don't reintroduce:** a client delete that leaves its sites; a rename that
+doesn't re-point them; auto-deleting an orphaned site without asking.
+
+**Tests:** `test-fixes-v1018.js` (62 pure, incl. the pin
+`test_no_phantom_shift_when_app_opens_at_site` replayed through the real
+builder) · `test-fixes-v1018-live.js` (39 live, headless Chrome).
+
+---
+
+## v101.9 — single-user earthmoving mode
+
+Steven: *"I've decided I'm just gonna make the app specifically for earthmoving
+contracting. It's basically just gonna be for me until I get very happy with it
+and think about it as a product."*
+
+`settingsSurface(settings, vehicleCount)` (pure) is the **single source of truth**
+for what shows. `DEFAULTS.earthmovingMode: true`. **Hidden, never deleted** — the
+toggle in a hidden dev section (**tap the version number in Settings 5×**)
+restores the whole product surface.
+
+Hidden: Trade/Industry picker · Team + Business Code card (and its Firestore
+team read no longer fires) · employee details card · "+ Add vehicle" once he has
+one · the per-trip vehicle picker while there's only one vehicle.
+Kept: business details · clients & sites · machine library · vehicles + cents/km
+· tax exports · ATO logbook · Setup Health.
+
+Two deliberate escapes: an **employee-mode user always keeps the trade selector**
+(the only way back out — hiding it would trap them), and "+ Add vehicle" still
+shows when there are **zero** vehicles.
+
+**Don't reintroduce:** hiding the trade selector from an employee; deleting the
+multi-trade code; defaulting the flag OFF on a missing key (absence = ON).
+
+**Tests:** `test-earthmoving-mode.js` (27 pure) · `test-earthmoving-mode-live.js`
+(33 live, incl. the full ON→OFF→ON cycle).
+
+---
+
+## v102.0 — Circuit Timer ("how long is a lap?")
+
+Repetitive earthworks: dig at a pickup, haul to a dump, tip, drive back, repeat.
+Steven weighed auto-detecting repeated back-and-forth vs. two manual geofences
+and chose the geofences: *"set 2 geofences (pickup + dump area, ~100m radius
+each). Every entry/exit records the leg."* No always-on pattern matching.
+
+**A circuit is pickup-enter → dump → pickup-enter**, and that closing arrival is
+**also the start of the next one** — which is what makes back-to-back loads
+measurable with the driver touching nothing. Each lap breaks into
+**load / haul / tip / return**, the parts he can actually act on.
+
+**NO new location subsystem.** `circuitOnFix()` is called from the ONE shared
+sink `checkNearbySites()` (GPS watch + 90s poll + v101.6 TripLogService), right
+beside `TripDetector.onFix`. `applyBankedCircuitFixes()` consumes the SAME
+drained batch `applyBankedTripFixes` does — the path that matters most, since
+while he's shifting dirt the phone is in his pocket. Zones are **circles tested
+with the SAME `pointInFence()`** the work-site geofence and the v101.7
+intra-site filter use, so a zone can't be entered by a rule that disagrees with
+the one that starts the work timer.
+
+**Stores:** `mcn_zones` + `mcn_circuits` (synced) · `mcn_circuitFixes` (rolling
+GPS buffer, 6h/2000 cap) + `mcn_activeCircuit` (live cursor) — **local-only, NOT
+in SYNC_KEYS**, same write-spam rule as v100's `mcn_activeTrip`.
+
+Circuit ids are `'c'+start_ts`, derived from the deterministic pure builder, so
+**replay is idempotent** and a stored circuit is **never rewritten** (a recompute
+after the buffer ages out would see a truncated cycle).
+
+**Guards** (each has a fixture): a lap that never reaches a dump records nothing
+and is reported in `abandoned[]`, not swallowed · a "cycle" spanning a lunch
+break is rejected at `max_circuit_s` (2h) rather than poisoning the average ·
+boundary jitter **merges** (`merge_gap_s` 90s) instead of reading as
+leave-and-return · overlapping zones are refused at setup · fixes worse than
+60m accuracy are never banked (they can't resolve a 100m boundary) · an **open**
+cycle goes stale at the same 2h mark instead of the live card counting to
+"10h 30m" the next morning (same failure shape as the stale activeDay).
+
+`min_dwell_s` defaults to **0** — every entry counts, as specified. A missed
+circuit is invisible; a spurious one is on screen and deletable, so the default
+fails toward recording. The knob exists and is tested if drive-throughs become
+a problem.
+
+**UI:** `#screen-circuits` (live cycle card · averages per pickup→dump pair with
+the phase breakdown · laps grouped by day · CSV) reached from the **🔁** in the
+Trip Log action rail; **🔁 Circuit Zones** card in Settings (name + pickup/dump +
+GPS capture + radius slider). CSV is deliberately **separate from the tax
+exporter** — this is production data, not a km claim.
+
+**Don't reintroduce:** a second GPS service; syncing `circuitFixes`/
+`activeCircuit`; rewriting a stored circuit on recompute; a zone test that
+disagrees with the geofence timer's; an open cycle with no staleness bound.
+
+**Deferred:** map-pick for zones (GPS capture is the field gesture — you stand
+in the pit); tonnage/load-count per circuit; linking circuits to an invoice line.
+
+**Tests:** `test-circuits.js` (87 pure, incl. the pin
+`test_circuit_records_pickup_dump_pickup_pattern` and the specified
+enters-pickup-but-never-dumps fixture) · `test-circuits-live.js` (60 live).
+
+---
+
 ## Data Model
 
 ### localStorage Keys
@@ -552,6 +698,10 @@ sync path via a stubbed `CloudSync.syncKey`, so **no auth needed**). Neither nee
 | `mcn_trips` | Array | **v100 trip log** — completed trips (WorkSession-independent). Synced via SYNC_KEYS. See "v100 — Trip Log" below. |
 | `mcn_vehicles` | Array | **v100** — user vehicles `{id,name,registration,make,model,year,cents_per_km,is_default}`. Synced. |
 | `mcn_activeTrip` | Object | **v100** — the ONE live trip in progress (polyline building). LOCAL-ONLY live buffer — NOT in SYNC_KEYS (avoids Firestore write-spam mid-trip). Sealed into `mcn_trips` on stop. |
+| `mcn_zones` | Array | **v102.0** — circuit zones `{id,name,kind:'pickup'\|'dump',lat,lng,radius,created_at}`. Synced. |
+| `mcn_circuits` | Array | **v102.0** — completed circuits `{id,date,pickup_name,dump_name,start_ts,end_ts,duration_s,load_s,haul_s,dump_s,return_s,legs[]}`. Synced. |
+| `mcn_circuitFixes` | Array | **v102.0** — rolling GPS buffer feeding circuit detection (6h / 2000 cap). LOCAL-ONLY — not in SYNC_KEYS. |
+| `mcn_activeCircuit` | Object | **v102.0** — the cycle in progress. LOCAL-ONLY live cursor; goes stale after 2h. |
 | `mcn_placeCache` | Object | **v101.7** — `{ "lat,lng"(4dp): "Place name" }` resolved place labels, so a coordinate is reverse-geocoded once. LOCAL-ONLY — deliberately NOT in SYNC_KEYS. Capped at 500 entries. |
 
 **Trip record fields added by v101.7** (all additive; every other reader ignores them):
@@ -738,6 +888,17 @@ node test-triplog-screen.js        # 172 pure cases (incl. both regression pins 
                                    # the intra-site cross-check vs Turf.js)
 node test-triplog-screen-live.js   # 79 live cases, headless Chrome + CDP
                                    # (starts its own file server; KEEP=1 leaves Chrome up)
+```
+
+```bash
+# v101.8 field fixes / v101.9 earthmoving mode / v102.0 circuits.
+# NONE need an emulator — all ordinary web code.
+node test-fixes-v1018.js          # 62 pure   · phantom shift + ghost site
+node test-fixes-v1018-live.js     # 39 live   · headless Chrome + CDP
+node test-earthmoving-mode.js     # 27 pure   · single-user mode surface
+node test-earthmoving-mode-live.js# 33 live   · full ON -> OFF -> ON cycle
+node test-circuits.js             # 87 pure   · circuit detection + stats
+node test-circuits-live.js        # 60 live   · shared-sink wiring + CSV
 ```
 
 ```bash
@@ -1001,6 +1162,23 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
+- **v102.0 — Circuit timer (new feature)** — SHIPPED 2026-07-29 (Opus 5). Geofenced pickup/dump
+  zones time every lap of repetitive earthworks, broken into load/haul/tip/return, with per-run
+  averages and CSV. Reuses the ONE shared fix sink + the v101.6 TripLogService banked batch — no
+  new location subsystem. See the "v102.0 — Circuit Timer" section above.
+  **Verified:** 87 pure + 60 live browser. OTA live at **1.102.0**; APK built (pure JS — no APK
+  strictly required). Screenshots in `plans/v102-shots/`.
+- **v101.9 — single-user earthmoving mode** — SHIPPED 2026-07-29 (Opus 5). Steven's product call:
+  the app is earthmoving-only for now. Multi-trade/multi-user/multi-vehicle surface hidden behind a
+  default-ON flag, restorable from a hidden dev section (tap the version 5x). Nothing deleted.
+  **Verified:** 27 pure + 33 live incl. the full ON->OFF->ON cycle. OTA live at **1.101.9**.
+- **v101.8 — phantom "no finish" shift + the LDS ghost site** — SHIPPED 2026-07-29 (Opus 5).
+  Both diagnosed from the mirrored Firestore telemetry (GeoLog 2026-07-29 + the synced data blobs).
+  The web-GPS fallback was racing the native queue drain and fabricating a shift stamped at
+  app-open time; deleting (or renaming) a client was orphaning its sites, which kept their
+  geofences and kept starting days. See the two `[FIXED v101.8]` sections above.
+  **Verified:** 62 pure + 39 live. OTA live at **1.101.8**. **Found in passing:** all 54 of
+  Steven's CONFIRMED billable days are Lucas Ranch, so the Lds ghost never reached the money path.
 - **v101.7 — Trip Log review screen (map + day strip + approval)** — SHIPPED 2026-07-28 (Opus 5).
   The Trips tab rebuilt in the shape of Ross's AdvPlanner: full-bleed Leaflet map, floating
   header, horizontal day strip, tap a day to draw its GPS trail and approve each leg
