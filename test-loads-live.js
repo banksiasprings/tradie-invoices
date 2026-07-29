@@ -537,6 +537,116 @@ function serve() {
         return h;
      })()`)));
 
+  console.log('\n── PIN: test_setup_zone_cta_deep_links_to_zones_section ──────');
+  // Steven: "when you tap setup zone in the loads tab, it should take you
+  // straight to the zone section in settings instead of taking you to the top."
+  // The Zones card defaults to COLLAPSED and sits well down a long screen, so
+  // "took you to the top" meant the thing he tapped for wasn't even on screen.
+  // The collapse key is derived from the card TITLE (which carries an emoji),
+  // so it is read from the page rather than guessed.
+  const CC_KEY = await ev(`(function(){
+      var c=document.getElementById('circuit-zones-card');
+      var t=c.querySelector('.card-title');
+      return 'cc_'+(c.dataset.collapseKey||t.textContent.trim().replace(/[^a-z0-9]/gi,'_').slice(0,30));
+    })()`);
+  const settingsScrollTop = async () => ev(`(function(){
+      var el=document.getElementById('screen-settings');
+      // The scroll may live on the screen, a wrapper, or the document.
+      return Math.max(el?el.scrollTop:0, document.documentElement.scrollTop||0,
+                      document.body.scrollTop||0, window.pageYOffset||0);
+    })()`);
+  // Baseline: the OLD behaviour, so the pin can't pass vacuously.
+  await ev(`(function(){
+    localStorage.removeItem('${CC_KEY}');
+    var c=document.getElementById('circuit-zones-card'); if(c) c.classList.add('collapsed');
+    showScreen('settings');
+    var el=document.getElementById('screen-settings'); if(el) el.scrollTop=0;
+    document.documentElement.scrollTop=0; document.body.scrollTop=0;
+  })()`);
+  await sleep(400);
+  ok('PIN baseline: plain showScreen leaves you at the top', await settingsScrollTop() < 40,
+     await settingsScrollTop());
+  ok('PIN baseline: …with the Zones card still collapsed',
+     await ev(`document.getElementById('circuit-zones-card').classList.contains('collapsed')`));
+
+  // Now the CTA the user actually taps, from the Loads empty state — which is
+  // the genuine first-run state: no zones set up AND nothing recorded yet.
+  await ev(`(function(){
+    window.__ZONES=zones(); window.__CIRC=circuits();
+    DB.set('zones',[]); DB.set('circuits',[]);
+    showScreen('loads'); renderLoads();
+  })()`);
+  await sleep(500);
+  const setupHtml = await ev(`(function(){var e=document.getElementById('ld-setup');return e?e.innerHTML:'';})()`);
+  ok('PIN: the Loads empty state offers a Set-up-zones button', /Set up zones/.test(setupHtml), setupHtml.slice(0, 200));
+  ok('PIN: …and it calls the deep-link, not a bare showScreen',
+     /openZoneSetup\(\)/.test(setupHtml) && !/showScreen\('settings'\)/.test(setupHtml), setupHtml);
+  await ev(`document.querySelector('#ld-setup button').click()`);
+  await sleep(900);
+  ok('PIN: tapping it lands on Settings',
+     await ev(`document.getElementById('screen-settings').classList.contains('active')`));
+  ok('PIN: …the Zones card is EXPANDED, not just scrolled to a closed header',
+     await ev(`!document.getElementById('circuit-zones-card').classList.contains('collapsed')`));
+  const topAfter = await settingsScrollTop();
+  ok('PIN: …the page actually scrolled down (not left at the top)', topAfter > 40, topAfter);
+  const rect = await ev(`(function(){
+      var r=document.getElementById('circuit-zones-card').getBoundingClientRect();
+      return {top:Math.round(r.top),h:Math.round(r.height),vh:window.innerHeight};
+    })()`);
+  ok('PIN: …and the Zones card is on screen', rect.top > -10 && rect.top < rect.vh, rect);
+  ok('PIN: …with its body visible, so the fields he came for are usable',
+     await ev(`(function(){
+        var b=document.querySelector('#circuit-zones-card .card-body');
+        return !!b && b.offsetHeight>0 && !!document.getElementById('cz-name');
+     })()`));
+  ok('PIN: …and the zone-name field is reachable in the viewport',
+     await ev(`(function(){
+        var r=document.getElementById('cz-name').getBoundingClientRect();
+        return r.top>-10 && r.top<window.innerHeight+200;
+     })()`));
+  ok('PIN: the expanded state persists, exactly as tapping the header would',
+     await ev(`localStorage.getItem('${CC_KEY}')`) === 'open',
+     { key: CC_KEY, got: await ev(`localStorage.getItem('${CC_KEY}')`) });
+  await ev(`DB.set('zones',window.__ZONES); DB.set('circuits',window.__CIRC);`);
+
+  console.log('\nThe same fix on the other zone CTAs');
+  for (const [label, sel, screen] of [
+    ['the Loads action rail 📍', '#screen-loads .tl-act[aria-label="Manage zones"]', 'loads'],
+    ['the Sub-activities "Manage zones"', '#act-pane-sub button[onclick*="openZoneSetup"]', 'circuits'],
+  ]) {
+    await ev(`(function(){
+      localStorage.removeItem('${CC_KEY}');
+      var c=document.getElementById('circuit-zones-card'); if(c) c.classList.add('collapsed');
+      showScreen('${screen}');
+      var el=document.getElementById('screen-settings'); if(el) el.scrollTop=0;
+      document.documentElement.scrollTop=0; document.body.scrollTop=0;
+    })()`);
+    await sleep(350);
+    const found = await ev(`!!document.querySelector('${sel}')`);
+    ok(label + ' exists', found);
+    if (!found) continue;
+    await ev(`document.querySelector('${sel}').click()`);
+    await sleep(900);
+    ok(label + ' → lands on Settings',
+       await ev(`document.getElementById('screen-settings').classList.contains('active')`));
+    ok(label + ' → expands the Zones card',
+       await ev(`!document.getElementById('circuit-zones-card').classList.contains('collapsed')`));
+    ok(label + ' → and scrolls to it', (await settingsScrollTop()) > 40, await settingsScrollTop());
+  }
+  ok('the Sub-activities empty-state CTA uses the deep-link too',
+     await ev(`(function(){
+        var z=zones(); DB.set('zones',[]);
+        showScreen('circuits'); renderSubActivities();
+        var h=document.getElementById('sub-live-slot').innerHTML;
+        DB.set('zones',z); renderSubActivities();
+        return /openZoneSetup\\(\\)/.test(h) && !/showScreen\\('settings'\\)/.test(h);
+     })()`));
+  ok('a bad deep-link target fails loudly instead of silently scrolling to the top',
+     await ev(`openSettingsAt('no-such-card')`) === false);
+  ok('…and a good one reports success', await ev(`openSettingsAt('circuit-zones-card')`) === true);
+  ok('the Health card CTAs still use their own reveal (untouched)',
+     await ev(`typeof Health._reveal`) === 'function');
+
   console.log('\nRegression: nothing else was touched');
   await ev(`(function(){ ldSelectAll(); renderLoads(); })()`);
   ok('the work-day records are exactly as seeded', await ev('days().length') === 2);
