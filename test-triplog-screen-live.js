@@ -154,7 +154,12 @@ function serve() {
   console.log('Screen mounts');
   const boot = await ev(BOOT);
   ok('app shell boots and Trips tab opens', boot === 'ok', boot);
-  ok('running v101.7', await ev('APP_VERSION') === 'v101.7', await ev('APP_VERSION'));
+  // Read the expected version from source rather than pinning a literal — a
+  // hardcoded version makes this test fail on every legitimate bump.
+  const EXPECT_VER = (fs.readFileSync(path.join(WWW, 'index.html'), 'utf8')
+    .match(/const APP_VERSION\s*=\s*'([^']+)'/) || [])[1];
+  ok('running the version in source (' + EXPECT_VER + ')',
+     await ev('APP_VERSION') === EXPECT_VER, await ev('APP_VERSION'));
   ok('screen-trips is the active screen', await ev(`document.getElementById('screen-trips').classList.contains('active')`));
   await sleep(2500);   // tiles + first fit
   ok('Leaflet map instantiated', await ev('!!tlMap'));

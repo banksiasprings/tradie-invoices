@@ -1504,6 +1504,8 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       </table>
       <div id="rev-machine-info" style="display:none;font-size:12px;color:var(--text2);padding:4px 0;border-top:1px solid var(--border);margin-top:4px"></div>
       <div id="rev-round-note" style="display:none;font-size:12px;color:var(--text2);background:var(--amber-light);border-radius:8px;padding:8px 10px;margin-top:8px"></div>
+      <!-- v101.8: explains a $0.00 session that never got a knock-off time -->
+      <div id="rev-nofinish-note" style="display:none;margin-top:8px"></div>
       <div class="btn-row">
         <button class="btn btn-secondary" onclick="adjustReviewSession()">Adjust</button>
         <button class="btn btn-primary" onclick="confirmReviewSession()">Confirm ✓</button>
@@ -2165,7 +2167,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v101.7';
+const APP_VERSION = 'v101.8';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -2962,6 +2964,144 @@ function buildSessionsFromEvents(events, opts){
 //__V90_BUILDER_END__
 // Exposed for the CDP test harness (test-v90-sessions.sh) + cross-script access.
 window.buildSessionsFromEvents=buildSessionsFromEvents;
+
+//__V1018_FIX_PURE_START__  (extracted verbatim by test-fixes-v1018.js — keep pure)
+// v101.8 field-bug fixes. NO DOM / NO DB / NO Date.now — deterministic + unit-tested.
+
+// ── 1a: the web-GPS fallback auto-start gate ─────────────────────────────────
+// The v81 foreground fallback exists for the case where the NATIVE enter never
+// fired (fences dropped after a reboot, GMS flake): opening the app at the site
+// still starts the day. But on the APK the native SharedPrefs queue is the
+// source of truth for WHEN he arrived, and it is only drained ~1.5s after the
+// app opens. Firing the fallback before that drain stamps a session at
+// APP-OPEN time; reconstructAndReconcile then carries that session in as
+// `openSession`, the first banked event turns out to be for a different site,
+// and buildSessionsFromEvents force-seals it with NO finish.
+//   Field evidence — Steven's mirrored GeoLog, 2026-07-29, in order:
+//     17:13:43 [enter] [Web GPS fallback] Entered geofence: Lucas Ranch
+//     17:13:43 [start] Auto-timer started at 17:13 · Lucas Ranch
+//     17:13:43 [info]  Reconstructed 2 session(s) → review backlog
+//     17:13:43 [start] Live session (from native queue): Lucas Ranch since 13:34
+//   Rounded to :15 the phantom is the "17:15 – ? · $0.00 · 0.00h" row.
+// Fails OPEN: in the browser there is no queue to wait for, and the caller marks
+// the queue drained on ANY outcome (success, empty, read failure, plugin
+// missing) plus a startup backstop — so the v81 safety net is preserved.
+function shouldWebFallbackAutoStart(ctx){
+  ctx = ctx || {};
+  if(!ctx.insideFence)     return {start:false, reason:'not_inside'};
+  if(!ctx.accOk)           return {start:false, reason:'poor_accuracy'};
+  if(ctx.hasActiveDay)     return {start:false, reason:'already_running'};
+  if(ctx.alreadyTriggered) return {start:false, reason:'already_triggered_today'};
+  if(!(ctx.hour>=5 && ctx.hour<21)) return {start:false, reason:'out_of_hours'};
+  if(ctx.isNative && !ctx.nativeQueueDrained) return {start:false, reason:'awaiting_native_queue'};
+  return {start:true, reason:'ok'};
+}
+
+// ── 1a: why a sealed session has no finish ───────────────────────────────────
+// A session can still legitimately reach the review backlog with no finish: he
+// was on site when the phone died or the app was killed, and the EXIT never
+// fired. We do NOT invent a finish time — inventing one bills hours that may
+// never have been worked (the same rule _sealStaleActiveDay follows). Instead
+// the record carries a reason so the review screen can say WHY and offer a
+// one-tap fix instead of showing a bare $0.00 row.
+var NO_FINISH_REASONS = {
+  no_exit:    'No knock-off was recorded — the app was closed or the phone was off when you left site.',
+  superseded: 'A later arrival was detected before this one was closed off.',
+  stale:      'This shift was still running after 20 hours, so it was closed off for review.'
+};
+function noFinishInfo(sess){
+  if(!sess || sess.finish) return null;
+  var key = sess.no_finish_reason || 'no_exit';
+  return {
+    reason: key,
+    message: NO_FINISH_REASONS[key] || NO_FINISH_REASONS.no_exit,
+    site: sess.site || null,
+    date: sess.date || null,
+    start: sess.start || null,
+    id: sess.id || null,
+    canAdjust: !!(sess.id && sess.start && sess.date)
+  };
+}
+
+// ── 1b: client deletion must not orphan its sites ────────────────────────────
+// Deleting a client left its sites in `mcn_sites` carrying a dangling `client`
+// pointer. The site keeps its native geofence, so it keeps auto-starting the
+// timer — the "I deleted LDS but it still shows up" ghost. Field state
+// 2026-07-29: clients = [Muirlawn Pty Ltd]; sites = [Lucas Ranch → Muirlawn,
+// Lds → "Church"], with no "Church" client left anywhere.
+function sitesOfClient(sitesArr, company){
+  if(!company) return [];
+  return (sitesArr||[]).filter(function(s){ return s && s.client===company; });
+}
+function orphanedSites(sitesArr, clientsArr){
+  var names = {};
+  (clientsArr||[]).forEach(function(c){ if(c && c.company) names[c.company]=true; });
+  return (sitesArr||[]).filter(function(s){ return s && s.client && !names[s.client]; });
+}
+// Pure transform for deleting the client at `index`: the client goes AND so do
+// its sites, because a site is what arms the geofence. Historical day records
+// store the site NAME as a string, so deleting a site never rewrites history.
+// Returns {clients, sites, removedSites, defaultChanged}.
+function applyClientDeletion(clientsArr, sitesArr, index){
+  var cl = (clientsArr||[]).slice();
+  var target = cl[index];
+  if(!target) return {clients:cl, sites:(sitesArr||[]).slice(), removedSites:[], defaultChanged:false};
+  var company = target.company;
+  var wasDefault = !!target.isDefault;
+  cl.splice(index,1);
+  var defaultChanged = false;
+  if(wasDefault && cl.length){ cl[0].isDefault = true; defaultChanged = true; }
+  var removed = [], out = [];
+  (sitesArr||[]).forEach(function(s){
+    if(s && s.client===company){ removed.push(s); return; }
+    out.push(s);
+  });
+  return {clients:cl, sites:out, removedSites:removed, defaultChanged:defaultChanged};
+}
+// The same orphaning happens from the EDIT side: sites point at a client by
+// COMPANY NAME, so renaming a client silently detached every one of its sites.
+// (Steven: "when I added a client and when I deleted a client obviously that's
+// not working properly.") Re-point them in the same save.
+function applyClientRename(sitesArr, oldCompany, newCompany){
+  if(!oldCompany || !newCompany || oldCompany===newCompany){
+    return {sites:(sitesArr||[]).slice(), renamed:0};
+  }
+  var renamed = 0;
+  var out = (sitesArr||[]).map(function(s){
+    if(s && s.client===oldCompany){
+      var c = JSON.parse(JSON.stringify(s));
+      c.client = newCompany; renamed++;
+      return c;
+    }
+    return s;
+  });
+  return {sites:out, renamed:renamed};
+}
+// Repair for data that is ALREADY orphaned (Steven's live "Lds"). NEVER deletes
+// — deleting a site he might still want is his call, not ours. It clears the
+// dangling pointer and stamps orphanedFrom, so the Unlinked Sites list can warn
+// that the site is still arming a geofence and offer one-tap removal.
+function repairOrphanedSites(sitesArr, clientsArr){
+  var names = {};
+  (clientsArr||[]).forEach(function(c){ if(c && c.company) names[c.company]=true; });
+  var changed = 0;
+  var out = (sitesArr||[]).map(function(s){
+    if(s && s.client && !names[s.client]){
+      var c = JSON.parse(JSON.stringify(s));
+      c.orphanedFrom = s.client; c.client = null; changed++;
+      return c;
+    }
+    return s;
+  });
+  return {sites:out, changed:changed};
+}
+//__V1018_FIX_PURE_END__
+window.shouldWebFallbackAutoStart=shouldWebFallbackAutoStart;
+window.noFinishInfo=noFinishInfo;
+window.orphanedSites=orphanedSites;
+window.applyClientDeletion=applyClientDeletion;
+window.applyClientRename=applyClientRename;
+window.repairOrphanedSites=repairOrphanedSites;
 window.unconfirmed=unconfirmed; window.setUnconfirmed=setUnconfirmed;
 window.unconfirmedQueue=unconfirmedQueue; window.unconfirmedCount=unconfirmedCount;
 window.SESSION_STATUS=SESSION_STATUS; window.MERGE_WINDOW_MINUTES=MERGE_WINDOW_MINUTES;
@@ -3522,6 +3662,24 @@ let bgPollInterval=null; // backup polling when watchPosition goes quiet
 // or when readings are too far apart (>90s) to count as consecutive.
 let outsideReadingCount=0;
 let lastOutsideReadingAt=0;
+// v101.8: has the native SharedPrefs event queue been read yet this app session?
+// The web-GPS auto-start fallback must wait for it on the APK — see
+// shouldWebFallbackAutoStart(). Fails OPEN: marked true on ANY drain outcome
+// (success, empty queue, read failure, plugin missing) plus a startup backstop,
+// so a broken bridge can never permanently disable the v81 fallback.
+let nativeQueueDrained=false;
+let _queueGateLogged=false;
+function markNativeQueueDrained(){
+  if(nativeQueueDrained) return;
+  nativeQueueDrained=true;
+  // The gate may have skipped a LEGITIMATE fallback start while we waited (the
+  // native enter genuinely never fired). Re-check now with the last known fix so
+  // the day still starts, instead of waiting up to 90s for the next bg poll.
+  try{
+    if(lastLat!==null && (Date.now()-lastLatTs)<5*60*1000) checkNearbySites(lastLat,lastLng);
+  }catch(_){}
+}
+window.markNativeQueueDrained=markNativeQueueDrained;
 
 function updateGeoStatusBar(state,text){
   const dot=document.getElementById('geo-status-dot');
@@ -3616,16 +3774,26 @@ function checkNearbySites(lat,lng,accuracy){
     no.style.display=activeDay()?'none':'block';
   }
 
-  // Geofence auto-start (Web GPS primary in browser; foreground fallback on native)
-  if(accOk&&nearestGeo&&!activeDay()&&!geoAutoStartTriggered){
-    const h=new Date().getHours();
-    if(h>=5&&h<21){ // 5am–9pm only
-      geoAutoStartTriggered=true;
-      geoAutoStartDate=todayStr();
-      _saveGeoFlags();
-      GeoLog.add('enter','['+(isNative?'Web GPS fallback':'Web GPS')+'] Entered geofence: '+nearestGeo.name+' ('+Math.round(ndGeo)+'m · acc '+(accuracy!=null?Math.round(accuracy)+'m':'?')+')');
-      autoStartTimer(nearestGeo);
-    }
+  // Geofence auto-start (Web GPS primary in browser; foreground fallback on native).
+  // v101.8: the decision is the pure shouldWebFallbackAutoStart() — in particular
+  // it refuses to fire on the APK until the native queue has been drained, which
+  // is what stopped the 29 Jul phantom "17:15 – ? · $0.00" shift.
+  const _gate=shouldWebFallbackAutoStart({
+    insideFence:!!nearestGeo, accOk:accOk, hasActiveDay:!!activeDay(),
+    alreadyTriggered:geoAutoStartTriggered, hour:new Date().getHours(),
+    isNative:isNative, nativeQueueDrained:nativeQueueDrained
+  });
+  if(_gate.start){
+    geoAutoStartTriggered=true;
+    geoAutoStartDate=todayStr();
+    _saveGeoFlags();
+    GeoLog.add('enter','['+(isNative?'Web GPS fallback':'Web GPS')+'] Entered geofence: '+nearestGeo.name+' ('+Math.round(ndGeo)+'m · acc '+(accuracy!=null?Math.round(accuracy)+'m':'?')+')');
+    autoStartTimer(nearestGeo);
+  } else if(_gate.reason==='awaiting_native_queue' && !_queueGateLogged){
+    // Log once per app session — the ring buffer is only 200 entries and a GPS
+    // watch can fire this several times a second.
+    _queueGateLogged=true;
+    GeoLog.add('info','[Web GPS fallback] Inside '+nearestGeo.name+' — holding off until the banked geofence events are read (avoids a phantom start at app-open time)');
   }
 
   // Geofence auto-stop: check if active day's site has been exited
@@ -3929,7 +4097,7 @@ function _sealStaleActiveDay(){
     const hrs=Math.round((Date.now()-ad.startTs)/3600000);
     GeoLog.add('error','Stale session sealed: '+(ad.site||'?')+' started '+(ad.date||'?')+' '+(ad.start||'?')+
                        ' — still open after '+hrs+'h. Moved to review backlog; auto-start re-armed.');
-    _sealSessionToBacklog(ad);
+    _sealSessionToBacklog(ad,'stale');
     DB.set('activeDay',null);
     _resetGeoTriggerFlags();       // re-arm auto-start for the next arrival
     try{ clearInterval(timerInterval); }catch(_){}
@@ -3939,10 +4107,12 @@ function _sealStaleActiveDay(){
 }
 window._sealStaleActiveDay=_sealStaleActiveDay;
 
-function _sealSessionToBacklog(session){
+function _sealSessionToBacklog(session,noFinishReason){
   try{
     const rec=Object.assign({},session);
     rec.status=SESSION_STATUS.UNCONFIRMED;
+    // v101.8: record WHY there's no knock-off time, so Review can explain it.
+    if(!rec.finish&&!rec.no_finish_reason) rec.no_finish_reason=noFinishReason||'no_exit';
     if(!rec.rawStart) rec.rawStart=rec.start;
     if(rec.finish&&!rec.rawFinish) rec.rawFinish=rec.finish;
     if(!rec.startTs) rec.startTs=_tsFromDateTime(rec.date,rec.start);
@@ -3990,6 +4160,14 @@ async function reconstructAndReconcile(cleanEvents){
     if(!sess.rawStart) sess.rawStart=sess.start;
     if(sess.finish&&!sess.rawFinish) sess.rawFinish=sess.finish;
     if(sess.edited_by_user===undefined) sess.edited_by_user=false;
+    // v101.8: a session sealed with no finish is real work we can't close
+    // honestly (no EXIT ever fired — phone off/app killed on site). Record WHY
+    // so the review screen can explain it instead of showing a bare $0.00 row.
+    // We never invent a finish time: that would bill hours possibly not worked.
+    if(!sess.finish&&!sess.no_finish_reason){
+      sess.no_finish_reason='no_exit';
+      GeoLog.add('info','Session sealed with no knock-off time: '+sess.site+' '+sess.date+' from '+sess.start+' — needs a finish time in Review');
+    }
     sess.updatedAt=Date.now();
     uc.push(sess);
   });
@@ -4053,6 +4231,9 @@ function confirmSession(id){
   const uc=unconfirmed();const i=uc.findIndex(s=>s.id===id);
   if(i<0){toast('Session not found');return;}
   const sess=uc[i];
+  // v101.8: never let a finish-less session into days[] — it would bill as a
+  // $0.00 / 0.00h "day" and pollute the invoice + stats.
+  if(!sess.finish){toast('Add a knock-off time first — tap Adjust');return;}
   if(sess.start&&sess.finish&&sess.start>=sess.finish){toast('Fix the times first (finish before start) — tap Adjust');return;}
   const day=Object.assign({},sess);
   // v91: round auto-captured times to the quarter hour if the toggle is on. Raw GPS times
@@ -4332,6 +4513,13 @@ function showReview(ad){
   if(roundNote){
     if(rt.rounded){ roundNote.style.display='block'; roundNote.innerHTML='⏱ Rounded to :15 — raw GPS <b>'+ad.start+'–'+(ad.finish||'?')+'</b> kept for audit'; }
     else { roundNote.style.display='none'; }
+  }
+  // v101.8: say WHY a session shows $0.00, instead of leaving a bare zero.
+  const nfNote=document.getElementById('rev-nofinish-note');
+  if(nfNote){
+    const nfHtml=_noFinishNoticeHtml(ad);
+    nfNote.innerHTML=nfHtml;
+    nfNote.style.display=nfHtml?'block':'none';
   }
   const sonRow=document.getElementById('rev-son-row'),sonEarnRow=document.getElementById('rev-son-earn-row');
   if(ad.sonWorking){
@@ -4731,6 +4919,19 @@ function dayTotals(d){
   return{h,myE,sonH,sonE,total:myE+sonE+machineTotal+travelTotal+materialsTotal,sonrate,machineTotal,machineLines,travelTotal,travelLine,materialsTotal,materialLines};
 }
 
+// v101.8: a session with no knock-off time is real work the app couldn't close
+// honestly. Rather than a bare "$0.00 · 0.00h" row with a red badge, say WHY and
+// give one tap to fix it. We never guess an end time — see noFinishInfo().
+function _noFinishNoticeHtml(sess){
+  const info=(typeof noFinishInfo==='function')?noFinishInfo(sess):null;
+  if(!info) return '';
+  return `<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:#FEF3C7;border:1px solid #FCD34D">
+    <div style="font-size:12px;font-weight:700;color:#92400E;margin-bottom:3px">Why is this $0.00?</div>
+    <div style="font-size:12px;color:#92400E;line-height:1.45">${escHtml(info.message)} Your start time (${escHtml(info.start||'?')}) was captured — add when you knocked off and it'll total up.</div>
+    ${info.canAdjust?`<button class="btn btn-primary btn-sm" style="width:100%;margin-top:8px" onclick="adjustSession('${info.id}')">Set knock-off time</button>`:''}
+  </div>`;
+}
+
 // --- v90 Review Backlog (unconfirmed auto-captured sessions) ---
 function renderReviewBacklog(){
   const sec=document.getElementById('review-backlog-section');
@@ -4758,14 +4959,15 @@ function renderReviewBacklog(){
           ${rt.rounded?'<span class="badge badge-blue" style="margin-left:4px">⏱ :15</span>':''}
           ${sess.merged?'<span class="badge badge-blue" style="margin-left:4px">merged</span>':''}
           ${sess.edited_by_user?'<span class="badge" style="margin-left:4px;background:var(--surface2);color:var(--text2)">✏️ edited</span>':''}
-          ${!sess.finish?'<span class="badge" style="margin-left:4px;background:#FEE2E2;color:#991B1B">no finish — Adjust</span>':''}
+          ${!sess.finish?'<span class="badge" style="margin-left:4px;background:#FEE2E2;color:#991B1B">needs a knock-off time</span>':''}
         </div>
       </div>
       <div class="day-item-right" style="text-align:right"><div class="amount">${fmtMoney(total)}</div><div class="hours">${formatHours(h)}</div></div>
     </div>
+    ${_noFinishNoticeHtml(sess)}
     <div class="btn-row" style="margin-top:10px">
       <button class="btn btn-secondary" style="flex:1" onclick="adjustSession('${id}')">Adjust</button>
-      <button class="btn btn-primary" style="flex:1" onclick="confirmSession('${id}')">Confirm ✓</button>
+      <button class="btn ${sess.finish?'btn-primary':'btn-secondary'}" style="flex:1" ${sess.finish?'':'disabled title="Set a knock-off time first"'} onclick="confirmSession('${id}')">Confirm ✓</button>
     </div>
     <button class="btn btn-secondary" style="width:100%;margin-top:8px;color:var(--red)" onclick="rejectSession('${id}')">Reject</button>`;
     list.appendChild(c);
@@ -6375,8 +6577,17 @@ function saveSite(){
 }
 
 function deleteSite(i){
-  const ss=sites();ss.splice(i,1);DB.set('sites',ss);renderSitesList();toast('Site removed');
+  const ss=sites();
+  const target=ss[i];
+  if(!target) return;
+  // v101.8: confirm before removing — a site is what arms the auto-timer, and a
+  // mis-tap here silently stops a job site tracking. Logged days are unaffected.
+  if(!confirm('Remove job site "'+target.name+'"?\n\nThe auto-timer will stop starting there.\nYour logged days are NOT affected.')) return;
+  ss.splice(i,1);DB.set('sites',ss);renderSitesList();
+  try{GeoLog.add('info','Site removed: '+target.name+' — geofences re-registered');}catch(_){}
+  toast('Site removed: '+target.name);
   if(typeof window.onSitesChanged==='function') window.onSitesChanged();
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
 }
 function closeSiteModal(){document.getElementById('site-modal').classList.remove('open')}
 
@@ -6542,6 +6753,7 @@ function _renderUnlinkedSites(unlinked,ss){
       <div style="flex:1;min-width:0;font-size:13px">
         <span style="font-weight:600">📍 ${escHtml(s.name)}</span>
         <span style="color:var(--text2);font-size:11px;margin-left:6px">${coord}</span>
+        ${s.orphanedFrom?`<div style="font-size:11px;color:var(--red);margin-top:2px">⚠ Client "${escHtml(s.orphanedFrom)}" was deleted — this site still starts the auto-timer. Remove it or assign a client.</div>`:''}
       </div>
       <div style="display:flex;gap:4px;flex-shrink:0;margin-left:6px">
         <button class="btn btn-secondary btn-sm" onclick="editSiteClient(${si})" title="Assign to client">↔</button>
@@ -6600,10 +6812,30 @@ function saveClient(){
   };
   if(isDefault) cl.forEach(c=>c.isDefault=false);
   const editId=document.getElementById('cm-edit-id').value;
-  if(editId!==''){cl[parseInt(editId)]=entry;}else{cl.push(entry);}
+  let renamed=0;
+  if(editId!==''){
+    const idx=parseInt(editId);
+    const prev=cl[idx];
+    // v101.8: sites point at a client by COMPANY NAME. Renaming a client used to
+    // silently orphan every one of its sites — they vanished from under the
+    // client into "Unlinked sites" while their geofences kept firing. Re-point
+    // them in the same save.
+    if(prev&&prev.company&&prev.company!==company){
+      const r=applyClientRename(sites(),prev.company,company);
+      if(r.renamed){
+        DB.set('sites',r.sites);
+        renamed=r.renamed;
+        try{GeoLog.add('info','Client renamed "'+prev.company+'" → "'+company+'" — re-pointed '+r.renamed+' site(s)');}catch(_){}
+      }
+    }
+    cl[idx]=entry;
+  } else {
+    cl.push(entry);
+  }
   DB.set('clients',cl);
   closeClientModal();renderClientsList();populateClientDropdown();
-  toast('Client saved ✓');
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+  toast(renamed?('Client saved ✓ — '+renamed+' site'+(renamed!==1?'s':'')+' moved with it'):'Client saved ✓');
 }
 
 function setDefaultClient(i){
@@ -6613,13 +6845,38 @@ function setDefaultClient(i){
   toast('Default client updated ✓');
 }
 
+// v101.8 — the LDS ghost. Deleting a client used to leave its sites behind with
+// a dangling client pointer: the site kept its native geofence and kept
+// auto-starting the timer, so a "deleted" job site went on logging days.
+// Field state 2026-07-29: site "Lds" still pointed at client "Church", which had
+// been deleted. Now the sites go with the client and the fences are re-registered.
+// Existing day records store the site NAME as a string, so history is untouched.
 function deleteClient(i){
-  const cl=clientsData();
-  const wasDefault=cl[i].isDefault;
-  cl.splice(i,1);
-  if(wasDefault&&cl.length) cl[0].isDefault=true;
-  DB.set('clients',cl);renderClientsList();populateClientDropdown();
-  toast('Client removed');
+  const cl=clientsData(), ss=sites();
+  const target=cl[i];
+  if(!target) return;
+  const owned=sitesOfClient(ss,target.company);
+  const msg=owned.length
+    ? 'Delete "'+target.company+'"?\n\nThis also removes '+owned.length+' saved job site'+(owned.length!==1?'s':'')+
+      ' — '+owned.map(s=>s.name).join(', ')+' — and stops the auto-timer starting there.\n\n'+
+      'Your logged days are NOT affected.\n\n(To keep a site, cancel and reassign it to another client first.)'
+    : 'Delete client "'+target.company+'"?';
+  if(!confirm(msg)) return;
+  const res=applyClientDeletion(cl,ss,i);
+  DB.set('clients',res.clients);
+  if(res.removedSites.length){
+    DB.set('sites',res.sites);
+    // Unregister the removed fences — onSitesChanged does removeAll + re-register.
+    if(typeof window.onSitesChanged==='function') window.onSitesChanged();
+    try{GeoLog.add('info','Client "'+target.company+'" deleted with '+res.removedSites.length+' site(s): '+
+      res.removedSites.map(s=>s.name).join(', ')+' — geofences re-registered');}catch(_){}
+    renderSitesList();
+  }
+  renderClientsList();populateClientDropdown();
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+  toast(res.removedSites.length
+    ? 'Removed '+target.company+' + '+res.removedSites.length+' site'+(res.removedSites.length!==1?'s':'')
+    : 'Client removed');
 }
 
 function closeClientModal(){document.getElementById('client-modal').classList.remove('open')}
@@ -7361,6 +7618,24 @@ function migrateToV90(){
     DB.set('v90migrated',true);
   }catch(e){ try{GeoLog.add('error','v90 migration failed: '+e.message);}catch(_){} }
 }
+
+// v101.8 — repair sites already orphaned by a client delete/rename that happened
+// on an older build. NEVER deletes: removing a site he might still want is his
+// call. It clears the dangling pointer and stamps orphanedFrom, so the site
+// surfaces under "Unlinked sites" with a warning that it is still arming a
+// geofence — one tap to remove. Idempotent; safe to run every launch.
+function migrateOrphanedSites(){
+  try{
+    const res=repairOrphanedSites(sites(),clientsData());
+    if(!res.changed) return 0;
+    DB.set('sites',res.sites);
+    const names=res.sites.filter(s=>s.orphanedFrom).map(s=>s.name+' (was '+s.orphanedFrom+')').join(', ');
+    try{GeoLog.add('info','v101.8: '+res.changed+' site(s) pointed at a deleted client — flagged for review: '+names);}catch(_){}
+    if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+    return res.changed;
+  }catch(e){ try{GeoLog.add('error','orphan-site repair failed: '+e.message);}catch(_){} return 0; }
+}
+window.migrateOrphanedSites=migrateOrphanedSites;
 
 // ─── v92 SETTINGS HEALTH ─────────────────────────────────────────────────────
 // Self-diagnostic of the device settings that keep background geofencing alive.
@@ -9887,6 +10162,7 @@ window.initApp = function() {
     }
   }
   migrateToV90(); // one-time: seed the unconfirmed queue + tag existing days CONFIRMED
+  migrateOrphanedSites(); // v101.8: flag sites left behind by a deleted/renamed client
   _sealStaleActiveDay(); // v101.6: clear a stuck activeDay so auto-start can fire again
   try{ initTripLog(); }catch(e){ console.warn('initTripLog:',e); } // v100 trip log stores + stale-trip recovery
   // Restore GST toggle state
@@ -10121,11 +10397,16 @@ window.initApp = function() {
   let _reconstructInFlight = false;
 
   async function processPendingGeoEvents() {
-    if (!NativeGeo) return;
+    // v101.8: mark the queue drained on EVERY exit path (plugin missing, read
+    // failure, empty, success) — the web-GPS fallback gate must never be left
+    // permanently closed by a broken bridge.
+    if (!NativeGeo) { markNativeQueueDrained(); return; }
+    // In-flight: the call that owns the drain will mark it. Marking here would
+    // open the gate before the queue has actually been read.
     if (_reconstructInFlight) { console.log('[NativeGeo] reconstruct already in flight — skipping'); return; }
     _reconstructInFlight = true;
     try { await _processPendingGeoEventsInner(); }
-    finally { _reconstructInFlight = false; }
+    finally { _reconstructInFlight = false; markNativeQueueDrained(); }
   }
   async function _processPendingGeoEventsInner() {
     let raw = [];
@@ -10421,6 +10702,10 @@ window.initApp = function() {
   // appearing while the loading screen is up and potentially locking the WebView.
   window.initNativeGeo = initNativeGeo;
   window.maybePromptBatteryOptimisation = maybePromptBatteryOptimisation;
+  // v101.8 backstop: if the permission flow stalls or initNativeGeo never gets as
+  // far as draining, open the fallback gate anyway after 20s. The gate exists to
+  // win a 1.5s race, not to be a permanent lock.
+  setTimeout(function(){ try{ markNativeQueueDrained(); }catch(_){} }, 20000);
   document.addEventListener('resume', function() {
     // Only reset geo flags on a NEW calendar day — not on every app resume.
     // Resetting on every resume caused repeated auto-start/stop when the user
