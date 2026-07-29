@@ -566,7 +566,10 @@ const firestoreDb = initializeFirestore(fbApp, {
 });
 
 // Keys to sync (without the mcn_ prefix used by DB)
-const SYNC_KEYS = ['settings', 'clients', 'days', 'sites', 'activeDay', 'invoices', 'gst_on', 'trips', 'vehicles'];
+// v102.0 adds 'zones' + 'circuits'. NOT synced, deliberately: 'circuitFixes' is
+// a rolling local GPS buffer and 'activeCircuit' is a live cursor — syncing
+// either would spam Firestore mid-shift (same rule as v100's mcn_activeTrip).
+const SYNC_KEYS = ['settings', 'clients', 'days', 'sites', 'activeDay', 'invoices', 'gst_on', 'trips', 'vehicles', 'zones', 'circuits'];
 // == ArchivedSync: per-entry archived flags in Firestore worklog subcollection ==
 // Each entry has its own doc at users/{uid}/worklog/{entryId} with {archived:bool}.
 // This survives Android storage clears independently of the days blob.
@@ -1849,6 +1852,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       <button class="tl-act" id="tl-act-trip" onclick="tlToggleTrip()" aria-label="Start or stop a trip">▶</button>
       <button class="tl-act" onclick="openManualTripModal()" aria-label="Add a trip manually">✎</button>
       <button class="tl-act" onclick="tlExportCsv()" aria-label="Export CSV">⤓</button>
+      <button class="tl-act" onclick="showScreen('circuits')" aria-label="Circuit timer">🔁</button>
     </div>
     <div id="trip-live-slot"></div>
     <div class="tl-strip" id="tl-strip"></div>
@@ -1861,6 +1865,24 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       </div>
       <div class="tl-sheet-body" id="tl-sheet-body"></div>
     </div>
+  </div>
+</div>
+
+<!-- CIRCUITS SCREEN (v102.0) — cycle times for repetitive earthworks -->
+<div id="screen-circuits" class="screen">
+  <div class="header">
+    <h1>Circuits</h1>
+    <p>Cycle times — pickup → dump → back</p>
+  </div>
+  <div class="section">
+    <div id="circuit-live-slot"></div>
+    <div id="circuit-stats-slot"></div>
+    <div id="circuit-list-slot"></div>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn-secondary" style="flex:1" onclick="showScreen('settings')">Manage zones</button>
+      <button class="btn btn-secondary" style="flex:1" onclick="exportCircuitsCSV()">⤓ Export CSV</button>
+    </div>
+    <div style="height:24px"></div>
   </div>
 </div>
 
@@ -2085,6 +2107,34 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         </div>
       </div>
     </div>
+    <!-- v102.0 Circuit zones: pickup + dump areas for cycle timing -->
+    <div class="card card-collapsible" id="circuit-zones-card" data-collapse-default="collapsed">
+      <div class="card-title">🔁 Circuit Zones</div>
+      <div class="card-body">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">
+          For repetitive work — dig here, tip there, come back. Stand in the pickup area and capture it, then do the same at the dump. Every lap is timed automatically.
+        </div>
+        <div id="circuit-zones-list"></div>
+        <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
+          <div class="field"><label>Zone name</label><input type="text" id="cz-name" placeholder="e.g. Top paddock pit"></div>
+          <div class="field"><label>Type</label>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-primary btn-sm" id="cz-kind-pickup" style="flex:1" onclick="czSetKind('pickup')">⛏ Pickup</button>
+              <button class="btn btn-secondary btn-sm" id="cz-kind-dump" style="flex:1" onclick="czSetKind('dump')">🪣 Dump</button>
+            </div>
+          </div>
+          <div class="field"><label>Radius (m)</label>
+            <input type="range" id="cz-radius" min="30" max="400" step="10" value="100" oninput="document.getElementById('cz-radius-display').textContent=this.value+'m'" style="width:100%">
+            <div style="font-size:12px;color:var(--text2)"><span id="cz-radius-display">100m</span> — big enough to cover where you stop, small enough not to overlap the other zone</div>
+          </div>
+          <div id="cz-coords" style="font-size:12px;color:var(--text2);margin-bottom:8px">Not captured yet</div>
+          <div class="btn-row">
+            <button class="btn btn-secondary" style="flex:1" onclick="czCaptureGPS()">📍 Use my location</button>
+            <button class="btn btn-primary" style="flex:1" onclick="czSave()">Save zone</button>
+          </div>
+        </div>
+      </div>
+    </div>
     <!-- v101 Tax exports: ATO cents-per-km / logbook methods + CSV/PDF export -->
     <div class="card card-collapsible" id="tax-exports-card" data-collapse-default="collapsed">
       <div class="card-title">📊 Tax exports</div>
@@ -2181,7 +2231,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v101.9';
+const APP_VERSION = 'v102.0';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -3483,7 +3533,9 @@ function showScreen(id,btn){
   }
   if(id==='analytics') renderAnalytics();
   if(id==='trips') renderTrips();
-  if(id==='settings') {loadSettings();renderSavedInvoices('settings');GeoLog.render();if(window.Health)Health.refresh();if(window.renderVehicles)renderVehicles();}
+  // v102.0: the live cycle timer only ticks while its screen is open.
+  if(id==='circuits'){ renderCircuits(); startCircuitTick(); } else { if(window.stopCircuitTick) stopCircuitTick(); }
+  if(id==='settings') {loadSettings();renderSavedInvoices('settings');GeoLog.render();if(window.Health)Health.refresh();if(window.renderVehicles)renderVehicles();if(window.renderCircuitZones)renderCircuitZones();}
 }
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400)}
 function nowTime(){const n=new Date();return String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0')}
@@ -3821,6 +3873,8 @@ function dist(la1,lo1,la2,lo2){const R=6371000,toRad=Math.PI/180,p1=la1*toRad,p2
 function checkNearbySites(lat,lng,accuracy){
   // v100: same fix stream drives trip detection (no separate GPS service).
   try{ if(window.TripDetector) TripDetector.onFix(lat,lng,accuracy); }catch(_){}
+  // v102.0: and the circuit timer. Same sink, same reason — one GPS source.
+  try{ if(window.circuitOnFix) circuitOnFix(lat,lng,accuracy); }catch(_){}
   const ss=sites();
   let nearestGeo=null,ndGeo=Infinity;
   let nearestSuggest=null,ndSuggest=Infinity;
@@ -8489,6 +8543,491 @@ function routeLabelOf(ts,maxStops){
 }
 //__V102_TRIPLOG_PURE_END__
 
+//__V102_CIRCUIT_PURE_START__  (extracted verbatim by test-circuits.js — keep pure)
+// ═══ v102.0 CIRCUIT TIMER — pure logic ═══════════════════════════════════════
+// Repetitive earthworks: dig at a pickup zone, haul to a dump zone, tip, drive
+// back, repeat. This measures the cycle.
+//
+// Steven weighed two designs and chose this one: "set 2 geofences (pickup + dump
+// area, ~100m radius each). Every entry/exit records the leg." The alternative —
+// watching for repeated back-and-forth between the same two spots — needs
+// always-on recording and pattern matching; two named zones need neither.
+//
+// Zones are CIRCLES tested with the SAME pointInFence() used by the work-site
+// geofence and the v101.7 intra-site trip filter, so a zone can never be entered
+// by a rule that disagrees with the one that starts the work timer.
+//
+// NO DOM / NO DB / NO Date.now — deterministic and unit-testable.
+var CIRCUIT_CFG = {
+  default_radius_m: 100,   // Steven's spec
+  boundary_slack_m: 15,    // GPS jitter at the edge; small, since zones are small
+  // 0 = every entry counts, which is the specified behaviour. A missed circuit
+  // is invisible; a spurious one is visible on screen and can be deleted — so
+  // the default fails toward recording. Raise this if drive-throughs of the
+  // pickup zone start creating junk cycles in the field.
+  min_dwell_s: 0,
+  // Two visits to the SAME zone closer together than this are one visit. This is
+  // the anti-flutter guard: boundary jitter otherwise reads as leave-and-return.
+  merge_gap_s: 90,
+  // Beyond this he knocked off, broke for lunch, or moved to another job.
+  // Abandon rather than log a two-hour "cycle" that was really a lunch break.
+  max_circuit_s: 7200
+};
+function _circCfg(cfg,key){
+  var c=cfg||{};
+  return c[key]!=null ? c[key] : CIRCUIT_CFG[key];
+}
+// Which zone contains this point? Nearest centre wins if zones overlap.
+function zoneOfPoint(lat,lng,zones,cfg){
+  var slack=_circCfg(cfg,'boundary_slack_m');
+  var best=null,bestD=Infinity;
+  for(var i=0;i<(zones||[]).length;i++){
+    var z=zones[i];
+    if(!z||z.lat==null||z.lng==null) continue;
+    var probe={lat:z.lat,lng:z.lng,radius:(+z.radius||CIRCUIT_CFG.default_radius_m)};
+    if(pointInFence(lat,lng,probe,slack)){
+      var d=_fenceHaversine(lat,lng,z.lat,z.lng);
+      if(d<bestD){ best=z; bestD=d; }
+    }
+  }
+  return best;
+}
+// Collapse a fix stream into ordered zone VISITS. A visit is a contiguous run of
+// fixes inside one zone; the gaps between visits are the travel legs.
+function zoneVisitsFromFixes(fixes,zones,cfg){
+  var minDwellMs=_circCfg(cfg,'min_dwell_s')*1000;
+  var mergeMs=_circCfg(cfg,'merge_gap_s')*1000;
+  var arr=(fixes||[])
+    .filter(function(f){ return f && f.lat!=null && f.lng!=null; })
+    .slice()
+    .sort(function(a,b){ return (a.t||0)-(b.t||0); });
+  var raw=[],cur=null;
+  for(var i=0;i<arr.length;i++){
+    var f=arr[i];
+    var z=zoneOfPoint(f.lat,f.lng,zones,cfg);
+    var zid=z?z.id:null;
+    if(cur && cur.zone_id===zid){ cur.exit_ts=f.t; cur.fixes++; continue; }
+    if(cur) raw.push(cur);
+    cur = zid!=null
+      ? {zone_id:zid, zone_name:z.name, kind:z.kind, enter_ts:f.t, exit_ts:f.t, fixes:1}
+      : null;
+  }
+  if(cur) raw.push(cur);
+  // Anti-flutter: same zone again within merge_gap_s = never actually left.
+  var merged=[];
+  for(var j=0;j<raw.length;j++){
+    var v=raw[j], last=merged[merged.length-1];
+    if(last && last.zone_id===v.zone_id && (v.enter_ts-last.exit_ts)<=mergeMs){
+      last.exit_ts=v.exit_ts; last.fixes+=v.fixes; last.merged=true;
+      continue;
+    }
+    merged.push(v);
+  }
+  return merged.filter(function(v){ return (v.exit_ts-v.enter_ts)>=minDwellMs; });
+}
+function _mkCircuit(pickup,dump,ret){
+  var sec=function(a,b){ return Math.max(0,Math.round((b-a)/1000)); };
+  return {
+    pickup_zone_id:pickup.zone_id, pickup_name:pickup.zone_name,
+    dump_zone_id:dump.zone_id,     dump_name:dump.zone_name,
+    start_ts:pickup.enter_ts, end_ts:ret.enter_ts,
+    duration_s:sec(pickup.enter_ts,ret.enter_ts),
+    load_s:  sec(pickup.enter_ts,pickup.exit_ts),  // digging / loading
+    haul_s:  sec(pickup.exit_ts,dump.enter_ts),    // loaded run out
+    dump_s:  sec(dump.enter_ts,dump.exit_ts),      // tipping
+    return_s:sec(dump.exit_ts,ret.enter_ts),       // empty run back
+    legs:[
+      {kind:'haul',   from:pickup.zone_name, to:dump.zone_name, depart_ts:pickup.exit_ts, arrive_ts:dump.enter_ts, duration_s:sec(pickup.exit_ts,dump.enter_ts)},
+      {kind:'return', from:dump.zone_name,   to:ret.zone_name,  depart_ts:dump.exit_ts,   arrive_ts:ret.enter_ts,  duration_s:sec(dump.exit_ts,ret.enter_ts)}
+    ]
+  };
+}
+// Walk the visits and pair them into circuits.
+// A circuit is pickup-enter -> dump -> pickup-enter. The closing pickup arrival
+// is ALSO the start of the next circuit, which is what makes back-to-back loads
+// measurable without the driver touching anything.
+// Returns {circuits, open, abandoned}:
+//   open      — the cycle currently in progress (drives the live timer)
+//   abandoned — started but never closed properly; never counted, but reported
+//               so a zone set that isn't working is visible rather than silent.
+function circuitsFromVisits(visits,cfg){
+  var maxMs=_circCfg(cfg,'max_circuit_s')*1000;
+  var circuits=[],abandoned=[],open=null;
+  (visits||[]).forEach(function(v){
+    if(v.kind==='pickup'){
+      if(open && open.dump){
+        var c=_mkCircuit(open.pickup,open.dump,v);
+        if((v.enter_ts-open.pickup.enter_ts)<=maxMs) circuits.push(c);
+        else abandoned.push({reason:'too_long', start_ts:c.start_ts, end_ts:c.end_ts,
+                             pickup_name:c.pickup_name, dump_name:c.dump_name, duration_s:c.duration_s});
+        open={pickup:v, dump:null};            // this arrival starts the next one
+      } else {
+        // Back at the pickup without ever reaching a dump — no circuit happened.
+        if(open && open.pickup){
+          abandoned.push({reason:'no_dump', start_ts:open.pickup.enter_ts,
+                          pickup_name:open.pickup.zone_name, dump_name:null});
+        }
+        open={pickup:v, dump:null};
+      }
+    } else if(v.kind==='dump'){
+      // First dump after loading is the one this load went to. A dump with no
+      // open pickup is ignored: we don't know where that load came from.
+      if(open && open.pickup && !open.dump) open.dump=v;
+    }
+  });
+  return {circuits:circuits, open:(open&&open.pickup)?open:null, abandoned:abandoned};
+}
+function circuitsFromFixes(fixes,zones,cfg){
+  var visits=zoneVisitsFromFixes(fixes,zones,cfg);
+  var r=circuitsFromVisits(visits,cfg);
+  r.visits=visits;
+  return r;
+}
+// Per pickup->dump pair: how many, average, fastest, slowest. This is the number
+// Steven actually wants — "am I getting quicker, and what does a load cost me".
+function circuitStats(circuits){
+  var by={};
+  (circuits||[]).forEach(function(c){
+    if(!c || !(c.duration_s>0)) return;
+    var k=(c.pickup_name||'?')+' → '+(c.dump_name||'?');
+    if(!by[k]) by[k]={pair:k, pickup_name:c.pickup_name, dump_name:c.dump_name,
+                      count:0, totalS:0, fastestS:Infinity, slowestS:0, avgS:0,
+                      avgLoadS:0, avgHaulS:0, avgDumpS:0, avgReturnS:0,
+                      _load:0,_haul:0,_dump:0,_ret:0};
+    var b=by[k];
+    b.count++; b.totalS+=c.duration_s;
+    b._load+=(c.load_s||0); b._haul+=(c.haul_s||0);
+    b._dump+=(c.dump_s||0); b._ret+=(c.return_s||0);
+    if(c.duration_s<b.fastestS) b.fastestS=c.duration_s;
+    if(c.duration_s>b.slowestS) b.slowestS=c.duration_s;
+  });
+  return Object.keys(by).map(function(k){
+    var b=by[k];
+    b.avgS=Math.round(b.totalS/b.count);
+    b.avgLoadS=Math.round(b._load/b.count);
+    b.avgHaulS=Math.round(b._haul/b.count);
+    b.avgDumpS=Math.round(b._dump/b.count);
+    b.avgReturnS=Math.round(b._ret/b.count);
+    if(b.fastestS===Infinity) b.fastestS=0;
+    delete b._load; delete b._haul; delete b._dump; delete b._ret;
+    return b;
+  }).sort(function(a,b){ return b.count-a.count; });
+}
+// An open cycle that has run past max_circuit_s is not a cycle any more — he
+// knocked off, or moved to another job, with the app still holding the last
+// pickup arrival. Left alone the live card counts up forever (10h 30m the
+// morning after), which is exactly the kind of visibly-wrong number that made
+// the stale activeDay erode trust in auto-mode. Same rule as isStaleActiveDay().
+function isStaleCircuit(open, nowMs, cfg){
+  if(!open || !open.start_ts) return false;
+  return (nowMs - open.start_ts) > (_circCfg(cfg,'max_circuit_s')*1000);
+}
+function fmtCircuitDur(s){
+  s=Math.max(0,Math.round(+s||0));
+  var m=Math.floor(s/60), sec=s%60;
+  if(m<60) return m+'m '+(sec<10?'0':'')+sec+'s';
+  var h=Math.floor(m/60); m=m%60;
+  return h+'h '+(m<10?'0':'')+m+'m';
+}
+// Local-date key for a timestamp. NEVER toISOString — Brisbane is UTC+10, so
+// that misfiles a third of every day (the v101.6 GeoLog bug).
+function circuitDateOf(ts,D){
+  var d=new (D||Date)(ts);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+//__V102_CIRCUIT_PURE_END__
+window.circuitsFromFixes=circuitsFromFixes;
+window.circuitStats=circuitStats;
+window.zoneVisitsFromFixes=zoneVisitsFromFixes;
+window.circuitStatsOf=circuitStats;
+window.fmtCircuitDur=fmtCircuitDur;
+
+// ═══ v102.0 CIRCUIT TIMER — storage + detection (impure) ═════════════════════
+// Location comes from the ONE shared fix sink (checkNearbySites), which is
+// already fed by the web GPS watch, the 90s background poll, AND the v101.6
+// TripLogService replay. No second GPS service — that is the whole reason the
+// v101.6 fix works, and adding another would put it straight back at risk.
+function zones(){ return DB.def('zones',[]); }
+function circuits(){ return DB.def('circuits',[]); }
+window.zones=zones; window.circuits=circuits;
+
+// Fixes worse than this are junk for a 100 m zone — a 150 m-accuracy fix cannot
+// tell you which side of a 100 m boundary you are on.
+const CIRCUIT_ACC_M = 60;
+const CIRCUIT_BUF_MS = 6*60*60*1000;  // keep 6h of fixes: 3x the max cycle
+const CIRCUIT_BUF_MAX = 2000;
+
+// Called from checkNearbySites() for every fix, alongside TripDetector.onFix.
+function circuitOnFix(lat,lng,acc,t){
+  try{
+    const zs=zones();
+    if(!zs.length) return;                       // no zones set up — nothing to do
+    if(acc!=null && acc>CIRCUIT_ACC_M) return;   // too vague to place in a zone
+    const now=t||Date.now();
+    let buf=DB.def('circuitFixes',[]);
+    const last=buf[buf.length-1];
+    if(last && now-last.t < 5000) return;        // don't bank duplicate fixes
+    buf.push({lat:lat,lng:lng,t:now});
+    buf=buf.filter(f=>f&&(now-f.t)<=CIRCUIT_BUF_MS).slice(-CIRCUIT_BUF_MAX);
+    DB.set('circuitFixes',buf);
+    rebuildCircuits(buf);
+  }catch(e){ try{GeoLog.add('error','circuit fix failed: '+e.message);}catch(_){} }
+}
+window.circuitOnFix=circuitOnFix;
+
+// Recompute circuits from the banked fixes. The builder is pure and
+// deterministic, so ids derived from start_ts make this idempotent — the same
+// "native banks / JS reconstructs" shape as the geofence queue.
+// A stored circuit is NEVER rewritten: once the buffer ages out its fixes, a
+// recompute would see a truncated cycle, and a completed measurement must not
+// silently change under him.
+function rebuildCircuits(buf){
+  const zs=zones();
+  const r=circuitsFromFixes(buf||DB.def('circuitFixes',[]),zs,CIRCUIT_CFG);
+  const existing=circuits();
+  const known={}; existing.forEach(c=>{ known[c.id]=true; });
+  let added=0;
+  r.circuits.forEach(function(c){
+    c.id='c'+c.start_ts;
+    if(known[c.id]) return;
+    c.date=circuitDateOf(c.start_ts);
+    c.created_at=Date.now();
+    c.notes='';
+    existing.push(c); added++;
+    GeoLog.add('info','Circuit '+c.pickup_name+' → '+c.dump_name+' in '+fmtCircuitDur(c.duration_s)+
+      ' (load '+fmtCircuitDur(c.load_s)+' · haul '+fmtCircuitDur(c.haul_s)+
+      ' · tip '+fmtCircuitDur(c.dump_s)+' · back '+fmtCircuitDur(c.return_s)+')');
+  });
+  if(added){
+    DB.set('circuits',existing);
+    if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+  }
+  // The live cursor: which cycle is running, and since when.
+  DB.set('activeCircuit', r.open ? {
+    pickup_zone_id:r.open.pickup.zone_id, pickup_name:r.open.pickup.zone_name,
+    start_ts:r.open.pickup.enter_ts,
+    dump_name:r.open.dump?r.open.dump.zone_name:null,
+    dump_ts:r.open.dump?r.open.dump.enter_ts:null
+  } : null);
+  if(added) try{ renderCircuits(); }catch(_){}
+  return added;
+}
+window.rebuildCircuits=rebuildCircuits;
+
+function activeCircuit(){ return DB.get('activeCircuit'); }
+function saveZone(z){
+  const zs=zones();
+  const i=zs.findIndex(x=>x.id===z.id);
+  if(i>=0) zs[i]=Object.assign({},zs[i],z); else zs.push(z);
+  DB.set('zones',zs);
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+  return zs;
+}
+function deleteZone(id){
+  const zs=zones(), z=zs.find(x=>x.id===id);
+  if(!z) return;
+  if(!confirm('Remove circuit zone "'+z.name+'"?\n\nRecorded circuits are kept.')) return;
+  DB.set('zones',zs.filter(x=>x.id!==id));
+  renderCircuitZones(); try{ renderCircuits(); }catch(_){}
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+  toast('Zone removed');
+}
+function deleteCircuit(id){
+  if(!confirm('Delete this circuit?')) return;
+  DB.set('circuits',circuits().filter(c=>c.id!==id));
+  renderCircuits();
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+  toast('Circuit deleted');
+}
+window.deleteZone=deleteZone; window.deleteCircuit=deleteCircuit;
+
+// ── Circuit zone setup (Settings card) ──────────────────────────────────────
+let _czKind='pickup', _czLat=null, _czLng=null;
+function czSetKind(k){
+  _czKind=k;
+  const p=document.getElementById('cz-kind-pickup'), d=document.getElementById('cz-kind-dump');
+  if(p) p.className='btn btn-sm '+(k==='pickup'?'btn-primary':'btn-secondary');
+  if(d) d.className='btn btn-sm '+(k==='dump'?'btn-primary':'btn-secondary');
+}
+function czCaptureGPS(){
+  const el=document.getElementById('cz-coords');
+  if(!navigator.geolocation){ el.textContent='GPS not available'; return; }
+  el.textContent='Getting location…';
+  navigator.geolocation.getCurrentPosition(pos=>{
+    _czLat=pos.coords.latitude; _czLng=pos.coords.longitude;
+    el.textContent='📍 '+_czLat.toFixed(5)+', '+_czLng.toFixed(5)+' ✓ (±'+Math.round(pos.coords.accuracy)+'m)';
+    el.style.color='var(--amber)';
+  },()=>{ el.textContent='Could not get location — try again'; },{enableHighAccuracy:true,timeout:15000});
+}
+function czSave(){
+  const name=(document.getElementById('cz-name').value||'').trim();
+  if(!name){ toast('Give the zone a name'); return; }
+  if(_czLat==null){ toast('Capture the location first'); return; }
+  const radius=+document.getElementById('cz-radius').value||CIRCUIT_CFG.default_radius_m;
+  // Overlapping zones would make "which zone am I in" a coin toss, so refuse the
+  // pair rather than record ambiguous cycles.
+  const clash=zones().find(z=>_fenceHaversine(_czLat,_czLng,z.lat,z.lng) < (radius+(+z.radius||100)));
+  if(clash){ toast('That overlaps "'+clash.name+'" — move it or shrink the radius'); return; }
+  saveZone({ id:'z'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+             name:name, kind:_czKind, lat:_czLat, lng:_czLng, radius:radius, created_at:Date.now() });
+  document.getElementById('cz-name').value='';
+  _czLat=null; _czLng=null;
+  const cd=document.getElementById('cz-coords'); if(cd){ cd.textContent='Not captured yet'; cd.style.color=''; }
+  renderCircuitZones();
+  GeoLog.add('info','Circuit zone saved: '+name+' ('+_czKind+', '+radius+'m)');
+  toast('Zone saved: '+name);
+}
+window.czSetKind=czSetKind; window.czCaptureGPS=czCaptureGPS; window.czSave=czSave;
+
+function renderCircuitZones(){
+  const el=document.getElementById('circuit-zones-list');
+  if(!el) return;
+  const zs=zones();
+  if(!zs.length){
+    el.innerHTML='<div style="font-size:13px;color:var(--text2)">No zones yet. You need at least one pickup and one dump.</div>';
+    return;
+  }
+  const nP=zs.filter(z=>z.kind==='pickup').length, nD=zs.filter(z=>z.kind==='dump').length;
+  el.innerHTML=zs.map(z=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;min-width:0;font-size:13px">
+        <span style="font-weight:600">${z.kind==='pickup'?'⛏':'🪣'} ${escHtml(z.name)}</span>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">${z.kind==='pickup'?'Pickup':'Dump'} · ${z.radius||100}m radius</div>
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="deleteZone('${z.id}')">✕</button>
+    </div>`).join('')
+    + ((!nP||!nD)?`<div style="font-size:12px;color:var(--red);margin-top:8px">⚠ Circuits need at least one pickup AND one dump zone. ${!nP?'Add a pickup.':'Add a dump.'}</div>`:'');
+}
+window.renderCircuitZones=renderCircuitZones;
+
+// ── Circuits screen ─────────────────────────────────────────────────────────
+let _circuitTick=null;
+function renderCircuits(){
+  const liveEl=document.getElementById('circuit-live-slot');
+  const statsEl=document.getElementById('circuit-stats-slot');
+  const listEl=document.getElementById('circuit-list-slot');
+  if(!listEl) return;
+  const zs=zones(), all=circuits().slice().sort((a,b)=>b.start_ts-a.start_ts);
+
+  // Live cycle in progress
+  // A cycle that's been "in progress" longer than the max isn't running — he
+  // knocked off hours ago. Show that, rather than a timer climbing past 10h.
+  const _acRaw=activeCircuit();
+  const _acStale=isStaleCircuit(_acRaw,Date.now(),CIRCUIT_CFG);
+  const ac=_acStale?null:_acRaw;
+  if(liveEl){
+    if(_acStale){
+      liveEl.innerHTML=`<div class="card" style="margin-bottom:12px">
+        <div style="font-size:13px;color:var(--text2)">No cycle running — the last lap out of ${escHtml(_acRaw.pickup_name)} never came back, so it wasn't counted. The next one starts on its own when you pull into a pickup zone.</div>
+      </div>`;
+    } else if(ac){
+      const elapsed=Math.round((Date.now()-ac.start_ts)/1000);
+      liveEl.innerHTML=`<div class="card" style="background:var(--navy);color:#fff;margin-bottom:12px">
+        <div style="font-size:12px;opacity:.75;letter-spacing:.5px;text-transform:uppercase">Cycle in progress</div>
+        <div style="font-size:34px;font-weight:800;margin:6px 0" id="circuit-live-timer">${fmtCircuitDur(elapsed)}</div>
+        <div style="font-size:13px;opacity:.85">From ${escHtml(ac.pickup_name)}${ac.dump_name?' · tipped at '+escHtml(ac.dump_name):' · heading out'}</div>
+      </div>`;
+    } else if(zs.length){
+      liveEl.innerHTML='<div class="card" style="margin-bottom:12px"><div style="font-size:13px;color:var(--text2)">No cycle running. It starts on its own when you pull into a pickup zone.</div></div>';
+    } else {
+      liveEl.innerHTML=`<div class="card" style="margin-bottom:12px">
+        <div style="font-weight:700;margin-bottom:6px">Set up two zones to start</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:10px">Mark where you load and where you tip. Every lap between them is then timed automatically — you don't touch the phone.</div>
+        <button class="btn btn-primary" style="width:100%" onclick="showScreen('settings')">Set up zones</button>
+      </div>`;
+    }
+  }
+
+  // Stats per pickup → dump pair
+  if(statsEl){
+    const st=circuitStats(all);
+    statsEl.innerHTML=st.length?('<div class="card" style="margin-bottom:12px"><div class="card-title">Averages</div>'+
+      st.map(s=>`<div style="padding:8px 0;border-top:1px solid var(--border)">
+        <div style="font-weight:700;font-size:14px">${escHtml(s.pair)}</div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-size:13px">
+          <div><span style="color:var(--text2)">Laps</span> <b>${s.count}</b></div>
+          <div><span style="color:var(--text2)">Avg</span> <b style="color:var(--amber)">${fmtCircuitDur(s.avgS)}</b></div>
+          <div><span style="color:var(--text2)">Best</span> <b>${fmtCircuitDur(s.fastestS)}</b></div>
+          <div><span style="color:var(--text2)">Worst</span> <b>${fmtCircuitDur(s.slowestS)}</b></div>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-top:6px">
+          load ${fmtCircuitDur(s.avgLoadS)} · haul ${fmtCircuitDur(s.avgHaulS)} · tip ${fmtCircuitDur(s.avgDumpS)} · back ${fmtCircuitDur(s.avgReturnS)}
+        </div>
+      </div>`).join('')+'</div>'):'';
+  }
+
+  // Recent circuits, newest first, grouped by day
+  if(!all.length){
+    listEl.innerHTML=zs.length?'<div class="card"><div style="font-size:13px;color:var(--text2)">No circuits logged yet.</div></div>':'';
+    return;
+  }
+  const byDay={};
+  all.forEach(c=>{ (byDay[c.date]=byDay[c.date]||[]).push(c); });
+  listEl.innerHTML=Object.keys(byDay).sort().reverse().map(function(date){
+    const list=byDay[date];
+    const total=list.reduce((a,c)=>a+(c.duration_s||0),0);
+    return `<div class="card" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+        <div style="font-weight:800">${fmtDate(date)}</div>
+        <div style="font-size:12px;color:var(--text2)">${list.length} lap${list.length!==1?'s':''} · ${fmtCircuitDur(total)}</div>
+      </div>
+      ${list.map(c=>`<div style="padding:8px 0;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600">${escHtml(c.pickup_name)} → ${escHtml(c.dump_name)}</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px">${fmtTime(c.start_ts)}–${fmtTime(c.end_ts)} · load ${fmtCircuitDur(c.load_s)} · haul ${fmtCircuitDur(c.haul_s)} · tip ${fmtCircuitDur(c.dump_s)} · back ${fmtCircuitDur(c.return_s)}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-weight:800;color:var(--amber)">${fmtCircuitDur(c.duration_s)}</div>
+          <button class="btn btn-secondary btn-sm" style="margin-top:4px;font-size:11px;padding:3px 8px" onclick="deleteCircuit('${c.id}')">✕</button>
+        </div>
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+window.renderCircuits=renderCircuits;
+
+// The live cycle timer only ticks while the screen is actually open.
+function startCircuitTick(){
+  stopCircuitTick();
+  _circuitTick=setInterval(function(){
+    const ac=activeCircuit(); const el=document.getElementById('circuit-live-timer');
+    if(!ac||!el){ return; }
+    // Crossing the max mid-tick means the cycle just went stale — redraw once so
+    // the card flips to "no cycle running" instead of ticking past the limit.
+    if(isStaleCircuit(ac,Date.now(),CIRCUIT_CFG)){ try{ renderCircuits(); }catch(_){} return; }
+    el.textContent=fmtCircuitDur(Math.round((Date.now()-ac.start_ts)/1000));
+  },1000);
+}
+function stopCircuitTick(){ if(_circuitTick){ clearInterval(_circuitTick); _circuitTick=null; } }
+window.startCircuitTick=startCircuitTick; window.stopCircuitTick=stopCircuitTick;
+
+// CSV for billing analysis. Deliberately separate from the trip/tax exporters:
+// this is production data (how long a load takes), not a km claim.
+function exportCircuitsCSV(){
+  const all=circuits().slice().sort((a,b)=>a.start_ts-b.start_ts);
+  if(!all.length){ toast('No circuits to export yet'); return; }
+  const st=circuitStats(all);
+  const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const mins=s=>((+s||0)/60).toFixed(2);
+  const rows=[];
+  rows.push(['Circuit log — McNichol Earthmoving']);
+  rows.push(['Generated',new Date().toLocaleString()]);
+  rows.push([]);
+  rows.push(['Summary by run']);
+  rows.push(['Pickup','Dump','Laps','Avg (min)','Fastest (min)','Slowest (min)','Total (min)']);
+  st.forEach(s=>rows.push([s.pickup_name,s.dump_name,s.count,mins(s.avgS),mins(s.fastestS),mins(s.slowestS),mins(s.totalS)]));
+  rows.push([]);
+  rows.push(['Every circuit']);
+  rows.push(['Date','Start','End','Pickup','Dump','Cycle (min)','Load (min)','Haul (min)','Tip (min)','Return (min)']);
+  all.forEach(c=>rows.push([c.date,fmtTime(c.start_ts),fmtTime(c.end_ts),c.pickup_name,c.dump_name,
+    mins(c.duration_s),mins(c.load_s),mins(c.haul_s),mins(c.dump_s),mins(c.return_s)]));
+  // UTF-8 BOM + CRLF so Excel on Windows opens it correctly (same as v101).
+  const csv='﻿'+rows.map(r=>r.map(q).join(',')).join('\r\n');
+  const name='circuits_'+circuitDateOf(Date.now())+'.csv';
+  shareOrDownload(new Blob([csv],{type:'text/csv'}),name);
+  toast('Exported '+all.length+' circuit'+(all.length!==1?'s':''));
+}
+window.exportCircuitsCSV=exportCircuitsCSV;
+
 // ── Auto-linking heuristics (impure: reads sites) ───────────────────────────
 // Nearest saved site to a point, within radius m. Returns {site,dist} or null.
 function nearestSiteTo(lat,lng,radiusM){
@@ -9574,9 +10113,38 @@ function _tripRecordFromReconstructed(t){
   try{ suggestTripLinks(rec); }catch(_){}
   return rec;
 }
+// v102.0: the SAME drained batch also feeds the circuit timer. This is the path
+// that matters most for circuits — while he is actually shifting dirt the app is
+// in his pocket, so TripLogService's banked fixes are the only record of the
+// cycles. Merged by timestamp and deduped, so replaying a batch twice is a no-op.
+function applyBankedCircuitFixes(fixes){
+  try{
+    if(!fixes||!fixes.length||!zones().length) return 0;
+    var buf=DB.def('circuitFixes',[]);
+    var seen={};
+    buf.forEach(function(f){ seen[f.t]=true; });
+    var addedFixes=0;
+    fixes.forEach(function(f){
+      if(!f||f.lat==null||f.lng==null||!f.t) return;
+      if(f.acc!=null && f.acc>CIRCUIT_ACC_M) return;
+      if(seen[f.t]) return;
+      seen[f.t]=true; buf.push({lat:f.lat,lng:f.lng,t:f.t}); addedFixes++;
+    });
+    if(!addedFixes) return 0;
+    var now=Date.now();
+    buf=buf.filter(function(f){ return (now-f.t)<=CIRCUIT_BUF_MS; }).slice(-CIRCUIT_BUF_MAX);
+    DB.set('circuitFixes',buf);
+    var added=rebuildCircuits(buf);
+    if(added) try{ GeoLog.add('info','Circuit replay: '+added+' circuit(s) rebuilt from '+addedFixes+' banked fixes'); }catch(_){}
+    return added;
+  }catch(e){ try{ GeoLog.add('error','Circuit replay failed: '+e.message); }catch(_){} return 0; }
+}
+window.applyBankedCircuitFixes=applyBankedCircuitFixes;
+
 // Returns the number of NEW trips logged.
 function applyBankedTripFixes(fixes){
   if(!fixes||!fixes.length) return 0;
+  applyBankedCircuitFixes(fixes);   // same batch, different question
   var out;
   try{ out=reconstructTripsFromFixes(fixes,TRIP_CFG,Date.now()); }
   catch(e){ try{ GeoLog.add('error','Trip replay failed: '+e.message); }catch(_){} return 0; }
