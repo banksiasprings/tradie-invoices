@@ -24,9 +24,11 @@ const api = new Function(
   extract('__V102_TRIPLOG_PURE_START__', '__V102_TRIPLOG_PURE_END__') + '\n' +
   extract('__V102_CIRCUIT_PURE_START__', '__V102_CIRCUIT_PURE_END__') + `
 return {CIRCUIT_CFG, zoneOfPoint, zoneVisitsFromFixes, circuitsFromVisits,
-        circuitsFromFixes, circuitStats, fmtCircuitDur, circuitDateOf, isStaleCircuit, pointInFence};`)();
+        circuitsFromFixes, circuitStats, fmtCircuitDur, circuitDateOf, isStaleCircuit, pointInFence,
+        ZONE_MODES, zoneMode, zonesOfMode, unusableZones, isCircuitMode};`)();
 const { CIRCUIT_CFG, zoneOfPoint, zoneVisitsFromFixes, circuitsFromVisits,
-        circuitsFromFixes, circuitStats, fmtCircuitDur, circuitDateOf, isStaleCircuit, pointInFence } = api;
+        circuitsFromFixes, circuitStats, fmtCircuitDur, circuitDateOf, isStaleCircuit, pointInFence,
+        ZONE_MODES, zoneMode, zonesOfMode, unusableZones, isCircuitMode } = api;
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
@@ -234,6 +236,51 @@ ok('empty input gives empty stats', circuitStats([]).length === 0);
 ok('null input gives empty stats', circuitStats(null).length === 0);
 ok('a zero-duration circuit is ignored rather than skewing the average',
    circuitStats([{ pickup_name: 'a', dump_name: 'b', duration_s: 0 }]).length === 0);
+
+console.log('\nZone modes — v102.0 records keep working alongside v103.0 ones');
+// v102.0 shipped circuit zones as kind:'pickup'|'dump'. Those are live on the
+// phone, so the mode is DERIVED, never migrated in place.
+ok('legacy kind:pickup reads as circuit-pickup', zoneMode({ kind: 'pickup' }) === ZONE_MODES.PICKUP);
+ok('legacy kind:dump reads as circuit-dump', zoneMode({ kind: 'dump' }) === ZONE_MODES.DUMP);
+ok('an explicit mode wins over kind',
+   zoneMode({ kind: 'pickup', mode: ZONE_MODES.SUB }) === ZONE_MODES.SUB);
+ok('a zone with neither is unusable, not guessed', zoneMode({ name: 'x' }) === null);
+ok('null zone is unusable', zoneMode(null) === null);
+ok('unusable zones are surfaced rather than silently dropped',
+   unusableZones([PIT, { id: 'q', name: 'Mystery' }]).length === 1);
+ok('…including one with a mode but no coordinates',
+   unusableZones([{ id: 'q', name: 'No GPS', mode: ZONE_MODES.SUB }]).length === 1);
+ok('zonesOfMode filters by derived mode',
+   zonesOfMode([PIT, TIP], ZONE_MODES.PICKUP).length === 1);
+ok('isCircuitMode covers both circuit ends',
+   isCircuitMode(ZONE_MODES.PICKUP) && isCircuitMode(ZONE_MODES.DUMP));
+ok('…and excludes sub-activities and work sites',
+   !isCircuitMode(ZONE_MODES.SUB) && !isCircuitMode(ZONE_MODES.WORKSITE));
+// The whole drive again, with the new mode spelling — identical result.
+const MODE_ZONES = [
+  { id: 'z1', name: 'Pit', mode: ZONE_MODES.PICKUP, lat: PIT.lat, lng: PIT.lng, radius: 100 },
+  { id: 'z2', name: 'Tip', mode: ZONE_MODES.DUMP, lat: TIP.lat, lng: TIP.lng, radius: 100 },
+];
+const modeRun = circuitsFromFixes(FIXES, MODE_ZONES);
+ok('mode-spelled zones produce the same two circuits', modeRun.circuits.length === 2);
+ok('…with identical timings', modeRun.circuits[0].duration_s === 780 && modeRun.circuits[1].duration_s === 780);
+
+console.log('\nA sub-activity inside the run does not disturb the circuits');
+// The charcoal shed sits beside the haul road. Walking into it mid-cycle must
+// not close, split, or abandon the circuit — the two readings are independent.
+const SHED = { id: 'z5', name: 'Charcoal shed', mode: ZONE_MODES.SUB,
+               lat: (PIT.lat + TIP.lat) / 2, lng: PIT.lng + 0.004, radius: 60 };
+const withShed = FIXES.slice();
+withShed.push({ lat: SHED.lat, lng: SHED.lng, t: T0 + 600 * 1000 });   // mid return leg 1
+withShed.push({ lat: SHED.lat, lng: SHED.lng, t: T0 + 660 * 1000 });
+const shedRun = circuitsFromFixes(withShed, MODE_ZONES.concat([SHED]));
+ok('still exactly two circuits', shedRun.circuits.length === 2, shedRun.circuits.length);
+ok('…with the cycle time unchanged', shedRun.circuits[0].duration_s === 780);
+ok('…and nothing abandoned', shedRun.abandoned.length === 0, shedRun.abandoned);
+ok('the shed visit IS in the shared visit stream (one primitive, two readings)',
+   shedRun.visits.some(v => v.zone_id === 'z5'));
+ok('…carrying its mode so the other reading can pick it up',
+   shedRun.visits.filter(v => v.zone_id === 'z5')[0].mode === ZONE_MODES.SUB);
 
 console.log('\nAn open cycle goes stale rather than counting forever');
 // Caught by looking at the rendered screen: with an open cycle left from the

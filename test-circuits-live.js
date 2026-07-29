@@ -303,9 +303,15 @@ function serve() {
   ok('a valid, non-overlapping zone IS accepted',
      await ev(`(function(){
        document.getElementById('cz-name').value='Far pit'; _czLat=-28.60; _czLng=151.90;
-       document.getElementById('cz-radius').value=100; czSetKind('pickup'); czSave();
+       document.getElementById('cz-radius').value=100; czSetMode('circuit-pickup'); czSave();
        return zones().length;
      })()`) === 3);
+  // v103.0 generalised kind -> mode. The zones seeded by this test still use the
+  // v102.0 kind spelling, so it doubles as the backward-compatibility check.
+  ok('a zone added now carries the v103.0 mode',
+     await ev(`zones().find(function(z){return z.name==='Far pit';}).mode`) === 'circuit-pickup');
+  ok('…while the v102.0 kind-spelled zones still resolve',
+     await ev(`zoneMode(zones().find(function(z){return z.name==='Pit';}))`) === 'circuit-pickup');
 
   console.log('\nRegression: nothing else was touched');
   ok('no work-day records were created', await ev('days().length') === 0);

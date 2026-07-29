@@ -569,7 +569,7 @@ const firestoreDb = initializeFirestore(fbApp, {
 // v102.0 adds 'zones' + 'circuits'. NOT synced, deliberately: 'circuitFixes' is
 // a rolling local GPS buffer and 'activeCircuit' is a live cursor — syncing
 // either would spam Firestore mid-shift (same rule as v100's mcn_activeTrip).
-const SYNC_KEYS = ['settings', 'clients', 'days', 'sites', 'activeDay', 'invoices', 'gst_on', 'trips', 'vehicles', 'zones', 'circuits'];
+const SYNC_KEYS = ['settings', 'clients', 'days', 'sites', 'activeDay', 'invoices', 'gst_on', 'trips', 'vehicles', 'zones', 'circuits', 'subsessions', 'batches'];
 // == ArchivedSync: per-entry archived flags in Firestore worklog subcollection ==
 // Each entry has its own doc at users/{uid}/worklog/{entryId} with {archived:bool}.
 // This survives Android storage clears independently of the days blob.
@@ -1868,21 +1868,44 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 
-<!-- CIRCUITS SCREEN (v102.0) — cycle times for repetitive earthworks -->
+<!-- ACTIVITY SCREEN (v103.0) — circuits + sub-activities, one zone system -->
 <div id="screen-circuits" class="screen">
   <div class="header">
-    <h1>Circuits</h1>
-    <p>Cycle times — pickup → dump → back</p>
+    <h1>Activity</h1>
+    <p id="act-subtitle">Circuits and sub-activities</p>
   </div>
   <div class="section">
-    <div id="circuit-live-slot"></div>
-    <div id="circuit-stats-slot"></div>
-    <div id="circuit-list-slot"></div>
-    <div class="btn-row" style="margin-top:14px">
-      <button class="btn btn-secondary" style="flex:1" onclick="showScreen('settings')">Manage zones</button>
-      <button class="btn btn-secondary" style="flex:1" onclick="exportCircuitsCSV()">⤓ Export CSV</button>
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <button class="btn btn-primary btn-sm" id="act-tab-circuits" style="flex:1" onclick="actTab('circuits')">🔁 Circuits</button>
+      <button class="btn btn-secondary btn-sm" id="act-tab-sub" style="flex:1" onclick="actTab('sub')">🔥 Sub-activities</button>
+    </div>
+    <div id="act-pane-circuits">
+      <div id="circuit-live-slot"></div>
+      <div id="circuit-stats-slot"></div>
+      <div id="circuit-list-slot"></div>
+      <div class="btn-row" style="margin-top:14px">
+        <button class="btn btn-secondary" style="flex:1" onclick="showScreen('settings')">Manage zones</button>
+        <button class="btn btn-secondary" style="flex:1" onclick="exportCircuitsCSV()">⤓ Export CSV</button>
+      </div>
+    </div>
+    <div id="act-pane-sub" style="display:none">
+      <div id="sub-live-slot"></div>
+      <div id="sub-cost-slot"></div>
+      <div id="sub-list-slot"></div>
+      <div class="btn-row" style="margin-top:14px">
+        <button class="btn btn-secondary" style="flex:1" onclick="showScreen('settings')">Manage zones</button>
+        <button class="btn btn-secondary" style="flex:1" onclick="exportBatchesCSV()">⤓ Export CSV</button>
+      </div>
     </div>
     <div style="height:24px"></div>
+  </div>
+</div>
+
+<!-- Batch costing modal (v103.0) -->
+<div class="modal-bg" id="batch-modal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-title" id="batch-modal-title">Record batch <button class="modal-close" onclick="closeBatchModal()">✕</button></div>
+    <div id="batch-modal-body"></div>
   </div>
 </div>
 
@@ -2107,25 +2130,38 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         </div>
       </div>
     </div>
-    <!-- v102.0 Circuit zones: pickup + dump areas for cycle timing -->
+    <!-- v103.0 Zones: one place for work sites, circuit pairs, and sub-activities -->
     <div class="card card-collapsible" id="circuit-zones-card" data-collapse-default="collapsed">
-      <div class="card-title">🔁 Circuit Zones</div>
+      <div class="card-title">📍 Zones</div>
       <div class="card-body">
         <div style="font-size:13px;color:var(--text2);margin-bottom:12px">
-          For repetitive work — dig here, tip there, come back. Stand in the pickup area and capture it, then do the same at the dump. Every lap is timed automatically.
+          Every area the app watches. A <b>work site</b> starts your day. A <b>pickup</b> and <b>dump</b> pair times your circuits. A <b>sub-activity</b> is a small area inside a work site — time in there is tracked separately and can be costed per batch.
         </div>
         <div id="circuit-zones-list"></div>
         <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
-          <div class="field"><label>Zone name</label><input type="text" id="cz-name" placeholder="e.g. Top paddock pit"></div>
-          <div class="field"><label>Type</label>
-            <div style="display:flex;gap:8px">
-              <button class="btn btn-primary btn-sm" id="cz-kind-pickup" style="flex:1" onclick="czSetKind('pickup')">⛏ Pickup</button>
-              <button class="btn btn-secondary btn-sm" id="cz-kind-dump" style="flex:1" onclick="czSetKind('dump')">🪣 Dump</button>
+          <div class="field"><label>Zone name</label><input type="text" id="cz-name" placeholder="e.g. Charcoal shed"></div>
+          <div class="field"><label>What is it?</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <button class="btn btn-secondary btn-sm" id="cz-mode-worksite" onclick="czSetMode('worksite')">🚜 Work site</button>
+              <button class="btn btn-primary btn-sm" id="cz-mode-subactivity" onclick="czSetMode('sub_activity')">🔥 Sub-activity</button>
+              <button class="btn btn-secondary btn-sm" id="cz-mode-circuitpickup" onclick="czSetMode('circuit-pickup')">⛏ Pickup</button>
+              <button class="btn btn-secondary btn-sm" id="cz-mode-circuitdump" onclick="czSetMode('circuit-dump')">🪣 Dump</button>
+            </div>
+            <div id="cz-mode-hint" style="font-size:12px;color:var(--text2);margin-top:6px">A small area inside a work site — time here is tracked separately and can be costed per batch.</div>
+          </div>
+          <!-- Cost config: sub-activities only -->
+          <div id="cz-cost-config">
+            <div class="field"><label>Labour rate for this activity ($/hr)</label>
+              <input type="number" id="cz-rate" step="1" min="0" placeholder="defaults to your normal rate">
+            </div>
+            <div class="field"><label>What do you measure the output in?</label>
+              <input type="text" id="cz-unit" placeholder="e.g. kg, tonne, bag, joint" value="kg">
+              <div style="font-size:12px;color:var(--text2);margin-top:4px">After a batch you enter how much you made and what the materials cost, and the app works out the cost per unit.</div>
             </div>
           </div>
           <div class="field"><label>Radius (m)</label>
-            <input type="range" id="cz-radius" min="30" max="400" step="10" value="100" oninput="document.getElementById('cz-radius-display').textContent=this.value+'m'" style="width:100%">
-            <div style="font-size:12px;color:var(--text2)"><span id="cz-radius-display">100m</span> — big enough to cover where you stop, small enough not to overlap the other zone</div>
+            <input type="range" id="cz-radius" min="30" max="3000" step="10" value="100" oninput="document.getElementById('cz-radius-display').textContent=this.value+'m'" style="width:100%">
+            <div style="font-size:12px;color:var(--text2)"><span id="cz-radius-display">100m</span> — big enough to cover where you stop, small enough not to overlap another zone of the same kind</div>
           </div>
           <div id="cz-coords" style="font-size:12px;color:var(--text2);margin-bottom:8px">Not captured yet</div>
           <div class="btn-row">
@@ -2231,7 +2267,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v102.0';
+const APP_VERSION = 'v103.0';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -3533,9 +3569,9 @@ function showScreen(id,btn){
   }
   if(id==='analytics') renderAnalytics();
   if(id==='trips') renderTrips();
-  // v102.0: the live cycle timer only ticks while its screen is open.
-  if(id==='circuits'){ renderCircuits(); startCircuitTick(); } else { if(window.stopCircuitTick) stopCircuitTick(); }
-  if(id==='settings') {loadSettings();renderSavedInvoices('settings');GeoLog.render();if(window.Health)Health.refresh();if(window.renderVehicles)renderVehicles();if(window.renderCircuitZones)renderCircuitZones();}
+  // v102.0/v103.0: the live timers only tick while the Activity screen is open.
+  if(id==='circuits'){ renderActivity(); startCircuitTick(); } else { if(window.stopCircuitTick) stopCircuitTick(); }
+  if(id==='settings') {loadSettings();renderSavedInvoices('settings');GeoLog.render();if(window.Health)Health.refresh();if(window.renderVehicles)renderVehicles();if(window.renderZonesCard)renderZonesCard();}
 }
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400)}
 function nowTime(){const n=new Date();return String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0')}
@@ -8543,21 +8579,60 @@ function routeLabelOf(ts,maxStops){
 }
 //__V102_TRIPLOG_PURE_END__
 
-//__V102_CIRCUIT_PURE_START__  (extracted verbatim by test-circuits.js — keep pure)
-// ═══ v102.0 CIRCUIT TIMER — pure logic ═══════════════════════════════════════
-// Repetitive earthworks: dig at a pickup zone, haul to a dump zone, tip, drive
-// back, repeat. This measures the cycle.
+//__V102_CIRCUIT_PURE_START__  (extracted verbatim by test-circuits.js + test-subactivity.js — keep pure)
+// ═══ v103.0 ZONE ACTIVITY SYSTEM — pure logic ════════════════════════════════
+// ONE geofence primitive, read three ways. A zone is a named circle; what it
+// MEANS is its mode:
 //
-// Steven weighed two designs and chose this one: "set 2 geofences (pickup + dump
-// area, ~100m radius each). Every entry/exit records the leg." The alternative —
-// watching for repeated back-and-forth between the same two spots — needs
-// always-on recording and pattern matching; two named zones need neither.
+//   worksite       — the big fence that starts the work day. Lives in mcn_sites
+//                    (it drives native geofencing, the money path, and the
+//                    v101.7 intra-site filter) and is NOT detected here.
+//   circuit-pickup  ⎫ a pickup/dump pair. Repetitive earthworks: dig, haul, tip,
+//   circuit-dump    ⎭ drive back. A circuit is pickup → dump → pickup.
+//   sub_activity   — a small named zone NESTED inside a work site. Time inside it
+//                    is a sub-activity (charcoal shed, welding bay, fence line)
+//                    while the outer work session keeps running. Costed per
+//                    batch: (hours x rate + materials) / output = cost per unit.
+//
+// Steven weighed auto-detecting repeated back-and-forth vs. two manual geofences
+// and chose the geofences: "set 2 geofences (pickup + dump area, ~100m radius
+// each). Every entry/exit records the leg." The sub-activity case is the same
+// primitive with one zone instead of a pair — which is exactly why it is built
+// here rather than as a second system: zoneVisitsFromFixes() produces the visit
+// stream once, and circuits and sub-activities are two readings of it.
 //
 // Zones are CIRCLES tested with the SAME pointInFence() used by the work-site
 // geofence and the v101.7 intra-site trip filter, so a zone can never be entered
 // by a rule that disagrees with the one that starts the work timer.
 //
 // NO DOM / NO DB / NO Date.now — deterministic and unit-testable.
+var ZONE_MODES = {
+  WORKSITE: 'worksite',
+  PICKUP:   'circuit-pickup',
+  DUMP:     'circuit-dump',
+  SUB:      'sub_activity'
+};
+// v102.0 shipped circuit zones as kind:'pickup'|'dump'. Those records must keep
+// working untouched, so the mode is DERIVED rather than migrated in place.
+function zoneMode(z){
+  if(!z) return null;
+  if(z.mode) return z.mode;
+  if(z.kind==='pickup') return ZONE_MODES.PICKUP;
+  if(z.kind==='dump')   return ZONE_MODES.DUMP;
+  return null;                       // unrecognised — never guessed, just ignored
+}
+function isCircuitMode(m){ return m===ZONE_MODES.PICKUP || m===ZONE_MODES.DUMP; }
+function zonesOfMode(zones,mode){
+  return (zones||[]).filter(function(z){ return zoneMode(z)===mode; });
+}
+// A zone the detector will ignore because its mode is missing or unknown. Shown
+// in the UI rather than silently dropped — a zone that records nothing and says
+// nothing is worse than no zone at all.
+function unusableZones(zones){
+  return (zones||[]).filter(function(z){
+    return z && (zoneMode(z)===null || z.lat==null || z.lng==null);
+  });
+}
 var CIRCUIT_CFG = {
   default_radius_m: 100,   // Steven's spec
   boundary_slack_m: 15,    // GPS jitter at the edge; small, since zones are small
@@ -8571,7 +8646,11 @@ var CIRCUIT_CFG = {
   merge_gap_s: 90,
   // Beyond this he knocked off, broke for lunch, or moved to another job.
   // Abandon rather than log a two-hour "cycle" that was really a lunch break.
-  max_circuit_s: 7200
+  max_circuit_s: 7200,
+  // A sub-activity floor: walking past the charcoal shed is not charcoal work.
+  // Higher than the circuit floor because these are costed against output, so a
+  // handful of junk 20-second entries would quietly distort $/kg.
+  min_sub_activity_s: 60
 };
 function _circCfg(cfg,key){
   var c=cfg||{};
@@ -8609,7 +8688,8 @@ function zoneVisitsFromFixes(fixes,zones,cfg){
     if(cur && cur.zone_id===zid){ cur.exit_ts=f.t; cur.fixes++; continue; }
     if(cur) raw.push(cur);
     cur = zid!=null
-      ? {zone_id:zid, zone_name:z.name, kind:z.kind, enter_ts:f.t, exit_ts:f.t, fixes:1}
+      ? {zone_id:zid, zone_name:z.name, kind:z.kind, mode:zoneMode(z),
+         enter_ts:f.t, exit_ts:f.t, fixes:1}
       : null;
   }
   if(cur) raw.push(cur);
@@ -8623,6 +8703,10 @@ function zoneVisitsFromFixes(fixes,zones,cfg){
     }
     merged.push(v);
   }
+  var lastFix=arr.length?arr[arr.length-1].t:null;
+  // A visit that runs to the very last fix has no exit yet — he is still in
+  // there. Marked rather than closed, so the caller never seals an open session.
+  merged.forEach(function(v){ if(lastFix!=null && v.exit_ts===lastFix) v.open=true; });
   return merged.filter(function(v){ return (v.exit_ts-v.enter_ts)>=minDwellMs; });
 }
 function _mkCircuit(pickup,dump,ret){
@@ -8653,8 +8737,11 @@ function _mkCircuit(pickup,dump,ret){
 function circuitsFromVisits(visits,cfg){
   var maxMs=_circCfg(cfg,'max_circuit_s')*1000;
   var circuits=[],abandoned=[],open=null;
-  (visits||[]).forEach(function(v){
-    if(v.kind==='pickup'){
+  // Only circuit zones take part. A sub-activity visit sitting between a pickup
+  // and a dump must not close, split, or otherwise disturb the cycle — the two
+  // readings of the visit stream are independent.
+  (visits||[]).filter(function(v){ return isCircuitMode(v.mode); }).forEach(function(v){
+    if(v.mode===ZONE_MODES.PICKUP){
       if(open && open.dump){
         var c=_mkCircuit(open.pickup,open.dump,v);
         if((v.enter_ts-open.pickup.enter_ts)<=maxMs) circuits.push(c);
@@ -8669,7 +8756,7 @@ function circuitsFromVisits(visits,cfg){
         }
         open={pickup:v, dump:null};
       }
-    } else if(v.kind==='dump'){
+    } else if(v.mode===ZONE_MODES.DUMP){
       // First dump after loading is the one this load went to. A dump with no
       // open pickup is ignored: we don't know where that load came from.
       if(open && open.pickup && !open.dump) open.dump=v;
@@ -8713,6 +8800,146 @@ function circuitStats(circuits){
     return b;
   }).sort(function(a,b){ return b.count-a.count; });
 }
+// ── Sub-activities ──────────────────────────────────────────────────────────
+// The SECOND reading of the same visit stream. A sub_activity zone is a small
+// fence nested inside a work site: the outer work session keeps running while
+// this records how long he spent on one named job inside it.
+//
+// Deliberately independent of the work timer. Detection that only worked while a
+// work day happened to be running would silently lose hours whenever the outer
+// geofence missed — and that outer path has its own failure history. The work
+// session is LINKED (work_session_id, stamped by the caller) but never REQUIRED.
+//
+// The trailing visit is returned as `open`, never as a completed session: he is
+// still standing in the shed, so sealing it would invent a finish time — the
+// same rule the work timer follows for a shift with no knock-off.
+function subSessionsFromVisits(visits,cfg){
+  var minMs=_circCfg(cfg,'min_sub_activity_s')*1000;
+  var sessions=[],open=null;
+  (visits||[]).filter(function(v){ return v.mode===ZONE_MODES.SUB; }).forEach(function(v){
+    var rec={
+      zone_id:v.zone_id, activity:v.zone_name,
+      start_ts:v.enter_ts, end_ts:v.exit_ts,
+      duration_s:Math.max(0,Math.round((v.exit_ts-v.enter_ts)/1000))
+    };
+    if(v.open){ open=rec; return; }
+    if((v.exit_ts-v.enter_ts)>=minMs) sessions.push(rec);
+  });
+  return {sessions:sessions, open:open};
+}
+function subSessionsFromFixes(fixes,zones,cfg){
+  var visits=zoneVisitsFromFixes(fixes,zones,cfg);
+  var r=subSessionsFromVisits(visits,cfg);
+  r.visits=visits;
+  return r;
+}
+// Total hours logged against one activity on one day — what a batch is costed on.
+function subHoursOn(sessions,zoneId,date,dateOf){
+  var f=dateOf||circuitDateOf;
+  var s=0;
+  (sessions||[]).forEach(function(x){
+    if(!x || x.zone_id!==zoneId) return;
+    if(f(x.start_ts)!==date) return;
+    s+=(x.duration_s||0);
+  });
+  return Math.round((s/3600)*100)/100;
+}
+// Group sessions for display: one row per activity per day.
+function groupSubSessions(sessions,dateOf){
+  var f=dateOf||circuitDateOf;
+  var by={};
+  (sessions||[]).forEach(function(x){
+    if(!x) return;
+    var d=f(x.start_ts);
+    var k=x.zone_id+'|'+d;
+    if(!by[k]) by[k]={key:k, zone_id:x.zone_id, activity:x.activity, date:d,
+                      count:0, total_s:0, first_ts:x.start_ts, last_ts:x.end_ts};
+    var b=by[k];
+    b.count++; b.total_s+=(x.duration_s||0);
+    if(x.start_ts<b.first_ts) b.first_ts=x.start_ts;
+    if(x.end_ts>b.last_ts) b.last_ts=x.end_ts;
+  });
+  return Object.keys(by).map(function(k){
+    var b=by[k]; b.hours=Math.round((b.total_s/3600)*100)/100; return b;
+  }).sort(function(a,b){ return b.first_ts-a.first_ts; });
+}
+
+// ── Batch costing ───────────────────────────────────────────────────────────
+// (labour + materials) / output = cost per unit. This is Steven's own PRODUCTION
+// cost — what a kilo of charcoal costs him to make. It is NOT invoice money and
+// NOT the ATO km claim; it never touches dayTotals/generateInvoice or the tax
+// block, and lives here so that stays structurally true.
+function _r2(n){ return Math.round((+n||0)*100)/100; }
+function batchCost(input){
+  var i=input||{};
+  var hours=Math.max(0,+i.hours||0);
+  var rate=Math.max(0,+i.rate||0);
+  var material=Math.max(0,+i.material_cost||0);
+  var qty=+i.output_qty||0;
+  var labour=_r2(hours*rate);
+  var total=_r2(labour+material);
+  return {
+    hours:hours, rate:rate,
+    labour:labour, material:_r2(material), total:total,
+    output_qty:qty,
+    // No output entered yet = no answer. NOT 0, NOT Infinity — a fabricated
+    // "$0.00/kg" reads as free, which is the opposite of unknown.
+    cost_per_unit: qty>0 ? Math.round((total/qty)*10000)/10000 : null
+  };
+}
+// Batches for one activity, oldest first, each carrying its change against the
+// previous one — "am I getting cheaper" is the whole point of keeping them.
+function costTrend(batches,zoneId){
+  var list=(batches||[])
+    .filter(function(b){ return b && (zoneId==null || b.zone_id===zoneId) && b.cost_per_unit!=null; })
+    .slice()
+    .sort(function(a,b){ return String(a.date).localeCompare(String(b.date)) || (a.created_at||0)-(b.created_at||0); });
+  var best=null,worst=null;
+  list.forEach(function(b){
+    if(best===null || b.cost_per_unit<best) best=b.cost_per_unit;
+    if(worst===null || b.cost_per_unit>worst) worst=b.cost_per_unit;
+  });
+  return list.map(function(b,i){
+    var prev=i>0?list[i-1].cost_per_unit:null;
+    return {
+      id:b.id, date:b.date, zone_id:b.zone_id, activity:b.activity,
+      hours:b.hours, labour:b.labour, material:b.material, total:b.total,
+      output_qty:b.output_qty, output_unit:b.output_unit,
+      cost_per_unit:b.cost_per_unit,
+      delta_pct: (prev!=null && prev>0) ? Math.round(((b.cost_per_unit-prev)/prev)*1000)/10 : null,
+      is_best: b.cost_per_unit===best,
+      is_worst: b.cost_per_unit===worst && best!==worst
+    };
+  });
+}
+// Headline numbers for one activity across every batch.
+function activityCostSummary(batches,zoneId){
+  var list=(batches||[]).filter(function(b){ return b && (zoneId==null || b.zone_id===zoneId); });
+  if(!list.length) return null;
+  var hours=0,labour=0,material=0,total=0,qty=0,unit=null;
+  list.forEach(function(b){
+    hours+=(+b.hours||0); labour+=(+b.labour||0);
+    material+=(+b.material||0); total+=(+b.total||0); qty+=(+b.output_qty||0);
+    if(!unit && b.output_unit) unit=b.output_unit;
+  });
+  return {
+    batches:list.length, hours:_r2(hours), labour:_r2(labour),
+    material:_r2(material), total:_r2(total), output_qty:_r2(qty),
+    output_unit:unit,
+    // The weighted average — total spend over total output. Deliberately NOT the
+    // mean of the per-batch rates: a 5 kg batch must not weigh the same as a
+    // 200 kg one.
+    cost_per_unit: qty>0 ? Math.round((total/qty)*10000)/10000 : null
+  };
+}
+// $/unit needs more precision than money elsewhere: charcoal at $2.35/kg and a
+// bulk product at $0.043/kg both have to read sensibly.
+function fmtUnitCost(v,unit){
+  if(v==null) return '—';
+  var s = v>=1 ? '$'+v.toFixed(2) : '$'+v.toFixed(3);
+  return unit ? s+'/'+unit : s;
+}
+
 // An open cycle that has run past max_circuit_s is not a cycle any more — he
 // knocked off, or moved to another job, with the app still holding the last
 // pickup arrival. Left alone the live card counts up forever (10h 30m the
@@ -8749,7 +8976,10 @@ window.fmtCircuitDur=fmtCircuitDur;
 // v101.6 fix works, and adding another would put it straight back at risk.
 function zones(){ return DB.def('zones',[]); }
 function circuits(){ return DB.def('circuits',[]); }
+function subsessions(){ return DB.def('subsessions',[]); }
+function batches(){ return DB.def('batches',[]); }
 window.zones=zones; window.circuits=circuits;
+window.subsessions=subsessions; window.batches=batches;
 
 // Fixes worse than this are junk for a 100 m zone — a 150 m-accuracy fix cannot
 // tell you which side of a 100 m boundary you are on.
@@ -8809,12 +9039,49 @@ function rebuildCircuits(buf){
     dump_name:r.open.dump?r.open.dump.zone_name:null,
     dump_ts:r.open.dump?r.open.dump.enter_ts:null
   } : null);
-  if(added) try{ renderCircuits(); }catch(_){}
+  const subAdded=rebuildSubSessions(buf,zs);
+  if(added||subAdded) try{ renderActivity(); }catch(_){}
   return added;
 }
 window.rebuildCircuits=rebuildCircuits;
 
+// v103.0 — the SECOND reading of the same banked fixes. Same idempotency rule as
+// circuits: ids derived from start_ts, and a stored session is never rewritten.
+// The OPEN session is deliberately not sealed — he is still in there.
+function rebuildSubSessions(buf,zs){
+  try{
+    const r=subSessionsFromFixes(buf||DB.def('circuitFixes',[]),zs||zones(),CIRCUIT_CFG);
+    const existing=subsessions();
+    const known={}; existing.forEach(s=>{ known[s.id]=true; });
+    // Link to the work session that was running when it was first seen. Linked,
+    // never required: detection that depended on the work timer would silently
+    // lose hours whenever the outer geofence missed.
+    const ad=(typeof activeDay==='function')?activeDay():null;
+    let added=0;
+    r.sessions.forEach(function(s){
+      s.id='s'+s.start_ts;
+      if(known[s.id]) return;
+      s.date=circuitDateOf(s.start_ts);
+      s.work_session_id=(ad&&ad.id)||null;
+      s.created_at=Date.now();
+      existing.push(s); added++;
+      GeoLog.add('info','Sub-activity '+s.activity+': '+fmtCircuitDur(s.duration_s)+
+        ' ('+circuitDateOf(s.start_ts)+')'+(s.work_session_id?' · during work session':''));
+    });
+    if(added){
+      DB.set('subsessions',existing);
+      if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+    }
+    DB.set('activeSub', r.open ? {
+      zone_id:r.open.zone_id, activity:r.open.activity, start_ts:r.open.start_ts
+    } : null);
+    return added;
+  }catch(e){ try{GeoLog.add('error','sub-activity rebuild failed: '+e.message);}catch(_){} return 0; }
+}
+window.rebuildSubSessions=rebuildSubSessions;
+
 function activeCircuit(){ return DB.get('activeCircuit'); }
+function activeSub(){ return DB.get('activeSub'); }
 function saveZone(z){
   const zs=zones();
   const i=zs.findIndex(x=>x.id===z.id);
@@ -8826,9 +9093,11 @@ function saveZone(z){
 function deleteZone(id){
   const zs=zones(), z=zs.find(x=>x.id===id);
   if(!z) return;
-  if(!confirm('Remove circuit zone "'+z.name+'"?\n\nRecorded circuits are kept.')) return;
+  const m=zoneMode(z);
+  const kept=m===ZONE_MODES.SUB?'Recorded time and batches are kept.':'Recorded circuits are kept.';
+  if(!confirm('Remove zone "'+z.name+'"?\n\n'+kept)) return;
   DB.set('zones',zs.filter(x=>x.id!==id));
-  renderCircuitZones(); try{ renderCircuits(); }catch(_){}
+  renderZonesCard(); try{ renderActivity(); }catch(_){}
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
   toast('Zone removed');
 }
@@ -8841,13 +9110,31 @@ function deleteCircuit(id){
 }
 window.deleteZone=deleteZone; window.deleteCircuit=deleteCircuit;
 
-// ── Circuit zone setup (Settings card) ──────────────────────────────────────
-let _czKind='pickup', _czLat=null, _czLng=null;
-function czSetKind(k){
-  _czKind=k;
-  const p=document.getElementById('cz-kind-pickup'), d=document.getElementById('cz-kind-dump');
-  if(p) p.className='btn btn-sm '+(k==='pickup'?'btn-primary':'btn-secondary');
-  if(d) d.className='btn btn-sm '+(k==='dump'?'btn-primary':'btn-secondary');
+// ── Zone setup (Settings card) — ALL modes in one place ─────────────────────
+// A `worksite` zone is written to mcn_sites, not mcn_zones: that store is what
+// drives native geofencing, the money path, and the v101.7 intra-site filter.
+// One screen, two backing stores — merging them would be a refactor of the
+// money path for no user-visible gain.
+const ZONE_MODE_META={
+  'worksite':      {icon:'🚜', label:'Work site',   hint:'Starts and stops your work day. The big fence.'},
+  'circuit-pickup':{icon:'⛏',  label:'Pickup',      hint:'Where you load. Start of a circuit.'},
+  'circuit-dump':  {icon:'🪣', label:'Dump',        hint:'Where you tip. Completes the haul leg.'},
+  'sub_activity':  {icon:'🔥', label:'Sub-activity',hint:'A small area inside a work site — time here is tracked separately and can be costed per batch.'}
+};
+let _czMode='sub_activity', _czLat=null, _czLng=null;
+function czSetMode(m){
+  _czMode=m;
+  Object.keys(ZONE_MODE_META).forEach(function(k){
+    const b=document.getElementById('cz-mode-'+k.replace(/[^a-z]/g,''));
+    if(b) b.className='btn btn-sm '+(k===m?'btn-primary':'btn-secondary');
+  });
+  const hint=document.getElementById('cz-mode-hint');
+  if(hint) hint.textContent=ZONE_MODE_META[m].hint;
+  // Cost config only means anything for a sub-activity.
+  const cost=document.getElementById('cz-cost-config');
+  if(cost) cost.style.display=(m==='sub_activity')?'block':'none';
+  const rad=document.getElementById('cz-radius');
+  if(rad&&m==='worksite'&&+rad.value<300){ rad.value=500; const d=document.getElementById('cz-radius-display'); if(d) d.textContent='500m'; }
 }
 function czCaptureGPS(){
   const el=document.getElementById('cz-coords');
@@ -8864,39 +9151,94 @@ function czSave(){
   if(!name){ toast('Give the zone a name'); return; }
   if(_czLat==null){ toast('Capture the location first'); return; }
   const radius=+document.getElementById('cz-radius').value||CIRCUIT_CFG.default_radius_m;
-  // Overlapping zones would make "which zone am I in" a coin toss, so refuse the
-  // pair rather than record ambiguous cycles.
-  const clash=zones().find(z=>_fenceHaversine(_czLat,_czLng,z.lat,z.lng) < (radius+(+z.radius||100)));
-  if(clash){ toast('That overlaps "'+clash.name+'" — move it or shrink the radius'); return; }
-  saveZone({ id:'z'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
-             name:name, kind:_czKind, lat:_czLat, lng:_czLng, radius:radius, created_at:Date.now() });
-  document.getElementById('cz-name').value='';
-  _czLat=null; _czLng=null;
-  const cd=document.getElementById('cz-coords'); if(cd){ cd.textContent='Not captured yet'; cd.style.color=''; }
-  renderCircuitZones();
-  GeoLog.add('info','Circuit zone saved: '+name+' ('+_czKind+', '+radius+'m)');
-  toast('Zone saved: '+name);
-}
-window.czSetKind=czSetKind; window.czCaptureGPS=czCaptureGPS; window.czSave=czSave;
 
-function renderCircuitZones(){
-  const el=document.getElementById('circuit-zones-list');
-  if(!el) return;
-  const zs=zones();
-  if(!zs.length){
-    el.innerHTML='<div style="font-size:13px;color:var(--text2)">No zones yet. You need at least one pickup and one dump.</div>';
+  // A work site is a different animal: it belongs in mcn_sites so it arms the
+  // native geofence and drives the work timer, exactly like one added the old way.
+  if(_czMode===ZONE_MODES.WORKSITE){
+    const ss=sites();
+    if(ss.some(s=>s.name.toLowerCase()===name.toLowerCase())){ toast('A work site called "'+name+'" already exists'); return; }
+    const cl=clientsData(), def=cl.find(c=>c.isDefault)||cl[0];
+    ss.push({name:name,lat:_czLat,lng:_czLng,radius:radius,client:def?def.company:null});
+    DB.set('sites',ss);
+    if(typeof window.onSitesChanged==='function') window.onSitesChanged();
+    try{ renderSitesList(); }catch(_){}
+    _czReset();
+    renderZonesCard();
+    GeoLog.add('info','Work site added from Zones: '+name+' ('+radius+'m)');
+    toast('Work site saved: '+name);
+    if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
     return;
   }
-  const nP=zs.filter(z=>z.kind==='pickup').length, nD=zs.filter(z=>z.kind==='dump').length;
-  el.innerHTML=zs.map(z=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
-      <div style="flex:1;min-width:0;font-size:13px">
-        <span style="font-weight:600">${z.kind==='pickup'?'⛏':'🪣'} ${escHtml(z.name)}</span>
-        <div style="font-size:11px;color:var(--text2);margin-top:2px">${z.kind==='pickup'?'Pickup':'Dump'} · ${z.radius||100}m radius</div>
-      </div>
-      <button class="btn btn-danger btn-sm" onclick="deleteZone('${z.id}')">✕</button>
-    </div>`).join('')
-    + ((!nP||!nD)?`<div style="font-size:12px;color:var(--red);margin-top:8px">⚠ Circuits need at least one pickup AND one dump zone. ${!nP?'Add a pickup.':'Add a dump.'}</div>`:'');
+
+  // Circuit and sub-activity zones must not overlap EACH OTHER — "which zone am
+  // I in" would become a coin toss. They may freely overlap a work site: a
+  // sub-activity zone is MEANT to sit inside one.
+  const clash=zones().find(z=>z.lat!=null&&_fenceHaversine(_czLat,_czLng,z.lat,z.lng) < (radius+(+z.radius||100)));
+  if(clash){ toast('That overlaps "'+clash.name+'" — move it or shrink the radius'); return; }
+
+  const rec={ id:'z'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+              name:name, mode:_czMode, lat:_czLat, lng:_czLng, radius:radius, created_at:Date.now() };
+  if(_czMode===ZONE_MODES.SUB){
+    const rateEl=document.getElementById('cz-rate'), unitEl=document.getElementById('cz-unit');
+    rec.cost={
+      hourly_rate: (rateEl&&rateEl.value!=='')?+rateEl.value:(S().rate||0),
+      output_unit: (unitEl&&unitEl.value.trim())||'unit'
+    };
+  }
+  saveZone(rec);
+  _czReset();
+  renderZonesCard();
+  GeoLog.add('info','Zone saved: '+name+' ('+_czMode+', '+radius+'m)');
+  toast('Zone saved: '+name);
 }
+function _czReset(){
+  const n=document.getElementById('cz-name'); if(n) n.value='';
+  _czLat=null; _czLng=null;
+  const cd=document.getElementById('cz-coords'); if(cd){ cd.textContent='Not captured yet'; cd.style.color=''; }
+}
+window.czSetMode=czSetMode; window.czCaptureGPS=czCaptureGPS; window.czSave=czSave;
+
+// One list, every zone, grouped by what it does. Work sites are read from
+// mcn_sites so this really is the single place zones are managed.
+function renderZonesCard(){
+  const el=document.getElementById('circuit-zones-list');
+  if(!el) return;
+  const zs=zones(), ss=sites();
+  const row=(icon,name,sub,onDel)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;min-width:0;font-size:13px">
+        <span style="font-weight:600">${icon} ${escHtml(name)}</span>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">${sub}</div>
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="${onDel}">✕</button>
+    </div>`;
+  const group=(title,body)=>body?`<div style="margin-bottom:10px">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">${title}</div>${body}</div>`:'';
+
+  const siteRows=ss.map((s,i)=>row('🚜',s.name,(s.radius||100)+'m · '+(s.client?escHtml(s.client):'no client'),`deleteSite(${i})`)).join('');
+  const pick=zonesOfMode(zs,ZONE_MODES.PICKUP), dump=zonesOfMode(zs,ZONE_MODES.DUMP);
+  const circRows=pick.concat(dump).map(z=>row(ZONE_MODE_META[zoneMode(z)].icon,z.name,
+    ZONE_MODE_META[zoneMode(z)].label+' · '+(z.radius||100)+'m',`deleteZone('${z.id}')`)).join('');
+  const subs=zonesOfMode(zs,ZONE_MODES.SUB);
+  const subRows=subs.map(z=>row('🔥',z.name,
+    (z.radius||100)+'m · $'+((z.cost&&z.cost.hourly_rate)||0)+'/hr · per '+((z.cost&&z.cost.output_unit)||'unit'),
+    `deleteZone('${z.id}')`)).join('');
+
+  let warn='';
+  if((pick.length&&!dump.length)||(dump.length&&!pick.length)){
+    warn+=`<div style="font-size:12px;color:var(--red);margin-top:6px">⚠ Circuits need a pickup AND a dump zone. ${!pick.length?'Add a pickup.':'Add a dump.'}</div>`;
+  }
+  // A zone the detector will ignore must say so rather than sit there looking fine.
+  const dead=unusableZones(zs);
+  if(dead.length){
+    warn+=`<div style="font-size:12px;color:var(--red);margin-top:6px">⚠ ${dead.length} zone(s) can't be used — no type or no location: ${dead.map(z=>escHtml(z.name||'unnamed')).join(', ')}</div>`;
+  }
+  const body=group('Work sites',siteRows)+group('Circuit zones',circRows)+group('Sub-activities',subRows);
+  el.innerHTML=body||'<div style="font-size:13px;color:var(--text2)">No zones yet. Add a work site, a pickup/dump pair for circuits, or a sub-activity area.</div>';
+  el.innerHTML+=warn;
+}
+window.renderZonesCard=renderZonesCard;
+// Kept so any older call site (or a stale OTA bundle) still resolves.
+function renderCircuitZones(){ return renderZonesCard(); }
 window.renderCircuitZones=renderCircuitZones;
 
 // ── Circuits screen ─────────────────────────────────────────────────────────
@@ -8985,16 +9327,250 @@ function renderCircuits(){
 }
 window.renderCircuits=renderCircuits;
 
+// ── Activity screen: tabs + sub-activity pane ───────────────────────────────
+let _actTab='circuits';
+function actTab(which){
+  _actTab=which;
+  const c=which==='circuits';
+  document.getElementById('act-pane-circuits').style.display=c?'block':'none';
+  document.getElementById('act-pane-sub').style.display=c?'none':'block';
+  document.getElementById('act-tab-circuits').className='btn btn-sm '+(c?'btn-primary':'btn-secondary');
+  document.getElementById('act-tab-sub').className='btn btn-sm '+(c?'btn-secondary':'btn-primary');
+  const sub=document.getElementById('act-subtitle');
+  if(sub) sub.textContent=c?'Cycle times — pickup → dump → back':'Time and cost per batch';
+  renderActivity();
+}
+window.actTab=actTab;
+function renderActivity(){
+  try{ renderCircuits(); }catch(_){}
+  try{ renderSubActivities(); }catch(_){}
+}
+window.renderActivity=renderActivity;
+
+function renderSubActivities(){
+  const liveEl=document.getElementById('sub-live-slot');
+  const costEl=document.getElementById('sub-cost-slot');
+  const listEl=document.getElementById('sub-list-slot');
+  if(!listEl) return;
+  const zs=zonesOfMode(zones(),ZONE_MODES.SUB);
+  const sess=subsessions(), bs=batches();
+
+  // Live: currently standing in a sub-activity zone.
+  const as=activeSub();
+  const asStale=as&&isStaleCircuit(as,Date.now(),CIRCUIT_CFG);
+  if(liveEl){
+    if(as&&!asStale){
+      liveEl.innerHTML=`<div class="card" style="background:var(--navy);color:#fff;margin-bottom:12px">
+        <div style="font-size:12px;opacity:.75;letter-spacing:.5px;text-transform:uppercase">On now</div>
+        <div style="font-size:34px;font-weight:800;margin:6px 0" id="sub-live-timer">${fmtCircuitDur(Math.round((Date.now()-as.start_ts)/1000))}</div>
+        <div style="font-size:13px;opacity:.85">${escHtml(as.activity)}</div>
+      </div>`;
+    } else if(!zs.length){
+      liveEl.innerHTML=`<div class="card" style="margin-bottom:12px">
+        <div style="font-weight:700;margin-bottom:6px">Track a job inside your work site</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:10px">Mark a small area — the charcoal shed, the welding bay, a fence line. Your work day keeps running as normal; time inside that area is tracked separately, and you can cost each batch to get a price per kg (or whatever you measure).</div>
+        <button class="btn btn-primary" style="width:100%" onclick="showScreen('settings')">Set up a sub-activity zone</button>
+      </div>`;
+    } else {
+      liveEl.innerHTML='<div class="card" style="margin-bottom:12px"><div style="font-size:13px;color:var(--text2)">Not in a sub-activity zone right now. Timing starts on its own when you get there.</div></div>';
+    }
+  }
+
+  // Cost report per activity: headline + every batch with its trend.
+  if(costEl){
+    let html='';
+    zs.forEach(function(z){
+      const sum=activityCostSummary(bs,z.id);
+      const tr=costTrend(bs,z.id);
+      if(!sum&&!tr.length) return;
+      const unit=(z.cost&&z.cost.output_unit)||'unit';
+      const max=tr.reduce((a,b)=>Math.max(a,b.cost_per_unit||0),0);
+      html+=`<div class="card" style="margin-bottom:12px">
+        <div class="card-title">${escHtml(z.name)} — cost per ${escHtml(unit)}</div>
+        ${sum?`<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:13px;margin:6px 0 10px">
+          <div><span style="color:var(--text2)">Batches</span> <b>${sum.batches}</b></div>
+          <div><span style="color:var(--text2)">Hours</span> <b>${sum.hours}</b></div>
+          <div><span style="color:var(--text2)">Output</span> <b>${sum.output_qty} ${escHtml(unit)}</b></div>
+          <div><span style="color:var(--text2)">Overall</span> <b style="color:var(--amber)">${fmtUnitCost(sum.cost_per_unit,unit)}</b></div>
+        </div>`:''}
+        ${tr.length?tr.slice().reverse().map(b=>`<div style="padding:8px 0;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600">${fmtDate(b.date)}
+              ${b.is_best?'<span class="badge badge-green" style="margin-left:4px">best</span>':''}
+              ${b.is_worst?'<span class="badge" style="margin-left:4px;background:#FEE2E2;color:#991B1B">dearest</span>':''}</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:2px">${b.hours}h labour ${fmtMoney(b.labour)} · materials ${fmtMoney(b.material)} · ${b.output_qty} ${escHtml(b.output_unit||unit)}</div>
+            <div style="height:4px;background:var(--surface2);border-radius:2px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;width:${max>0?Math.round((b.cost_per_unit/max)*100):0}%;background:var(--amber)"></i></div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-weight:800;color:var(--amber)">${fmtUnitCost(b.cost_per_unit,'')}</div>
+            ${b.delta_pct!=null?`<div style="font-size:11px;color:${b.delta_pct<0?'#15803D':'#991B1B'}">${b.delta_pct<0?'▼':'▲'} ${Math.abs(b.delta_pct)}%</div>`:''}
+            <button class="btn btn-secondary btn-sm" style="margin-top:4px;font-size:11px;padding:3px 8px" onclick="deleteBatch('${b.id}')">✕</button>
+          </div>
+        </div>`).join(''):'<div style="font-size:12px;color:var(--text2);padding:6px 0">No batches recorded yet.</div>'}
+      </div>`;
+    });
+    costEl.innerHTML=html;
+  }
+
+  // Time logged, grouped by activity + day, each with a Record batch button.
+  const groups=groupSubSessions(sess);
+  if(!groups.length){
+    listEl.innerHTML=zs.length?'<div class="card"><div style="font-size:13px;color:var(--text2)">No sub-activity time logged yet.</div></div>':'';
+    return;
+  }
+  listEl.innerHTML='<div class="card"><div class="card-title">Time logged</div>'+groups.map(function(g){
+    const done=bs.some(b=>b.zone_id===g.zone_id&&b.date===g.date);
+    return `<div style="padding:9px 0;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600">${escHtml(g.activity)}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">${fmtDate(g.date)} · ${g.count} stint${g.count!==1?'s':''} · ${fmtCircuitDur(g.total_s)}</div>
+      </div>
+      <button class="btn ${done?'btn-secondary':'btn-primary'} btn-sm" style="flex-shrink:0" onclick="openBatchModal('${g.zone_id}','${g.date}')">${done?'Batch ✓':'Record batch'}</button>
+    </div>`;
+  }).join('')+'</div>';
+}
+window.renderSubActivities=renderSubActivities;
+
+// ── Batch costing ───────────────────────────────────────────────────────────
+let _batchZone=null, _batchDate=null, _batchEditId=null;
+function openBatchModal(zoneId,date,editId){
+  const z=zones().find(x=>x.id===zoneId);
+  if(!z){ toast('Zone not found'); return; }
+  _batchZone=zoneId; _batchDate=date; _batchEditId=editId||null;
+  const existing=editId?batches().find(b=>b.id===editId)
+                       :batches().find(b=>b.zone_id===zoneId&&b.date===date);
+  if(existing) _batchEditId=existing.id;
+  const unit=(z.cost&&z.cost.output_unit)||'unit';
+  const rate=existing?existing.rate:((z.cost&&z.cost.hourly_rate)||S().rate||0);
+  // Hours come from what the GPS actually measured, but stay editable — he might
+  // have stepped out for a phone call, and he is the authority on his own time.
+  const hours=existing?existing.hours:subHoursOn(subsessions(),zoneId,date);
+  document.getElementById('batch-modal-title').innerHTML=
+    escHtml(z.name)+' — '+fmtDate(date)+' <button class="modal-close" onclick="closeBatchModal()">✕</button>';
+  document.getElementById('batch-modal-body').innerHTML=`
+    <div class="field"><label>Hours worked</label>
+      <input type="number" id="bm-hours" step="0.01" min="0" value="${hours}" oninput="bmRecalc()">
+      <div style="font-size:11px;color:var(--text2);margin-top:4px">Measured from your time in the zone — change it if that's not right.</div>
+    </div>
+    <div class="field"><label>Labour rate ($/hr)</label>
+      <input type="number" id="bm-rate" step="1" min="0" value="${rate}" oninput="bmRecalc()"></div>
+    <div class="field"><label>Material cost ($)</label>
+      <input type="number" id="bm-material" step="0.01" min="0" value="${existing?existing.material:''}" placeholder="e.g. wood, wire, fuel" oninput="bmRecalc()"></div>
+    <div class="field"><label>Output (${escHtml(unit)})</label>
+      <input type="number" id="bm-output" step="0.01" min="0" value="${existing?existing.output_qty:''}" placeholder="how much you made" oninput="bmRecalc()"></div>
+    <div class="field"><label>Notes</label>
+      <input type="text" id="bm-notes" value="${existing?escHtml(existing.notes||''):''}" placeholder="optional"></div>
+    <div id="bm-result" style="background:var(--surface2);border-radius:10px;padding:12px;font-size:13px;margin:6px 0 14px"></div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" style="flex:1" onclick="closeBatchModal()">Cancel</button>
+      <button class="btn btn-primary" style="flex:1" onclick="saveBatch()">${existing?'Update batch':'Save batch'}</button>
+    </div>`;
+  bmRecalc();
+  document.getElementById('batch-modal').classList.add('open');
+}
+function _bmInputs(){
+  return {
+    hours:+(document.getElementById('bm-hours')||{}).value||0,
+    rate:+(document.getElementById('bm-rate')||{}).value||0,
+    material_cost:+(document.getElementById('bm-material')||{}).value||0,
+    output_qty:+(document.getElementById('bm-output')||{}).value||0
+  };
+}
+function bmRecalc(){
+  const el=document.getElementById('bm-result');
+  if(!el) return;
+  const z=zones().find(x=>x.id===_batchZone);
+  const unit=(z&&z.cost&&z.cost.output_unit)||'unit';
+  const c=batchCost(_bmInputs());
+  el.innerHTML=`Labour <b>${fmtMoney(c.labour)}</b> + materials <b>${fmtMoney(c.material)}</b> = <b>${fmtMoney(c.total)}</b><br>
+    <span style="font-size:18px;font-weight:800;color:var(--amber)">${fmtUnitCost(c.cost_per_unit,unit)}</span>
+    ${c.cost_per_unit==null?'<span style="color:var(--text2)"> — enter the output to get a cost per '+escHtml(unit)+'</span>':''}`;
+}
+function saveBatch(){
+  const z=zones().find(x=>x.id===_batchZone);
+  if(!z){ toast('Zone not found'); return; }
+  const inp=_bmInputs();
+  const c=batchCost(inp);
+  const bs=batches();
+  const rec=Object.assign({
+    id:_batchEditId||('b'+Date.now().toString(36)+Math.random().toString(36).slice(2,5)),
+    zone_id:_batchZone, activity:z.name, date:_batchDate,
+    output_unit:(z.cost&&z.cost.output_unit)||'unit',
+    notes:(document.getElementById('bm-notes')||{}).value||'',
+    created_at:Date.now()
+  },c);
+  const i=bs.findIndex(b=>b.id===rec.id);
+  if(i>=0){ rec.created_at=bs[i].created_at||rec.created_at; bs[i]=rec; } else bs.push(rec);
+  DB.set('batches',bs);
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+  GeoLog.add('info','Batch '+(i>=0?'updated':'recorded')+': '+z.name+' '+_batchDate+' — '+
+    rec.hours+'h + '+fmtMoney(rec.material)+' materials / '+rec.output_qty+' '+rec.output_unit+
+    ' = '+fmtUnitCost(rec.cost_per_unit,rec.output_unit));
+  closeBatchModal();
+  renderSubActivities();
+  toast(rec.cost_per_unit!=null?('Batch saved — '+fmtUnitCost(rec.cost_per_unit,rec.output_unit)):'Batch saved');
+}
+function closeBatchModal(){ document.getElementById('batch-modal').classList.remove('open'); }
+function deleteBatch(id){
+  if(!confirm('Delete this batch?\n\nThe time logged in the zone is kept.')) return;
+  DB.set('batches',batches().filter(b=>b.id!==id));
+  renderSubActivities();
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+  toast('Batch deleted');
+}
+window.openBatchModal=openBatchModal; window.bmRecalc=bmRecalc; window.saveBatch=saveBatch;
+window.closeBatchModal=closeBatchModal; window.deleteBatch=deleteBatch;
+
+// Cost history for the accountant, or just for comparing months.
+function exportBatchesCSV(){
+  const bs=batches().slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  if(!bs.length){ toast('No batches to export yet'); return; }
+  const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const rows=[];
+  rows.push(['Sub-activity batch costs — McNichol Earthmoving']);
+  rows.push(['Generated',new Date().toLocaleString()]);
+  rows.push([]);
+  zonesOfMode(zones(),ZONE_MODES.SUB).forEach(function(z){
+    const s=activityCostSummary(bs,z.id);
+    if(!s) return;
+    rows.push([z.name+' — overall',s.batches+' batches',s.hours+'h',
+               'output '+s.output_qty+' '+(s.output_unit||''),
+               'total '+s.total, 'per unit '+(s.cost_per_unit==null?'n/a':s.cost_per_unit)]);
+  });
+  rows.push([]);
+  rows.push(['Date','Activity','Hours','Rate','Labour','Materials','Total','Output','Unit','Cost per unit','Change vs previous %','Notes']);
+  zonesOfMode(zones(),ZONE_MODES.SUB).forEach(function(z){
+    costTrend(bs,z.id).forEach(function(b){
+      rows.push([b.date,b.activity,b.hours,'',b.labour,b.material,b.total,
+                 b.output_qty,b.output_unit,b.cost_per_unit,
+                 b.delta_pct==null?'':b.delta_pct,
+                 (bs.find(x=>x.id===b.id)||{}).notes||'']);
+    });
+  });
+  const csv='﻿'+rows.map(r=>r.map(q).join(',')).join('\r\n');
+  shareOrDownload(new Blob([csv],{type:'text/csv'}),'batch_costs_'+circuitDateOf(Date.now())+'.csv');
+  toast('Exported '+bs.length+' batch'+(bs.length!==1?'es':''));
+}
+window.exportBatchesCSV=exportBatchesCSV;
+
 // The live cycle timer only ticks while the screen is actually open.
 function startCircuitTick(){
   stopCircuitTick();
   _circuitTick=setInterval(function(){
     const ac=activeCircuit(); const el=document.getElementById('circuit-live-timer');
-    if(!ac||!el){ return; }
-    // Crossing the max mid-tick means the cycle just went stale — redraw once so
-    // the card flips to "no cycle running" instead of ticking past the limit.
-    if(isStaleCircuit(ac,Date.now(),CIRCUIT_CFG)){ try{ renderCircuits(); }catch(_){} return; }
-    el.textContent=fmtCircuitDur(Math.round((Date.now()-ac.start_ts)/1000));
+    if(ac&&el){
+      // Crossing the max mid-tick means the cycle just went stale — redraw once so
+      // the card flips to "no cycle running" instead of ticking past the limit.
+      if(isStaleCircuit(ac,Date.now(),CIRCUIT_CFG)){ try{ renderCircuits(); }catch(_){} }
+      else el.textContent=fmtCircuitDur(Math.round((Date.now()-ac.start_ts)/1000));
+    }
+    // Same treatment for a sub-activity left open — it must not read "on now,
+    // 11h 42m" the morning after he forgot to drive out of the shed's fence.
+    const as=activeSub(); const sel=document.getElementById('sub-live-timer');
+    if(as&&sel){
+      if(isStaleCircuit(as,Date.now(),CIRCUIT_CFG)){ try{ renderSubActivities(); }catch(_){} }
+      else sel.textContent=fmtCircuitDur(Math.round((Date.now()-as.start_ts)/1000));
+    }
   },1000);
 }
 function stopCircuitTick(){ if(_circuitTick){ clearInterval(_circuitTick); _circuitTick=null; } }
