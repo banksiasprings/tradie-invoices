@@ -22,10 +22,10 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2234) | v102.0 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2250) | v103.0 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.102.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.103.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -618,65 +618,108 @@ multi-trade code; defaulting the flag OFF on a missing key (absence = ON).
 
 ---
 
-## v102.0 — Circuit Timer ("how long is a lap?")
+## v102.0 / v103.0 — Zone Activity System (circuits + sub-activities)
 
-Repetitive earthworks: dig at a pickup, haul to a dump, tip, drive back, repeat.
-Steven weighed auto-detecting repeated back-and-forth vs. two manual geofences
-and chose the geofences: *"set 2 geofences (pickup + dump area, ~100m radius
-each). Every entry/exit records the leg."* No always-on pattern matching.
+ONE geofence primitive, read three ways. Shipped as v102.0 (circuits) then
+generalised in v103.0 (sub-activities + costing) — documented together because
+they are one system, in one pure block (`//__V102_CIRCUIT_PURE_*__`).
 
-**A circuit is pickup-enter → dump → pickup-enter**, and that closing arrival is
-**also the start of the next one** — which is what makes back-to-back loads
-measurable with the driver touching nothing. Each lap breaks into
-**load / haul / tip / return**, the parts he can actually act on.
+### The primitive
+`zoneVisitsFromFixes()` turns the fix stream into ordered zone VISITS **once**.
+`circuitsFromVisits()` and `subSessionsFromVisits()` are two INDEPENDENT readings
+of that stream. A sub-activity visit mid-haul cannot close/split/abandon a cycle;
+a circuit zone can never be read as a sub-activity. Both pinned by tests.
 
-**NO new location subsystem.** `circuitOnFix()` is called from the ONE shared
-sink `checkNearbySites()` (GPS watch + 90s poll + v101.6 TripLogService), right
-beside `TripDetector.onFix`. `applyBankedCircuitFixes()` consumes the SAME
-drained batch `applyBankedTripFixes` does — the path that matters most, since
-while he's shifting dirt the phone is in his pocket. Zones are **circles tested
-with the SAME `pointInFence()`** the work-site geofence and the v101.7
-intra-site filter use, so a zone can't be entered by a rule that disagrees with
-the one that starts the work timer.
+Zones are **circles** tested with the SAME `pointInFence()` the work-site
+geofence and the v101.7 intra-site filter use — a zone can never be entered by a
+rule that disagrees with the one that starts the work timer.
 
-**Stores:** `mcn_zones` + `mcn_circuits` (synced) · `mcn_circuitFixes` (rolling
-GPS buffer, 6h/2000 cap) + `mcn_activeCircuit` (live cursor) — **local-only, NOT
-in SYNC_KEYS**, same write-spam rule as v100's `mcn_activeTrip`.
+### Zone modes
+`worksite` · `circuit-pickup` · `circuit-dump` · `sub_activity`.
+v102.0 shipped circuit zones as `kind:'pickup'|'dump'`; those are LIVE, so
+`zoneMode(z)` **derives** the mode and never migrates in place. Both spellings
+are tested. A zone with neither (or no coordinates) is returned by
+`unusableZones()` and **shown as broken** rather than silently ignored.
 
-Circuit ids are `'c'+start_ts`, derived from the deterministic pure builder, so
-**replay is idempotent** and a stored circuit is **never rewritten** (a recompute
-after the buffer ages out would see a truncated cycle).
+### Two backing stores, one screen — deliberate
+The **📍 Zones** Settings card manages all four modes, but a `worksite` zone is
+written to **`mcn_sites`**, not `mcn_zones`: that store drives native geofencing,
+the money path, and the intra-site filter. Merging them would be a refactor of
+the money path for one tidier list. A work site added from the Zones card really
+does call `onSitesChanged()` and arm a fence (asserted in the live tests).
 
-**Guards** (each has a fixture): a lap that never reaches a dump records nothing
-and is reported in `abandoned[]`, not swallowed · a "cycle" spanning a lunch
-break is rejected at `max_circuit_s` (2h) rather than poisoning the average ·
-boundary jitter **merges** (`merge_gap_s` 90s) instead of reading as
-leave-and-return · overlapping zones are refused at setup · fixes worse than
-60m accuracy are never banked (they can't resolve a 100m boundary) · an **open**
-cycle goes stale at the same 2h mark instead of the live card counting to
-"10h 30m" the next morning (same failure shape as the stale activeDay).
+### Circuits
+A circuit is **pickup-enter → dump → pickup-enter**, and the closing arrival is
+also the START of the next one — back-to-back loads with the driver touching
+nothing. Each lap splits into **load / haul / tip / return**.
 
-`min_dwell_s` defaults to **0** — every entry counts, as specified. A missed
-circuit is invisible; a spurious one is on screen and deletable, so the default
-fails toward recording. The knob exists and is tested if drive-throughs become
-a problem.
+### Sub-activities
+A small zone NESTED inside a work site (Steven's charcoal shed). The outer work
+session keeps running. Detection is **deliberately independent of the work
+timer** — depending on it would silently lose hours whenever the outer geofence
+missed, and that path has form. `work_session_id` is stamped when known, never
+required. The trailing visit is returned as `open`, never sealed: he is still in
+there, and sealing would invent a finish time.
 
-**UI:** `#screen-circuits` (live cycle card · averages per pickup→dump pair with
-the phase breakdown · laps grouped by day · CSV) reached from the **🔁** in the
-Trip Log action rail; **🔁 Circuit Zones** card in Settings (name + pickup/dump +
-GPS capture + radius slider). CSV is deliberately **separate from the tax
-exporter** — this is production data, not a km claim.
+**Overlap rules follow from meaning:** a sub-activity MAY sit inside a work site
+(that is the point); two ACTIVITY zones may not overlap each other, or "which
+zone am I in" is a coin toss. Enforced at setup.
 
-**Don't reintroduce:** a second GPS service; syncing `circuitFixes`/
-`activeCircuit`; rewriting a stored circuit on recompute; a zone test that
-disagrees with the geofence timer's; an open cycle with no staleness bound.
+### Batch costing — production cost, NOT invoice money
+`(hours × rate + materials) / output = cost per unit`. Hours prefill from what
+the GPS measured but stay **editable**. **No output entered = `cost_per_unit:
+null`**, never `0` — a fabricated $0.00 reads as *free*, the opposite of unknown.
+`activityCostSummary()` is a **WEIGHTED** average (total spend / total output) so
+a 5 kg batch cannot count the same as a 200 kg one. Rate + output unit are
+configured **per zone**, so kg of charcoal and joints of welding work with no
+code change. `costTrend()` gives per-batch change vs previous + best/dearest.
 
-**Deferred:** map-pick for zones (GPS capture is the field gesture — you stand
-in the pit); tonnage/load-count per circuit; linking circuits to an invoice line.
+This is the driver's own cost to MAKE a thing — wholly separate from invoice
+money and from the v101 ATO km claim. It never touches `dayTotals`/
+`generateInvoice`/the tax block.
 
-**Tests:** `test-circuits.js` (87 pure, incl. the pin
-`test_circuit_records_pickup_dump_pickup_pattern` and the specified
-enters-pickup-but-never-dumps fixture) · `test-circuits-live.js` (60 live).
+### Location — no new subsystem
+`circuitOnFix()` is called from the ONE shared sink `checkNearbySites()` (GPS
+watch + 90s poll + v101.6 TripLogService), beside `TripDetector.onFix`.
+`applyBankedCircuitFixes()` consumes the SAME drained batch `applyBankedTripFixes`
+does — the path that matters, since the phone is in his pocket while he works.
+Ids are derived from `start_ts`, so replay is idempotent and a stored
+circuit/session is **never rewritten** (a recompute after the 6h buffer ages out
+would see a truncated cycle).
+
+### Guards (each has a fixture)
+No dump reached → nothing recorded, reported in `abandoned[]` · a "cycle"
+spanning lunch rejected at `max_circuit_s` (2h) · boundary jitter **merges**
+(`merge_gap_s` 90s) · fixes worse than 60 m accuracy never banked · an **open**
+cycle or sub-activity goes stale at 2h instead of the live card counting to
+"10h 30m" the next morning (found by looking at the rendered screen — same
+failure shape as the stale activeDay) · `min_sub_activity_s` 60s so walking past
+the shed is not charcoal work (stricter than the circuit floor, because these
+hours are divided into an output figure).
+
+### UI
+`#screen-circuits` (titled **Activity**) with **🔁 Circuits** / **🔥
+Sub-activities** tabs, reached from the 🔁 in the Trip Log action rail.
+Circuits: live cycle card, per-pair averages with phase breakdown, laps by day.
+Sub-activities: live card, per-activity cost report with $/unit bars + trend
+arrows, time-logged rows with **Record batch**. Two CSVs, both separate from the
+tax exporter.
+
+**Don't reintroduce:** a second GPS service · syncing `circuitFixes`/
+`activeCircuit`/`activeSub` · rewriting a stored circuit/session on recompute ·
+a zone test that disagrees with the geofence timer's · an open cycle with no
+staleness bound · requiring a work session for sub-activity detection ·
+migrating v102.0 `kind` zones in place · `cost_per_unit: 0` when output is
+unknown · an unweighted mean across batches.
+
+**Deferred:** map-pick for zones (GPS capture is the field gesture — you stand in
+the pit) · linking batches to an invoice line · tonnage per circuit.
+
+**Tests:** `test-circuits.js` (104 pure, pin
+`test_circuit_records_pickup_dump_pickup_pattern`) · `test-circuits-live.js`
+(62 live) · `test-subactivity.js` (78 pure, pin
+`test_sub_activity_records_nested_zone_time_and_costs_per_unit`) ·
+`test-subactivity-live.js` (82 live).
 
 ---
 
@@ -698,8 +741,11 @@ enters-pickup-but-never-dumps fixture) · `test-circuits-live.js` (60 live).
 | `mcn_trips` | Array | **v100 trip log** — completed trips (WorkSession-independent). Synced via SYNC_KEYS. See "v100 — Trip Log" below. |
 | `mcn_vehicles` | Array | **v100** — user vehicles `{id,name,registration,make,model,year,cents_per_km,is_default}`. Synced. |
 | `mcn_activeTrip` | Object | **v100** — the ONE live trip in progress (polyline building). LOCAL-ONLY live buffer — NOT in SYNC_KEYS (avoids Firestore write-spam mid-trip). Sealed into `mcn_trips` on stop. |
-| `mcn_zones` | Array | **v102.0** — circuit zones `{id,name,kind:'pickup'\|'dump',lat,lng,radius,created_at}`. Synced. |
+| `mcn_zones` | Array | **v102.0/v103.0** — activity zones `{id,name,mode:'circuit-pickup'\|'circuit-dump'\|'sub_activity',lat,lng,radius,cost?:{hourly_rate,output_unit}}`. `worksite` zones live in `mcn_sites`, not here. v102.0 `kind` records still resolve via `zoneMode()`. Synced. |
 | `mcn_circuits` | Array | **v102.0** — completed circuits `{id,date,pickup_name,dump_name,start_ts,end_ts,duration_s,load_s,haul_s,dump_s,return_s,legs[]}`. Synced. |
+| `mcn_subsessions` | Array | **v103.0** — sub-activity sessions `{id,zone_id,activity,date,start_ts,end_ts,duration_s,work_session_id}`. Synced. |
+| `mcn_batches` | Array | **v103.0** — batch costings `{id,zone_id,activity,date,hours,rate,labour,material,total,output_qty,output_unit,cost_per_unit,notes}`. Synced. |
+| `mcn_activeSub` | Object | **v103.0** — the sub-activity in progress. LOCAL-ONLY live cursor; goes stale after 2h. |
 | `mcn_circuitFixes` | Array | **v102.0** — rolling GPS buffer feeding circuit detection (6h / 2000 cap). LOCAL-ONLY — not in SYNC_KEYS. |
 | `mcn_activeCircuit` | Object | **v102.0** — the cycle in progress. LOCAL-ONLY live cursor; goes stale after 2h. |
 | `mcn_placeCache` | Object | **v101.7** — `{ "lat,lng"(4dp): "Place name" }` resolved place labels, so a coordinate is reverse-geocoded once. LOCAL-ONLY — deliberately NOT in SYNC_KEYS. Capped at 500 entries. |
@@ -897,8 +943,10 @@ node test-fixes-v1018.js          # 62 pure   · phantom shift + ghost site
 node test-fixes-v1018-live.js     # 39 live   · headless Chrome + CDP
 node test-earthmoving-mode.js     # 27 pure   · single-user mode surface
 node test-earthmoving-mode-live.js# 33 live   · full ON -> OFF -> ON cycle
-node test-circuits.js             # 87 pure   · circuit detection + stats
-node test-circuits-live.js        # 60 live   · shared-sink wiring + CSV
+node test-circuits.js             # 104 pure  · circuit detection, modes, stats
+node test-circuits-live.js        # 62 live   · shared-sink wiring + CSV
+node test-subactivity.js          # 78 pure   · nested zones + batch costing
+node test-subactivity-live.js     # 82 live   · nesting, batch modal, cost report
 ```
 
 ```bash
@@ -1162,12 +1210,20 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
+- **v103.0 — one zone system: circuits + sub-activities** — SHIPPED 2026-07-29 (Opus 5).
+  Generalises the v102.0 circuit timer into a single geofence primitive read three ways
+  (worksite / circuit pair / nested sub-activity). Steven's charcoal case: a small zone inside
+  the work-site fence, timed while the work session keeps running, then costed per batch —
+  (hours x rate + materials) / output = cost per kg, with a $/unit trend across batches. Rate and
+  output unit are per-zone config, so it works for anyone's sub-activity without a code change.
+  See "v102.0 / v103.0 — Zone Activity System" above.
+  **Verified:** 182 pure + 144 live across both readings (both pins). OTA live at **1.103.0**;
+  APK rebuilt. Screenshots in `plans/v103-shots/`.
 - **v102.0 — Circuit timer (new feature)** — SHIPPED 2026-07-29 (Opus 5). Geofenced pickup/dump
   zones time every lap of repetitive earthworks, broken into load/haul/tip/return, with per-run
   averages and CSV. Reuses the ONE shared fix sink + the v101.6 TripLogService banked batch — no
-  new location subsystem. See the "v102.0 — Circuit Timer" section above.
-  **Verified:** 87 pure + 60 live browser. OTA live at **1.102.0**; APK built (pure JS — no APK
-  strictly required). Screenshots in `plans/v102-shots/`.
+  new location subsystem. Generalised the same day by v103.0.
+  **Verified:** 87 pure + 60 live browser. OTA was live at **1.102.0**. Screenshots in `plans/v102-shots/`.
 - **v101.9 — single-user earthmoving mode** — SHIPPED 2026-07-29 (Opus 5). Steven's product call:
   the app is earthmoving-only for now. Multi-trade/multi-user/multi-vehicle surface hidden behind a
   default-ON flag, restorable from a hidden dev section (tap the version 5x). Nothing deleted.
