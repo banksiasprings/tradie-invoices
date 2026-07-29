@@ -444,6 +444,7 @@ public class NativeGeoPlugin extends Plugin {
         String pkg = ctx.getPackageName();
         JSObject res = new JSObject();
         res.put("target", target);
+        lastFixRoute = "";
         try {
             boolean opened;
             switch (target) {
@@ -466,12 +467,15 @@ public class NativeGeoPlugin extends Plugin {
                     break;
             }
             res.put("opened", opened);
+            res.put("route", lastFixRoute);   // v104.4 — WHICH page opened, so JS can name it
+            res.put("manufacturer", Build.MANUFACTURER == null ? "" : Build.MANUFACTURER);
             call.resolve(res);
         } catch (Exception e) {
             Log.e(TAG, "openHealthFix error for target=" + target, e);
             try {
-                openAppDetails(ctx, pkg);
-                res.put("opened", true);
+                boolean fell = openAppDetails(ctx, pkg);
+                res.put("opened", fell);      // was hardcoded true — it lied when it failed
+                res.put("route", lastFixRoute);
                 call.resolve(res);
             } catch (Exception e2) {
                 call.reject("Could not open settings: " + e.getMessage());
@@ -491,9 +495,12 @@ public class NativeGeoPlugin extends Plugin {
     private boolean openAppDetails(Context ctx, String pkg) {
         Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
         i.setData(Uri.parse("package:" + pkg));
-        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        ctx.startActivity(i);
-        return true;
+        // v104.4 — routed through tryStart so it is resolve-checked and reports
+        // honestly. It used to return true unconditionally, which meant every
+        // caller's "fallback" could claim success without opening anything.
+        if (tryStart(ctx, i)) { lastFixRoute = "app-details"; return true; }
+        lastFixRoute = "none";
+        return false;
     }
 
     private boolean openBatteryExemption(Context ctx, String pkg) {
@@ -538,14 +545,39 @@ public class NativeGeoPlugin extends Plugin {
      * battery list, then app details. Each candidate is wrapped so an
      * ActivityNotFoundException just advances to the next.
      */
+    // v104.4 — the "manufacturer battery killer" target.
+    //
+    // FIELD BUG (Steven, Moto Edge 50 Neo, v104.3): tapping this did nothing at
+    // all, 14 times. The mirrored GeoLog proved the tap reached native
+    // ("Health fix requested: manufacturer" ×14) and that Java reported success,
+    // so JS correctly stayed quiet. The old Motorola branch led with
+    // ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS — and Android finishes that
+    // dialog INSTANTLY with no UI when the app is already exempt, which he is
+    // (his battery check passes). startActivity didn't throw, so tryStart said
+    // "opened", and nothing was ever on screen.
+    //
+    // Two things were wrong and both are fixed here:
+    //   1. Wrong destination. That intent is the `battery` target's job. This
+    //      target is supposed to reach the manufacturer's OWN app-kill list.
+    //   2. "startActivity didn't throw" is NOT evidence the user saw anything.
+    //      Every candidate is now resolve-checked against PackageManager first,
+    //      and the already-satisfied battery dialog is never a candidate here.
     private boolean openManufacturerBattery(Context ctx, String pkg) {
         String m = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER.toLowerCase();
         List<Intent> candidates = new ArrayList<>();
         if (m.contains("motorola")) {
-            Intent req = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-            req.setData(Uri.parse("package:" + pkg));
-            candidates.add(req);
-            candidates.add(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+            // Moto ships several different device-care apps depending on ROM, and
+            // on recent My UX builds there is NO separate autostart manager at
+            // all — the per-app "Unrestricted" toggle under app details IS the
+            // setting. So: try the known Moto surfaces, then fall through to the
+            // app page (added for every device below), which is the real answer
+            // on this handset. Nothing here is assumed to exist.
+            candidates.add(new Intent("com.motorola.appmanager.ACTION_APP_MANAGER"));
+            candidates.add(comp("com.motorola.appmanager",
+                    "com.motorola.appmanager.MainActivity"));
+            candidates.add(comp("com.motorola.motocare",
+                    "com.motorola.motocare.MainActivity"));
+            candidates.add(new Intent("com.motorola.blur.setup.ACTION_APP_START_UP"));
         } else if (m.contains("samsung")) {
             candidates.add(comp("com.samsung.android.lool", "com.samsung.android.sm.ui.battery.BatteryActivity"));
             candidates.add(comp("com.samsung.android.lool", "com.samsung.android.sm.battery.ui.BatteryActivity"));
@@ -567,12 +599,31 @@ public class NativeGeoPlugin extends Plugin {
             candidates.add(comp("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"));
             candidates.add(comp("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.BgStartUpManager"));
         }
-        // Generic fallbacks for every device.
-        candidates.add(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+        // Every device ends here: the per-app settings page. On modern Motorola
+        // this is not a fallback, it is THE destination — Battery →
+        // Unrestricted lives on it.
+        Intent details = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+        details.setData(Uri.parse("package:" + pkg));
+        candidates.add(details);
         for (Intent i : candidates) {
-            if (tryStart(ctx, i)) return true;
+            if (tryStart(ctx, i)) { lastFixRoute = describe(i); return true; }
         }
-        return openAppDetails(ctx, pkg);
+        lastFixRoute = "none";
+        return false;   // NOT openAppDetails() — it is already the last candidate,
+                        // and claiming success after everything failed is the bug.
+    }
+
+    // What actually opened, so JS can name it instead of guessing.
+    private String lastFixRoute = "";
+
+    private String describe(Intent i) {
+        if (i.getComponent() != null) return i.getComponent().getPackageName();
+        String a = i.getAction();
+        if (a == null) return "unknown";
+        if (Settings.ACTION_APPLICATION_DETAILS_SETTINGS.equals(a)) return "app-details";
+        if (Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS.equals(a)) return "battery-list";
+        if (Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS.equals(a)) return "battery-request";
+        return a;
     }
 
     private Intent comp(String pkg, String cls) {
@@ -581,9 +632,25 @@ public class NativeGeoPlugin extends Plugin {
         return i;
     }
 
+    // v104.4 — resolve BEFORE starting. startActivity() not throwing proves only
+    // that something accepted the intent, not that the user saw a screen; an
+    // already-satisfied system dialog finishes immediately and silently. If
+    // nothing on the device handles this intent, say so rather than reporting a
+    // fix that never happened.
+    private boolean resolves(Context ctx, Intent i) {
+        try {
+            PackageManager pm = ctx.getPackageManager();
+            if (pm.resolveActivity(i, 0) != null) return true;
+            return !pm.queryIntentActivities(i, 0).isEmpty();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private boolean tryStart(Context ctx, Intent i) {
         try {
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (!resolves(ctx, i)) return false;
             ctx.startActivity(i);
             return true;
         } catch (Exception e) {

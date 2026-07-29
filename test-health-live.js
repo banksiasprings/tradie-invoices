@@ -249,8 +249,12 @@ function serve() {
             window.__TOASTS=[];`);
   await ev(`Health.fix('manufacturer')`);
   await sleep(300);
+  // v104.4: a dead-end no longer just apologises — it shows the manual steps.
   ok('a fix the OS refused to open says so',
-     /Couldn.t open/.test(await ev(`JSON.stringify(window.__TOASTS)`)), await ev(`JSON.stringify(window.__TOASTS)`));
+     /no page for that/.test(await ev(`JSON.stringify(window.__TOASTS)`)), await ev(`JSON.stringify(window.__TOASTS)`));
+  ok('…and opens the manual steps rather than leaving the user stuck',
+     await ev(`document.getElementById('health-steps-modal').classList.contains('open')`));
+  await ev(`Health.closeManualSteps()`);
   await ev(`delete window.Capacitor.Plugins.NativeGeo.openHealthFix; window.__TOASTS=[];`);
   await ev(`Health.fix('location')`);
   await sleep(300);

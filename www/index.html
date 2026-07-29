@@ -212,6 +212,9 @@
   .hc-fix.soft{background:var(--navy)}
   .hc-row.hc-fail .hc-label{color:#c0392b}
   .hc-row.hc-na{opacity:.45}
+  /* v104.4 — the "show me how" link under a fix button */
+  .hc-manual{margin-top:5px}
+  .hc-manual a{font-size:11px;color:var(--amber);text-decoration:underline}
   .hc-banner{font-size:12.5px;color:var(--text2);background:var(--amber-light);border-radius:8px;padding:9px 11px;margin-bottom:12px;line-height:1.4}
   .hc-banner.hc-banner-warn{color:#b26a00;background:#fef3e0;border:1px solid #f0c890;font-weight:600}
 
@@ -2003,6 +2006,14 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 
+<!-- Manual fix steps (v104.4) — the escape hatch for when no settings page resolves -->
+<div class="modal-bg" id="health-steps-modal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-title" id="health-steps-title">How to fix it <button class="modal-close" onclick="Health.closeManualSteps()">✕</button></div>
+    <div id="health-steps-body"></div>
+  </div>
+</div>
+
 <!-- Batch costing modal (v103.0) -->
 <div class="modal-bg" id="batch-modal">
   <div class="modal" style="max-width:380px">
@@ -2391,7 +2402,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v104.3';
+const APP_VERSION = 'v104.4';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -8289,6 +8300,7 @@ const Health = {
     this._bridgeUnavailable = bridgeUnavailable;
     const checks = this._computeChecks(raw, native, bridgeUnavailable);
     this._lastChecks = checks;
+    this._lastRaw = raw;   // v104.4 — manual steps are written per manufacturer
     return {
       checks, native, raw, bridgeUnavailable,
       criticalFails: checks.filter(c => c.critical && c.status === 'fail'),
@@ -8305,9 +8317,16 @@ const Health = {
     const btn = showFix
       ? '<button class="hc-fix'+(softBtn?' soft':'')+'" onclick="Health.fix(\''+c.fixTarget+'\')">Tap to fix</button>'
       : '';
+    // v104.4 — every fix button carries an escape hatch. The intent chain can
+    // always dead-end (manufacturers rename these Activities between ROM builds),
+    // and a button that opens nothing with no alternative is the bug Steven hit.
+    const manual = showFix
+      ? '<div class="hc-manual"><a href="#" onclick="event.preventDefault();Health.showManualSteps(\''+c.fixTarget+'\')">Not working? See the steps</a></div>'
+      : '';
     return '<div class="hc-row hc-'+c.status+'">'
       + '<div class="hc-ic">'+this._icon(c.status)+'</div>'
-      + '<div class="hc-body"><div class="hc-label">'+c.label+'</div><div class="hc-detail">'+c.detail+'</div></div>'
+      + '<div class="hc-body"><div class="hc-label">'+c.label+'</div><div class="hc-detail">'+c.detail+'</div>'
+      + manual + '</div>'
       + btn + '</div>';
   },
 
@@ -8423,8 +8442,21 @@ const Health = {
     try { GeoLog.add('info', 'Health fix requested: ' + target); } catch(_){}
     const r = await this._withTimeout(ng.openHealthFix({ target }), 4000, 'openHealthFix');
     if(r.ok && r.value && r.value.opened === false){
-      toast("Couldn't open that page — open your phone Settings manually");
+      // v104.4 — nothing on the device handled it. Don't just apologise; show
+      // the steps. This is the state Steven hit 14 times in a row.
+      try{ GeoLog.add('error','Health fix found no page for: '+target+' (route '+((r.value&&r.value.route)||'none')+')'); }catch(_){}
+      toast("This phone has no page for that — here's how to do it by hand");
+      this.showManualSteps(target);
       return false;
+    }
+    // v104.4 — say WHICH page opened. On this handset the manufacturer fix lands
+    // on the app page, where the setting is one more tap down (Battery →
+    // Unrestricted) — so an unexplained jump to a settings screen is a dead end.
+    if(r.ok && r.value && r.value.route){
+      try{ GeoLog.add('info','Health fix opened: '+target+' → '+r.value.route); }catch(_){}
+      if(r.value.route === 'app-details' && (target === 'manufacturer' || target === 'battery')){
+        toast('Opened this app\'s settings — now tap Battery, then Unrestricted');
+      }
     }
     if(!r.ok && !r.timedOut){
       console.warn('[Health] openHealthFix failed:', r.error);
@@ -8435,6 +8467,84 @@ const Health = {
     // us). Say something either way — a silent tap is the reported bug.
     if(r.timedOut) toast('Opening phone settings…');
     return true;
+  },
+
+  // v104.4 — "just show me how".
+  // The intent chain can always dead-end: manufacturers rename these Activities
+  // between ROM builds, and on recent Motorola My UX there is no separate
+  // autostart manager at all — the per-app Unrestricted toggle IS the setting.
+  // Written per manufacturer where the path genuinely differs, generic otherwise.
+  // No screenshots: they'd be wrong within one ROM update, and stale pictures of
+  // a settings screen are worse than accurate words.
+  _manualSteps(target){
+    const mfr = ((this._lastRaw && this._lastRaw.manufacturer) || '').toLowerCase();
+    const app = 'Invoice & PDF';
+    if(target === 'manufacturer' || target === 'battery' || target === 'doze'){
+      if(mfr.indexOf('motorola') >= 0){
+        return { title:'Stop Motorola pausing the app',
+          steps:['Open your phone <b>Settings</b>',
+                 'Tap <b>Apps</b> → <b>'+app+'</b>',
+                 'Tap <b>Battery</b>',
+                 'Choose <b>Unrestricted</b>',
+                 'Go back, then Settings → <b>Battery</b> → <b>Battery&nbsp;optimisation</b> and make sure this app is <b>Not optimised</b>'],
+          note:'Motorola\'s newer software has no separate autostart list — the Unrestricted toggle above is the one that matters.' };
+      }
+      if(mfr.indexOf('samsung') >= 0){
+        return { title:'Stop Samsung pausing the app',
+          steps:['Open <b>Settings</b> → <b>Battery and device care</b> → <b>Battery</b>',
+                 'Tap <b>Background usage limits</b>',
+                 'Make sure '+app+' is NOT in <b>Sleeping apps</b> or <b>Deep sleeping apps</b>',
+                 'Back in <b>Settings → Apps → '+app+' → Battery</b>, choose <b>Unrestricted</b>'], note:'' };
+      }
+      if(mfr.indexOf('xiaomi')>=0||mfr.indexOf('redmi')>=0||mfr.indexOf('poco')>=0){
+        return { title:'Stop MIUI pausing the app',
+          steps:['Open <b>Settings</b> → <b>Apps</b> → <b>Manage apps</b> → <b>'+app+'</b>',
+                 'Turn <b>Autostart</b> ON',
+                 'Tap <b>Battery saver</b> and choose <b>No restrictions</b>'], note:'' };
+      }
+      return { title:'Stop your phone pausing the app',
+        steps:['Open your phone <b>Settings</b>',
+               'Tap <b>Apps</b> → <b>'+app+'</b>',
+               'Tap <b>Battery</b> and choose <b>Unrestricted</b> (or <b>No restrictions</b>)',
+               'If your phone has an <b>Autostart</b> or <b>Auto-launch</b> list, allow this app there too'], note:'' };
+    }
+    if(target === 'location'){
+      return { title:'Allow location all the time',
+        steps:['Open your phone <b>Settings</b>',
+               'Tap <b>Apps</b> → <b>'+app+'</b> → <b>Permissions</b>',
+               'Tap <b>Location</b>',
+               'Choose <b>Allow all the time</b> (not "only while using")',
+               'Turn <b>Use precise location</b> ON'], note:'' };
+    }
+    if(target === 'playservices'){
+      return { title:'Update Google Play services',
+        steps:['Open the <b>Play Store</b>',
+               'Search for <b>Google Play services</b>',
+               'Tap <b>Update</b> if it offers one, then restart the phone'], note:'' };
+    }
+    return { title:'Open your phone settings',
+      steps:['Open your phone <b>Settings</b>', 'Tap <b>Apps</b> → <b>'+app+'</b>'], note:'' };
+  },
+
+  showManualSteps(target){
+    const m = this._manualSteps(target);
+    const t = document.getElementById('health-steps-title');
+    const b = document.getElementById('health-steps-body');
+    const modal = document.getElementById('health-steps-modal');
+    if(!t || !b || !modal) return false;
+    t.innerHTML = escHtml(m.title) + ' <button class="modal-close" onclick="Health.closeManualSteps()">✕</button>';
+    b.innerHTML = '<ol style="margin:0 0 4px;padding-left:20px;font-size:14px;line-height:1.75">'
+      + m.steps.map(s => '<li style="margin-bottom:6px">' + s + '</li>').join('')
+      + '</ol>'
+      + (m.note ? '<div style="font-size:12px;color:var(--text2);margin-top:10px;line-height:1.5">' + m.note + '</div>' : '')
+      + '<button class="btn btn-primary" style="width:100%;margin-top:16px" onclick="Health.closeManualSteps();Health.recheck()">Done — re-check</button>';
+    modal.classList.add('open');
+    try { GeoLog.add('info', 'Health manual steps shown: ' + target); } catch(_){}
+    return true;
+  },
+  closeManualSteps(){
+    const m = document.getElementById('health-steps-modal');
+    if(m) m.classList.remove('open');
   },
 
   // Scroll the Health card into view (card is always-open, not collapsible).

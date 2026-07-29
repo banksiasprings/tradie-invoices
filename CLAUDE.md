@@ -22,11 +22,11 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v104.3 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v104.4 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.104.3 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
-| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.104.3 / versionCode 7 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.104.4 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.104.4 / versionCode 8 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -879,11 +879,67 @@ buttons against a stubbed bridge, and drives all three failure states plus
 reject / `opened:false` / no-bridge / throwing-run. No emulator needed. (This
 also fills the gap noted in v101.6: `test-health.js` was referenced but absent.)
 
-**Still unverified on the actual phone.** The root cause is inferred from
-reproducing the failure modes, not observed on his device — wireless debugging
-was off. If it persists after v104.3, the next step is the mirrored GeoLog:
-`Health fix requested: <target>` is now logged before the call, so its presence
-without a following resume proves the hang.
+### v104.4 — "tap to fix battery killer still not working" [the real root cause]
+v104.3 made the card *honest*; it did not fix the Motorola button. Field report
+came back on v104.3, and this time the **mirrored GeoLog settled it**:
+
+```
+00:34:06  App started (v104.3)
+00:34:36  Health fix requested: manufacturer      ← ×14 between 00:34 and 00:42
+```
+
+The tap fired every time, reached native, and Java reported success — which is
+why v104.3's JS correctly said nothing. **The bug was never in the JS.**
+
+**Root cause (`openManufacturerBattery`):** the Motorola branch led with
+`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`. Android **finishes that dialog
+instantly with no UI when the app is already exempt** — and Steven's is (his
+battery check passes, 9 of 10). `startActivity()` didn't throw → `tryStart()`
+returned true → `opened:true` → silence. It was also simply the **wrong
+destination**: that intent is the `battery` target's job; this target is meant
+to reach the manufacturer's own app-kill list.
+
+**Fixes (native — an APK install is REQUIRED, OTA alone won't carry them):**
+- `tryStart()` now **resolve-checks against PackageManager before starting**.
+  "startActivity didn't throw" is not evidence the user saw a screen.
+- The Motorola branch targets Moto's actual app-manager surfaces
+  (`com.motorola.appmanager` / `motocare` / `blur.setup`), never the
+  already-satisfied battery dialog.
+- **Every device ends at `ACTION_APPLICATION_DETAILS_SETTINGS`** — on modern
+  Motorola My UX that is not a fallback, it is *the* destination: there is no
+  separate autostart list, the per-app **Battery → Unrestricted** toggle is the
+  setting.
+- `openManufacturerBattery` and `openAppDetails` **return false when nothing
+  opened**. `openAppDetails` used to `return true` unconditionally, so every
+  caller's "fallback" could claim a success that never happened.
+- `openHealthFix` returns **`route`** (which page opened) + `manufacturer`, so
+  JS can name the destination instead of guessing.
+
+**JS (ships by OTA):** a resolved app-details route tells him the setting is one
+more tap down ("now tap Battery, then Unrestricted"); a dead end toasts **and
+auto-opens manual steps**; and **every** fix button carries a *"Not working? See
+the steps"* link so the escape hatch exists before anything fails.
+`_manualSteps()` is written per manufacturer (Motorola / Samsung / Xiaomi /
+generic) and per target, in words not screenshots — pictures of a settings
+screen go stale within one ROM update.
+
+**Don't reintroduce:** `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` as the
+`manufacturer` target (it silently no-ops when already exempt); `startActivity`
+without a resolve check; any helper that returns `true` without opening
+something; a fix affordance with no manual-steps escape hatch.
+
+**Tests:** `test-health-battery-fix.js` (31 live) — reproduces his exact
+"9 of 10 / Motorola warning" state and walks the chain: Moto page resolves →
+app-details fallback → **nothing resolves**, asserting it never dead-ends
+silently. `SHOT=1` writes the screenshots. The Java half (resolve-check, honest
+`opened`, `route`) is verified by inspection + compile; a browser can't exercise
+an Android intent.
+
+**v104.3's own root cause was inferred, not observed** — and the v104.4 field
+report proved it was the WRONG inference for this symptom (the calls were not
+hanging; native was returning success). The timeouts and feedback it added are
+still correct and still shipped, but the lesson stands: **the mirrored GeoLog
+settled in one read what two rounds of reasoning could not.** Read it first.
 
 **Don't reintroduce:** a mean cycle time; `lcm3: 0` when capacity is unset;
 deleting a flagged lap instead of keeping it; a live-lap card that replaces the
@@ -1127,9 +1183,10 @@ node test-subactivity.js          # 78 pure   · nested zones + batch costing
 node test-subactivity-live.js     # 83 live   · nesting, batch modal, cost report
 node test-loads.js                # 190 pure  · median/LCM³/rollup/retime/prune (+ the pin)
 node test-loads-live.js           # 161 live  · Loads tab, long-press, invoice rollup, deep-link
-node test-health-live.js          # 32 live   · Setup Health buttons + the 3 dead-card states
+node test-health-live.js          # 33 live   · Setup Health buttons + the 3 dead-card states
+node test-health-battery-fix.js   # 31 live   · the Motorola intent chain never dead-ends (SHOT=1 for shots)
 ```
-Full suite as of v104.3: **759 pure + 488 live**. Run the live ones ONE AT A TIME —
+Full suite as of v104.4: **759 pure + 520 live**. Run the live ones ONE AT A TIME —
 they each spawn Chrome on a fixed CDP port, and a leftover instance from a previous
 run makes the next one fail with `Cannot read properties of undefined
 (reading 'webSocketDebuggerUrl')`. `pkill -f remote-debugging-port` clears it.
@@ -1395,12 +1452,12 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
-- **v104.0 → v104.3 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
+- **v104.0 → v104.4 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
   Steven asked for, in the shape of the Trip Log he already likes: map breadcrumb, day strip,
   tap a lap to draw it, press and hold to retime or flag it. Daily rollup = loads · **median**
   cycle time · LCM³ (loads × truck capacity) · productive hours, and **only that rollup** reaches
   the invoice. Retires the v102.0 Circuits pane in the same commit. See "v104.0 — Loads" above.
-  **Verified:** 190 pure + 161 live (both pins); full suite 759 pure + 488 live green; money
+  **Verified:** 190 pure + 161 live (both pins); full suite 759 pure + 520 live green; money
   paths proven unmoved by a dollar-figure diff with the block on/off and with laps flagged.
   Screenshots in `plans/v104-shots/`. **v104.1** (same day) makes the four zone CTAs
   deep-link straight to the Zones card in Settings instead of the top of the screen —
@@ -1408,7 +1465,11 @@ look for `REJECTED` entries in the mirrored GeoLog.
   title clears the sticky header). Point releases because each prior version was already
   live on Pages, and two different bundles must never share a version number (v82 rule).
   **v104.3** fixes the field report "health check … tap to fix and refresh both do nothing" —
-  three dead-card states, none of which were a binding bug. See "v104.3 — Setup Health" above.
+  three dead-card states, none of which were a binding bug. **v104.4** fixes the real one
+  behind "tap to fix battery killer still not working": the Motorola branch fired the
+  already-satisfied battery dialog, which Android closes instantly and silently. Diagnosed
+  from the mirrored GeoLog (14 taps recorded, all reported successful by native).
+  **v104.4 needs an APK install — the intent chain is native.**
 - **v103.0 — one zone system: circuits + sub-activities** — SHIPPED 2026-07-29 (Opus 5).
   Generalises the v102.0 circuit timer into a single geofence primitive read three ways
   (worksite / circuit pair / nested sub-activity). Steven's charcoal case: a small zone inside
