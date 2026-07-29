@@ -594,6 +594,21 @@ function serve() {
       return {top:Math.round(r.top),h:Math.round(r.height),vh:window.innerHeight};
     })()`);
   ok('PIN: …and the Zones card is on screen', rect.top > -10 && rect.top < rect.vh, rect);
+  // The Settings header is position:sticky, so aligning the card to the viewport
+  // top hides its title behind it — he'd land on the right card unable to see
+  // which card it is. The title must clear the chrome.
+  ok('PIN: …with its TITLE clear of the sticky header, so he can see where he is',
+     await ev(`(function(){
+        var t=document.querySelector('#circuit-zones-card .card-title').getBoundingClientRect();
+        var h=document.querySelector('#screen-settings .header');
+        var hb=h?h.getBoundingClientRect().bottom:0;
+        return t.top>=hb-1 && t.bottom<window.innerHeight;
+     })()`),
+     await ev(`(function(){
+        var t=document.querySelector('#circuit-zones-card .card-title').getBoundingClientRect();
+        var h=document.querySelector('#screen-settings .header');
+        return {titleTop:Math.round(t.top),headerBottom:Math.round(h?h.getBoundingClientRect().bottom:0)};
+     })()`));
   ok('PIN: …with its body visible, so the fields he came for are usable',
      await ev(`(function(){
         var b=document.querySelector('#circuit-zones-card .card-body');

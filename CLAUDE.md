@@ -22,11 +22,11 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v104.1 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v104.2 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.104.1 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
-| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.104.1 / versionCode 5 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.104.2 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.104.2 / versionCode 6 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -821,6 +821,13 @@ the load-bearing half — most Settings cards default to collapsed, so scrolling
 to a closed header still hides the fields he came for. It persists the open
 state under the same `cc_*` key `initCollapsibleCards` uses, so a deep-link
 never leaves the card in a state he can't reproduce by tapping the header.
+**It does NOT use `scrollIntoView({block:'start'})`** (v104.2): the Settings
+`.header` is `position:sticky` and the signed-out banner above it is too, so
+aligning the card to the viewport top parks its title *behind* them — you land
+on the right card unable to see which card it is. The scroll target is computed
+as `card top − (header + banner heights)`, with `scrollIntoView` kept only as a
+catch fallback. Asserted by "its TITLE clear of the sticky header".
+
 An unknown card id returns `false` and logs to GeoLog rather than silently
 landing at the top — that is the exact bug being fixed. Wired to all four zone
 CTAs (Loads rail 📍, Loads empty state, Sub-activities footer + empty state).
@@ -839,7 +846,7 @@ deliberately not built).
 
 **Tests:** `test-loads.js` (190 pure, pin
 `test_loads_tab_shows_completed_cycles_only_median_time_and_lcm3_rollup`) ·
-`test-loads-live.js` (160 live, headless Chrome — incl. real `TouchEvent`
+`test-loads-live.js` (161 live, headless Chrome — incl. real `TouchEvent`
 long-press, flag→rollup→localStorage→sync round-trip, and "not one dollar
 figure changes").
 
@@ -1070,9 +1077,9 @@ node test-circuits-live.js        # 61 live   · shared-sink wiring + CSV
 node test-subactivity.js          # 78 pure   · nested zones + batch costing
 node test-subactivity-live.js     # 83 live   · nesting, batch modal, cost report
 node test-loads.js                # 190 pure  · median/LCM³/rollup/retime/prune (+ the pin)
-node test-loads-live.js           # 160 live  · Loads tab, long-press, invoice rollup, deep-link
+node test-loads-live.js           # 161 live  · Loads tab, long-press, invoice rollup, deep-link
 ```
-Full suite as of v104.1: **759 pure + 455 live**. Run the live ones ONE AT A TIME —
+Full suite as of v104.2: **759 pure + 456 live**. Run the live ones ONE AT A TIME —
 they each spawn Chrome on a fixed CDP port, and a leftover instance from a previous
 run makes the next one fail with `Cannot read properties of undefined
 (reading 'webSocketDebuggerUrl')`. `pkill -f remote-debugging-port` clears it.
@@ -1338,16 +1345,17 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
-- **v104.0 / v104.1 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
+- **v104.0 / v104.1 / v104.2 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
   Steven asked for, in the shape of the Trip Log he already likes: map breadcrumb, day strip,
   tap a lap to draw it, press and hold to retime or flag it. Daily rollup = loads · **median**
   cycle time · LCM³ (loads × truck capacity) · productive hours, and **only that rollup** reaches
   the invoice. Retires the v102.0 Circuits pane in the same commit. See "v104.0 — Loads" above.
-  **Verified:** 190 pure + 160 live (both pins); full suite 759 pure + 455 live green; money
+  **Verified:** 190 pure + 161 live (both pins); full suite 759 pure + 456 live green; money
   paths proven unmoved by a dollar-figure diff with the block on/off and with laps flagged.
   Screenshots in `plans/v104-shots/`. **v104.1** (same day) makes the four zone CTAs
   deep-link straight to the Zones card in Settings instead of the top of the screen —
-  see "v104.1 — Settings deep-links" above. Point release because 1.104.0 was already
+  see "v104.1 — Settings deep-links" above (v104.2 fixes the scroll offset so the card
+  title clears the sticky header). Point releases because each prior version was already
   live on Pages, and two different bundles must never share a version number (v82 rule).
 - **v103.0 — one zone system: circuits + sub-activities** — SHIPPED 2026-07-29 (Opus 5).
   Generalises the v102.0 circuit timer into a single geofence primitive read three ways

@@ -2390,7 +2390,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v104.1';
+const APP_VERSION = 'v104.2';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -6605,8 +6605,25 @@ function openSettingsAt(cardId){
     }
   }
   // The screen was display:none a moment ago, so it has no layout yet and an
-  // immediate scrollIntoView goes nowhere. Same reason Health._reveal waits.
-  const go=function(){ try{ card.scrollIntoView({behavior:'smooth',block:'start'}); }catch(_){} };
+  // immediate scroll goes nowhere. Same reason Health._reveal waits.
+  //
+  // Deliberately NOT scrollIntoView({block:'start'}): the Settings header is
+  // position:sticky, and so is the signed-out banner above it, so aligning the
+  // card to the viewport top parks its title behind them — he lands on the
+  // right card but can't see which card it is. Offset by the real chrome height.
+  const go=function(){
+    try{
+      const sc=document.scrollingElement||document.documentElement;
+      const head=document.querySelector('#screen-settings .header');
+      const warn=document.getElementById('backup-warning');
+      const chrome=(head?head.offsetHeight:0)+
+                   ((warn&&warn.offsetParent!==null)?warn.offsetHeight:0)+10;
+      const top=card.getBoundingClientRect().top+sc.scrollTop-chrome;
+      sc.scrollTo({top:Math.max(0,top),behavior:'smooth'});
+    }catch(_){
+      try{ card.scrollIntoView({behavior:'smooth',block:'start'}); }catch(__){}
+    }
+  };
   if(window.requestAnimationFrame) requestAnimationFrame(function(){ requestAnimationFrame(go); });
   setTimeout(go,220);
   return true;
