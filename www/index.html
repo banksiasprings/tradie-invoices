@@ -1880,7 +1880,8 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       <div id="health-check-list"></div>
       <button class="btn btn-secondary" style="width:100%;margin-top:12px;font-size:13px" onclick="Health.refresh()">↻ Re-check</button>
     </div>
-    <div class="card">
+    <!-- Hidden in single-user earthmoving mode (v101.9) — see settingsSurface() -->
+    <div class="card" id="trade-selector-card">
       <div class="card-title">Trade / Industry</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:4px">Customises equipment types, labels, and terminology.</div>
       <div class="trade-grid" id="trade-selector-grid"></div>
@@ -2067,7 +2068,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       <div class="card-body">
         <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Add your vehicle(s) for the km logbook. Set a cents-per-km rate for ATO claims.</div>
         <div id="vehicles-list"></div>
-        <button class="btn btn-secondary" style="margin-top:8px;width:100%" onclick="openVehicleModal()">+ Add vehicle</button>
+        <button class="btn btn-secondary" id="vehicles-add-btn" style="margin-top:8px;width:100%" onclick="openVehicleModal()">+ Add vehicle</button>
         <div class="toggle-row" style="padding:14px 0 4px;border-top:1px solid var(--border);margin-top:14px">
           <div>
             <div style="font-size:14px;font-weight:600">Auto-detect trips</div>
@@ -2139,11 +2140,24 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         <div style="font-size:11px;color:var(--text2);margin-top:6px">CSV for your accountant/Xero · JSON is a complete restorable backup</div>
       </div>
       <div style="border-top:1px solid var(--border);padding-top:14px;display:flex;align-items:center;justify-content:space-between;gap:12px">
-        <div style="font-size:13px;color:var(--text2)">Version <span id="app-version">—</span></div>
+        <div style="font-size:13px;color:var(--text2)" onclick="devTapVersion()">Version <span id="app-version">—</span></div>
         <button id="update-btn" onclick="forceAppUpdate()" style="font-size:12px;font-weight:600;padding:8px 16px;border-radius:8px;border:none;background:var(--navy);color:#fff;cursor:pointer;letter-spacing:.3px">Check for Update</button>
       </div>
       <div style="margin-top:10px;text-align:center">
         <a href="https://github.com/banksiasprings/tradie-invoices/releases/latest/download/InvoicePDF.apk" style="display:inline-block;font-size:12px;font-weight:600;padding:8px 20px;border-radius:8px;background:var(--amber);color:#fff;text-decoration:none;letter-spacing:.3px">⬇ Download Latest APK</a>
+      </div>
+    </div>
+    <!-- v101.9 dev section — revealed by tapping the version number 5 times.
+         Deliberately out of the way: this is where the app stops being
+         earthmoving-only and becomes the multi-trade product again. -->
+    <div class="card" id="dev-mode-card" style="display:none;margin-top:12px;border:1.5px dashed var(--amber)">
+      <div class="card-title">🔧 Developer</div>
+      <div class="toggle-row" style="padding:10px 0">
+        <div>
+          <div style="font-size:14px;font-weight:600">Single-user earthmoving mode</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">ON = built for one earthmoving contractor: hides the trade picker, the team/employee setup, and the multi-vehicle controls. OFF restores the full multi-trade configuration. Nothing is deleted either way.</div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="s-earthmoving-mode" onchange="saveEarthmovingModePref()"><span class="toggle-slider"></span></label>
       </div>
     </div>
     <div class="card card-collapsible" data-collapse-default="collapsed" style="margin-top:12px">
@@ -2167,7 +2181,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v101.8';
+const APP_VERSION = 'v101.9';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -2814,7 +2828,10 @@ const DEFAULTS={
   linkedBossName:'',
   linkedCode:'',
   businessCode:'',
-  tripAutoDetect:true
+  tripAutoDetect:true,
+  // v101.9: built for one earthmoving contractor. Toggle in the dev section
+  // (tap the version number 5×) restores the full multi-trade surface.
+  earthmovingMode:true
 };
 
 function S(){return DB.def('settings',DEFAULTS)}
@@ -3096,6 +3113,41 @@ function repairOrphanedSites(sitesArr, clientsArr){
   return {sites:out, changed:changed};
 }
 //__V1018_FIX_PURE_END__
+
+//__V1019_MODE_PURE_START__  (extracted verbatim by test-earthmoving-mode.js — keep pure)
+// v101.9 — single-user earthmoving mode.
+// Steven: "I've decided I'm just gonna make the app specifically for earthmoving
+// contracting. It's basically just gonna be for me until I get very happy with
+// it and think about it as a product." So the multi-trade / multi-user /
+// multi-vehicle configuration surface is HIDDEN, not deleted: the code all still
+// works, and one toggle in the hidden dev section brings the full surface back
+// if he decides to productise. Default ON.
+// NO DOM / NO DB — a pure description of what should be visible.
+function isEarthmovingModeOn(settings){
+  return !settings || settings.earthmovingMode !== false;
+}
+function settingsSurface(settings, vehicleCount){
+  var s = settings || {};
+  var trade = s.tradeType || 'earthmoving';
+  var emp = trade === 'employee';
+  // Never hide the trade selector from an employee-mode user: it is the only way
+  // back out of employee mode, and locking someone in would be a trap.
+  var solo = isEarthmovingModeOn(s) && !emp;
+  var vc = vehicleCount || 0;
+  return {
+    earthmovingMode: isEarthmovingModeOn(s),
+    tradeSelector: !solo,          // "Trade / Industry" picker — one trade now
+    teamCard:      !solo && !emp,  // employee Business Code sharing — he's solo
+    employeeCard:  emp,            // unchanged: only ever for trade=employee
+    // Vehicles stay (the cents/km rate lives there) but the multi-vehicle
+    // affordances only appear once a second vehicle would actually mean something.
+    addVehicle:    !solo || vc < 1,
+    vehiclePicker: !solo || vc > 1
+  };
+}
+//__V1019_MODE_PURE_END__
+window.isEarthmovingModeOn=isEarthmovingModeOn;
+window.settingsSurface=settingsSurface;
 window.shouldWebFallbackAutoStart=shouldWebFallbackAutoStart;
 window.noFinishInfo=noFinishInfo;
 window.orphanedSites=orphanedSites;
@@ -3289,6 +3341,14 @@ function applyTradeVisibility(){
   if(navLabel) navLabel.textContent=emp?'Timesheet':'Invoice';
   const invTitle=document.getElementById('inv-screen-title');
   if(invTitle) invTitle.textContent=emp?'My Timesheet':'Invoice Generator';
+  // v101.9 single-user earthmoving mode — hide the multi-trade / multi-user /
+  // multi-vehicle configuration surface. Nothing is deleted; the dev-section
+  // toggle brings it all back (settingsSurface() is the single source of truth).
+  const _surf=settingsSurface(S(),(typeof vehicles==='function'?vehicles().length:0));
+  const tradeCard=document.getElementById('trade-selector-card');
+  if(tradeCard) tradeCard.style.display=_surf.tradeSelector?'block':'none';
+  const addVeh=document.getElementById('vehicles-add-btn');
+  if(addVeh) addVeh.style.display=_surf.addVehicle?'block':'none';
   // Machine library card in settings — always show for non-employee trades
   const machCard=document.getElementById('machines-lib-card');
   if(machCard){machCard.style.display=emp?'none':'block';if(!emp)renderMachinesLibList();}
@@ -3296,9 +3356,9 @@ function applyTradeVisibility(){
   const empCard=document.getElementById('employee-settings-card');
   const bizCard=document.getElementById('business-settings-card');
   const teamCard=document.getElementById('team-settings-card');
-  if(empCard) empCard.style.display=emp?'block':'none';
+  if(empCard) empCard.style.display=_surf.employeeCard?'block':'none';
   if(bizCard) bizCard.style.display=emp?'none':'block';
-  if(teamCard) teamCard.style.display=emp?'none':'block';
+  if(teamCard) teamCard.style.display=_surf.teamCard?'block':'none';
   // Team invoice card — only for bosses
   const teamInvCard=document.getElementById('inv-team-card');
   if(teamInvCard) teamInvCard.style.display=emp?'none':'block';
@@ -3338,6 +3398,34 @@ function saveBuildingSuppliesPref(){
   applyTradeVisibility();
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
 }
+// v101.9 — the dev section is revealed by tapping the version number 5 times.
+// Once revealed it stays revealed for the rest of the session.
+let _devTaps=0;
+function devTapVersion(){
+  _devTaps++;
+  if(_devTaps<5){
+    if(_devTaps>=3) toast((5-_devTaps)+' more tap'+(5-_devTaps!==1?'s':'')+'…');
+    return;
+  }
+  const card=document.getElementById('dev-mode-card');
+  if(card){ card.style.display='block'; card.scrollIntoView({behavior:'smooth',block:'center'}); }
+  const cb=document.getElementById('s-earthmoving-mode');
+  if(cb) cb.checked=isEarthmovingModeOn(S());
+  toast('Developer options shown');
+}
+window.devTapVersion=devTapVersion;
+function saveEarthmovingModePref(){
+  const s=S();
+  const cb=document.getElementById('s-earthmoving-mode');
+  s.earthmovingMode=cb?cb.checked:true;
+  DB.set('settings',s);
+  applyTradeVisibility();
+  renderTradeSelector();
+  try{if(window.renderVehicles) renderVehicles();}catch(_){}
+  toast(s.earthmovingMode?'Earthmoving mode ON — extra settings hidden':'Full settings restored');
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+}
+window.saveEarthmovingModePref=saveEarthmovingModePref;
 function saveRoundTo15Pref(){
   const s=S();
   const cb=document.getElementById('s-round-15');
@@ -5865,6 +5953,8 @@ function loadSettings(){
   const _whg=document.getElementById('s-weeklyHrsGoal'); if(_whg) _whg.value = s.weeklyHrsGoal>0 ? s.weeklyHrsGoal : '';
   const _aeg=document.getElementById('s-annualEarningsGoal'); if(_aeg) _aeg.value = s.annualEarningsGoal>0 ? s.annualEarningsGoal : '';
   onGoalInput('init');
+  const _emCb=document.getElementById('s-earthmoving-mode');
+  if(_emCb) _emCb.checked=isEarthmovingModeOn(s);
   renderTradeSelector();
   loadTravelSettings();
   renderMachineRatesCard();
@@ -5903,8 +5993,9 @@ function loadSettings(){
   if(s.linkedBossUID&&s.linkedBossName) renderEmpLinkStatus(s.linkedBossName, s.linkedCode||'');
   // Boss: render business code if exists
   if(s.businessCode) renderTeamCodeSection(s.businessCode);
-  // Boss: load team members
-  if(!isEmployeeMode()) loadTeamMembers();
+  // Boss: load team members. v101.9 — skip the Firestore read entirely when the
+  // team card is hidden; in single-user earthmoving mode there is no team.
+  if(!isEmployeeMode() && settingsSurface(s,0).teamCard) loadTeamMembers();
   applyTradeVisibility();
 }
 
@@ -9407,9 +9498,13 @@ function openTripDetail(id){
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">'+TRIP_CATS.map(function(c){
       return '<button class="cat-badge cat-'+c+'" style="border:2px solid '+(c===cat?TRIP_CAT_META[c].hex:'transparent')+';cursor:pointer;padding:6px 12px" onclick="setTripCategory(\''+id+'\',\''+c+'\')">'+TRIP_CAT_META[c].icon+' '+TRIP_CAT_META[c].label+'</button>';
     }).join('')+'</div>'+
-    '<div class="field"><label>Vehicle</label><select id="td-vehicle" class="ti-input" onchange="setTripVehicle(\''+id+'\',this.value)">'+
-      vehicles().map(function(vh){return '<option value="'+vh.id+'"'+(vh.id===t.vehicle_id?' selected':'')+'>'+escHtml(vh.name)+'</option>';}).join('')+
-      (vehicles().length?'':'<option value="">(no vehicle)</option>')+'</select></div>'+
+    // v101.9: with one vehicle there is nothing to pick — hide the row rather
+    // than show a select with a single option. Returns automatically on a 2nd.
+    (settingsSurface(S(),vehicles().length).vehiclePicker
+      ? '<div class="field"><label>Vehicle</label><select id="td-vehicle" class="ti-input" onchange="setTripVehicle(\''+id+'\',this.value)">'+
+        vehicles().map(function(vh){return '<option value="'+vh.id+'"'+(vh.id===t.vehicle_id?' selected':'')+'>'+escHtml(vh.name)+'</option>';}).join('')+
+        (vehicles().length?'':'<option value="">(no vehicle)</option>')+'</select></div>'
+      : '')+
     '<div class="field"><label>Notes</label><input id="td-notes" class="ti-input" value="'+escHtml(t.notes||'')+'" placeholder="e.g. Muirlawn site visit" onblur="setTripNotes(\''+id+'\',this.value)"></div>'+
     '<div style="background:var(--surface2);border-radius:10px;padding:12px;font-size:13px;margin:6px 0 14px">Estimated claim at $'+(+rate).toFixed(2)+'/km: <strong style="color:var(--amber)">'+fmtMoney(claim)+'</strong></div>'+
     '<button class="btn btn-secondary" style="width:100%;color:var(--red,#dc3545)" onclick="deleteTrip(\''+id+'\')">Delete trip</button>';
