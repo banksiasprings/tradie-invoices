@@ -22,11 +22,11 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v104.2 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v104.3 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.104.2 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
-| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.104.2 / versionCode 6 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.104.3 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.104.3 / versionCode 7 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -836,6 +836,55 @@ alone. Trip Log's empty-state CTA opens a modal, so it never had the problem.
 Pin: `test_setup_zone_cta_deep_links_to_zones_section` (asserts the *baseline*
 too, so it can't pass vacuously).
 
+### v104.3 — Setup Health: "tap to fix and refresh both do nothing"
+Field report on v103.0. **The handlers were wired correctly the whole time** —
+`window.Health` is set, the inline `onclick`s resolve, and in a browser with a
+healthy stubbed bridge both fire. Reproducing the states the *phone* can be in
+found three ways the card is genuinely dead to the touch, none giving feedback:
+
+| state | what the user saw |
+|---|---|
+| bridge missing (JS newer than APK) | every check is `na`, and `na` never qualified for a fix button → **zero buttons rendered** |
+| `getHealthStatus` never resolves | the awaited refresh **hung forever**; card frozen, no error |
+| `openHealthFix` never resolves | **silent no-op**, no toast |
+
+The hangs are the live risk on Steven's Moto Edge 50 Neo: it destroys
+MainActivity the instant the app is backgrounded (the v101.6 finding), and
+`openHealthFix` backgrounds it **by design** — launching the Settings app is its
+whole job. A `PluginCall` whose bridge is torn down never settles.
+
+**Fixes:**
+- `_withTimeout(p, ms, label)` — **never `await` a Capacitor call without a
+  deadline.** `getHealthStatus` 6s, `getTripLoggingStatus` 4s, `openHealthFix` 4s.
+- `refresh()` stays SILENT (screen-open + onResume callers); the user's button
+  calls the new **`recheck()`**, which always toasts and always updates a
+  **"Last checked HH:MM:SS"** stamp. When every check returns the same value the
+  DOM is byte-identical — a re-check that says nothing is indistinguishable from
+  a dead button, which is exactly what was reported.
+- `_pendingRefresh` is armed **BEFORE** `openHealthFix`, not after. Arming it
+  after the `await` meant the return-from-settings re-check never fired on
+  precisely the devices whose bridge dies during the call.
+- The bridge-unavailable state now always renders **one** actionable button
+  ("Open settings") instead of nothing, and distinguishes *"the app is too old to
+  answer"* from *"the app stopped answering"* — different problems, different advice.
+
+**Don't reintroduce:** an un-raced `await` on any Capacitor call; a user-facing
+refresh that can complete without saying anything; arming `_pendingRefresh`
+after the fix call; a card state that renders zero tappable affordances; making
+the Start-Shift gate fail closed (it is still fail-open, asserted).
+
+**Tests:** `test-health-live.js` (32 live, pin
+`test_health_check_tap_to_fix_and_refresh_execute_handlers`) — clicks the real
+buttons against a stubbed bridge, and drives all three failure states plus
+reject / `opened:false` / no-bridge / throwing-run. No emulator needed. (This
+also fills the gap noted in v101.6: `test-health.js` was referenced but absent.)
+
+**Still unverified on the actual phone.** The root cause is inferred from
+reproducing the failure modes, not observed on his device — wireless debugging
+was off. If it persists after v104.3, the next step is the mirrored GeoLog:
+`Health fix requested: <target>` is now logged before the call, so its presence
+without a following resume proves the hang.
+
 **Don't reintroduce:** a mean cycle time; `lcm3: 0` when capacity is unset;
 deleting a flagged lap instead of keeping it; a live-lap card that replaces the
 rollup; blocking invoice generation on unchecked laps; a prune that touches any
@@ -1078,8 +1127,9 @@ node test-subactivity.js          # 78 pure   · nested zones + batch costing
 node test-subactivity-live.js     # 83 live   · nesting, batch modal, cost report
 node test-loads.js                # 190 pure  · median/LCM³/rollup/retime/prune (+ the pin)
 node test-loads-live.js           # 161 live  · Loads tab, long-press, invoice rollup, deep-link
+node test-health-live.js          # 32 live   · Setup Health buttons + the 3 dead-card states
 ```
-Full suite as of v104.2: **759 pure + 456 live**. Run the live ones ONE AT A TIME —
+Full suite as of v104.3: **759 pure + 488 live**. Run the live ones ONE AT A TIME —
 they each spawn Chrome on a fixed CDP port, and a leftover instance from a previous
 run makes the next one fail with `Cannot read properties of undefined
 (reading 'webSocketDebuggerUrl')`. `pkill -f remote-debugging-port` clears it.
@@ -1345,18 +1395,20 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
-- **v104.0 / v104.1 / v104.2 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
+- **v104.0 → v104.3 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
   Steven asked for, in the shape of the Trip Log he already likes: map breadcrumb, day strip,
   tap a lap to draw it, press and hold to retime or flag it. Daily rollup = loads · **median**
   cycle time · LCM³ (loads × truck capacity) · productive hours, and **only that rollup** reaches
   the invoice. Retires the v102.0 Circuits pane in the same commit. See "v104.0 — Loads" above.
-  **Verified:** 190 pure + 161 live (both pins); full suite 759 pure + 456 live green; money
+  **Verified:** 190 pure + 161 live (both pins); full suite 759 pure + 488 live green; money
   paths proven unmoved by a dollar-figure diff with the block on/off and with laps flagged.
   Screenshots in `plans/v104-shots/`. **v104.1** (same day) makes the four zone CTAs
   deep-link straight to the Zones card in Settings instead of the top of the screen —
   see "v104.1 — Settings deep-links" above (v104.2 fixes the scroll offset so the card
   title clears the sticky header). Point releases because each prior version was already
   live on Pages, and two different bundles must never share a version number (v82 rule).
+  **v104.3** fixes the field report "health check … tap to fix and refresh both do nothing" —
+  three dead-card states, none of which were a binding bug. See "v104.3 — Setup Health" above.
 - **v103.0 — one zone system: circuits + sub-activities** — SHIPPED 2026-07-29 (Opus 5).
   Generalises the v102.0 circuit timer into a single geofence primitive read three ways
   (worksite / circuit pair / nested sub-activity). Steven's charcoal case: a small zone inside

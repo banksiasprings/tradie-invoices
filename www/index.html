@@ -2023,9 +2023,10 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         <div class="card-title" style="margin:0">🩺 Setup Health</div>
         <span id="health-pill" class="health-pill hp-green">…</span>
       </div>
-      <div id="health-summary" class="health-count" style="margin-bottom:10px">Checking…</div>
+      <div id="health-summary" class="health-count" style="margin-bottom:2px">Checking…</div>
+      <div id="health-stamp" style="font-size:11px;color:var(--text3);margin-bottom:10px"></div>
       <div id="health-check-list"></div>
-      <button class="btn btn-secondary" style="width:100%;margin-top:12px;font-size:13px" onclick="Health.refresh()">↻ Re-check</button>
+      <button class="btn btn-secondary" style="width:100%;margin-top:12px;font-size:13px" onclick="Health.recheck()">↻ Re-check</button>
     </div>
     <!-- Hidden in single-user earthmoving mode (v101.9) — see settingsSurface() -->
     <div class="card" id="trade-selector-card">
@@ -2390,7 +2391,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v104.2';
+const APP_VERSION = 'v104.3';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -8123,23 +8124,59 @@ window.migrateOrphanedSites=migrateOrphanedSites;
 const Health = {
   _lastChecks: null,
   _autoOpened: false,      // startup auto-open fires at most once per app session
-  _pendingRefresh: false,  // set after a fix deep-link so onResume re-checks
+  _pendingRefresh: false,  // armed BEFORE a fix deep-link so onResume re-checks (v104.3)
+  _lastCheckedAt: null,    // drives the "Last checked HH:MM:SS" stamp
+  _timedOut: false,        // the bridge is there but stopped answering
 
   isNative(){ return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); },
   _plugin(){ return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeGeo) || null; },
 
+  // v104.3 — NEVER await a Capacitor call without a deadline.
+  // A PluginCall whose bridge is torn down before it resolves never settles, and
+  // an un-raced `await` on it leaves the card frozen with no error, no toast and
+  // no way for the user to tell the difference from a dead button. Steven's Moto
+  // Edge 50 Neo destroys MainActivity the instant the app is backgrounded (the
+  // v101.6 finding) — and openHealthFix backgrounds it BY DESIGN, since its whole
+  // job is to launch the Settings app. So this is not a hypothetical.
+  _withTimeout(p, ms, label){
+    return new Promise(resolve => {
+      let done = false;
+      const t = setTimeout(() => {
+        if(done) return;
+        done = true;
+        console.warn('[Health] ' + label + ' timed out after ' + ms + 'ms');
+        resolve({ ok:false, timedOut:true });
+      }, ms);
+      Promise.resolve(p).then(
+        v => { if(done) return; done = true; clearTimeout(t); resolve({ ok:true, value:v }); },
+        e => { if(done) return; done = true; clearTimeout(t); resolve({ ok:false, error:e }); }
+      );
+    });
+  },
+
   async _rawStatus(){
     const ng = this._plugin();
     if(!ng || typeof ng.getHealthStatus !== 'function') return null;
-    let raw;
-    try { raw = await ng.getHealthStatus(); }
-    catch(e){ console.warn('[Health] getHealthStatus failed:', e); return null; }
+    const r = await this._withTimeout(ng.getHealthStatus(), 6000, 'getHealthStatus');
+    if(!r.ok){
+      // Distinguish "the app is too old to answer" from "the app stopped
+      // answering" — they need different advice, and lumping them together is
+      // what made this look like a dead button.
+      this._timedOut = !!r.timedOut;
+      if(r.error) console.warn('[Health] getHealthStatus failed:', r.error);
+      return null;
+    }
+    this._timedOut = false;
+    let raw = r.value;
     // v101.6: fold in the real trip-logging service state. Separate call so an
     // APK without it still returns a valid health object (raw.tripLogging stays
     // undefined → the check renders "na" rather than breaking the whole card).
     if(raw && typeof ng.getTripLoggingStatus === 'function'){
-      try { raw.tripLogging = await ng.getTripLoggingStatus(); }
-      catch(e){ console.warn('[Health] getTripLoggingStatus failed:', e); }
+      // Same deadline rule — a hang here would freeze the whole card over one
+      // advisory row.
+      const t = await this._withTimeout(ng.getTripLoggingStatus(), 4000, 'getTripLoggingStatus');
+      if(t.ok) raw.tripLogging = t.value;
+      else if(t.error) console.warn('[Health] getTripLoggingStatus failed:', t.error);
     }
     return raw;
   },
@@ -8285,7 +8322,16 @@ const Health = {
 
     let html = '';
     if(bridgeUnavailable){
-      html += '<div class="hc-banner hc-banner-warn">⚠️ Health check unavailable — this JS build expects the v92+ Android app. Reinstall the latest APK to enable checks.</div>';
+      // v104.3 — this state used to render ZERO buttons (every check is 'na', and
+      // 'na' doesn't qualify for a fix button), so the card was genuinely dead to
+      // the touch. Always leave one thing the user can actually do.
+      html += this._timedOut
+        ? '<div class="hc-banner hc-banner-warn">⚠️ The app didn\'t answer the health check. Close it fully and reopen, then tap Re-check.</div>'
+        : '<div class="hc-banner hc-banner-warn">⚠️ Health check unavailable — this JS build expects the v92+ Android app. Reinstall the latest APK to enable checks.</div>';
+      html += '<div class="hc-row hc-na"><div class="hc-ic">➖</div>'
+        + '<div class="hc-body"><div class="hc-label">Phone settings</div>'
+        + '<div class="hc-detail">The checks can\'t run, but you can still open the page where they\'re fixed.</div></div>'
+        + '<button class="hc-fix soft" onclick="Health.fix(\'location\')">Open settings</button></div>';
     } else if(!native){
       html += '<div class="hc-banner">These are phone-settings checks — they run live inside the Android app. In the browser they show as “—”.</div>';
     }
@@ -8313,25 +8359,82 @@ const Health = {
     }
   },
 
-  async refresh(){
-    try { const res = await this.run(); this.render(res); return res; }
-    catch(e){ console.warn('[Health] refresh failed:', e); return null; }
+  // Silent refresh for internal callers (screen open, resume) — no toast.
+  async refresh(){ return this._refresh(false); },
+  // v104.3 — the button the USER taps always acknowledges the tap. When every
+  // check returns the same value the DOM is byte-identical, so a re-check that
+  // says nothing is indistinguishable from a dead button. That is precisely the
+  // bug Steven reported: "refresh does nothing".
+  async recheck(){ return this._refresh(true); },
+
+  async _refresh(loud){
+    if(loud){
+      const s = document.getElementById('health-summary');
+      if(s) s.textContent = 'Checking…';
+    }
+    try {
+      const res = await this.run();
+      this.render(res);
+      this._lastCheckedAt = Date.now();
+      this._renderStamp();
+      if(loud){
+        if(res && res.bridgeUnavailable){
+          toast(this._timedOut ? "The app didn't answer — reopen it and try again"
+                               : 'Checks need the latest app installed');
+        } else if(res && res.criticalFails.length){
+          toast(res.criticalFails.length + ' thing' + (res.criticalFails.length===1?'':'s') + ' still need fixing');
+        } else {
+          toast('Checked — all good');
+        }
+      }
+      return res;
+    } catch(e){
+      console.warn('[Health] refresh failed:', e);
+      // An exception must never leave the card silently mid-check.
+      if(loud) toast("Couldn't run the checks — try again");
+      const s = document.getElementById('health-summary');
+      if(s && loud) s.textContent = 'Check failed — tap Re-check to try again';
+      return null;
+    }
+  },
+
+  // "Last checked 21:58" under the summary, so a re-check that changes nothing
+  // still visibly did something.
+  _renderStamp(){
+    const el = document.getElementById('health-stamp');
+    if(!el || !this._lastCheckedAt) return;
+    const d = new Date(this._lastCheckedAt);
+    el.textContent = 'Last checked ' + String(d.getHours()).padStart(2,'0') + ':' +
+                     String(d.getMinutes()).padStart(2,'0') + ':' + String(d.getSeconds()).padStart(2,'0');
   },
 
   async fix(target){
     const ng = this._plugin();
     if(!ng || typeof ng.openHealthFix !== 'function'){
-      toast('Open your phone Settings to fix this');
-      return;
+      toast('Open your phone Settings › Apps › Invoice & PDF to fix this');
+      return false;
     }
-    try {
-      await ng.openHealthFix({ target });
-      this._pendingRefresh = true; // onResume re-checks after the user returns
-      try { GeoLog.add('info', 'Health fix opened: ' + target); } catch(_){}
-    } catch(e){
-      console.warn('[Health] openHealthFix failed:', e);
+    // Armed BEFORE the call, not after. openHealthFix launches the Settings app,
+    // which backgrounds this one — and on a phone that destroys the Activity on
+    // background, the resolve may never come back. Arming afterwards meant the
+    // return-from-settings re-check never fired on exactly the devices that need
+    // it most.
+    this._pendingRefresh = true;
+    try { GeoLog.add('info', 'Health fix requested: ' + target); } catch(_){}
+    const r = await this._withTimeout(ng.openHealthFix({ target }), 4000, 'openHealthFix');
+    if(r.ok && r.value && r.value.opened === false){
+      toast("Couldn't open that page — open your phone Settings manually");
+      return false;
+    }
+    if(!r.ok && !r.timedOut){
+      console.warn('[Health] openHealthFix failed:', r.error);
       toast("Couldn't open settings — open them manually");
+      return false;
     }
+    // Timed out: the intent has almost certainly fired (that is what backgrounds
+    // us). Say something either way — a silent tap is the reported bug.
+    if(r.timedOut) toast('Opening phone settings…');
+    return true;
   },
 
   // Scroll the Health card into view (card is always-open, not collapsible).
