@@ -205,14 +205,17 @@ function serve() {
   ok('sub-activity detection does not require a work session to be running',
      await ev('subsessions().length') === 1);
 
-  console.log('\nSub-activities pane');
-  await ev(`showScreen('circuits'); actTab('sub');`);
+  console.log('\nSub-activities screen');
+  // v104.0 retired the Circuits pane (the Loads review screen replaced it), so
+  // this screen is sub-activities only and needs no tab switch.
+  await ev(`showScreen('circuits')`);
   await sleep(500);
-  ok('the Activity screen is showing', await ev(`document.getElementById('screen-circuits').classList.contains('active')`));
-  ok('the Sub-activities tab is selected',
-     await ev(`document.getElementById('act-pane-sub').style.display`) === 'block');
-  ok('…and the Circuits pane is hidden',
-     await ev(`document.getElementById('act-pane-circuits').style.display`) === 'none');
+  ok('the Sub-activities screen is showing', await ev(`document.getElementById('screen-circuits').classList.contains('active')`));
+  ok('the sub-activity pane is present', await ev(`!!document.getElementById('act-pane-sub')`));
+  ok('…and the retired Circuits pane is gone, not just hidden',
+     await ev(`!document.getElementById('act-pane-circuits')`));
+  ok('…and the tab switcher went with it',
+     await ev(`typeof window.actTab`) === 'undefined');
   const list = await ev(`document.getElementById('sub-list-slot').innerHTML`);
   ok('the logged time is listed', /Charcoal shed/.test(list));
   ok('…showing 5 hours', /5h 00m/.test(list), list.slice(0, 400));

@@ -22,10 +22,11 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2250) | v103.0 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v104.0 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.103.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.104.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.104.0 / versionCode 4 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -723,6 +724,109 @@ the pit) · linking batches to an invoice line · tonnage per circuit.
 
 ---
 
+---
+
+## v104.0 — Loads ("see the laps before the client does")
+
+Steven, on v103.0's circuits: *"zones is interesting not sure yet how it will
+work and where I can see my load times … probably need a dedicated tab like
+trips to see and confirm information is correct."*
+
+**The standing rule this establishes:** an automatically-detected figure gets a
+**raw-data review screen BEFORE its summary flows to an invoice.** The work
+timer learned it (v90 confirm-into-`days[]`), the trip log learned it again
+(v101.7 approve-the-day), and a cycle time is the same shape of claim —
+measured by a machine, printed for a client. Applies to every future detection
+feature (equipment hours, hourly-rate zones, sub-activity outputs).
+
+### The screen
+`#screen-loads` is **the v101.7 trip-log review screen with a different
+subject** — same `.tl-*` CSS, same map/header/day-strip/sheet, same gestures.
+The palette block is now `#screen-trips,#screen-loads`, so a fix to one is a fix
+to both, and no parallel design system exists to drift. 7th nav tab (a
+`max-width:400px` rule shrinks the labels so seven fit a 375px phone).
+
+- **Rollup card** — loads · **median** cycle · LCM³ · productive hours, plus the
+  per-pair phase averages carried over from the pane this replaced. A running
+  lap shows as a line **above** the totals, never in place of them (the first
+  build hid the day's figures for the whole time a lap was running).
+- **Day sheet** — one row per lap: pair, times, cycle time, a four-colour phase
+  bar (load/haul/tip/back), and **Confirm N**.
+- **Tap a row** → that lap alone on the map. **Press and hold (500 ms)** → the
+  lap modal: retime, note, flag, delete. A touchmove >10px cancels the press, so
+  scrolling the sheet is never read as a hold.
+- **Map** draws the **loaded run and the empty return in different colours**
+  (`circuitPhaseSplit`) — seeing where a lap slows down is the point of a
+  breadcrumb. Pickup/dump zones draw as context circles.
+
+### Median, not mean — and null, not zero
+`medianOf` returns **null** for an empty set; `lcm3` is **null** when no truck
+capacity is set. A fabricated `0` reads as *nothing moved*, the opposite of
+*unknown* — the same rule as v103.0's `cost_per_unit`. One 2-hour breakdown
+drags a mean from 10m to 31m and leaves the median at 10m; that is the entire
+argument for the choice, and it is pinned by a test.
+
+**Productive hours** = sum of counted cycle durations. Shed time, smoko and
+parked time are in no circuit, so they are excluded *structurally* rather than
+by subtracting a guess.
+
+### Three states, kept not deleted
+`pending` → `confirmed` (`confirmed_at`) or `void` (`invalid` +
+`invalid_reason` + `invalidated_at`). A flagged lap is **kept and shown**,
+struck through on the sheet and muted on the map — it just leaves the load
+count, the median, the LCM³ and productive hours. Every transition is
+**reversible**: `confirmed_at` is an audit stamp, not a write lock. Flagging
+clears a confirmation (a lap can't be both agreed and struck out).
+
+`retimeCircuit` trims **only the outermost phases** — moving the start eats the
+load phase, moving the end eats the return. Haul and tip sit between two GPS
+events and there is no honest way to edit a loaded truck's road time.
+
+### The invoice gets ONLY the rollup
+`_invoiceLoadRows` + `_loadBlockHTML` append a **Production summary** table
+(date · loads · median cycle · LCM³) after the totals in BOTH `buildInvoiceHTML`
+and `previewInvoice`. It **computes not one cent** — it never feeds `dayTotals`,
+`grandTotal`, GST or any rate, which is why it lives in its own function instead
+of inside the row loop. No circuits in the selected days → the invoice is
+byte-identical to a pre-v104 one. Every lap flagged → no block at all.
+`showLoadsOnInvoice` (default ON) switches it off: cycle times are
+commercially loaded to hand a client.
+
+**Unchecked laps warn, they don't block.** `renderUncheckedLoadsWarning` puts an
+amber card on the Invoice screen with a jump to the Loads tab. Blocking an
+invoice over a descriptive block that moves no money would be out of all
+proportion — same fail-open reasoning as `Health.gateStartShift`'s soft checks.
+
+### Breadcrumbs are bounded
+`rebuildCircuits` banks a **decimated** trail per lap (≤40 points, 5dp) from the
+fix buffer. `pruneCircuitPolylines` drops trails older than 30 days and stamps
+`trail_pruned` so the UI says why. **That prune is the only thing that ever
+rewrites a stored circuit, and it touches ONLY `polyline`** — a number that has
+been on an invoice must never move. Pinned by a test that the rollup is
+identical before and after a prune.
+
+### Retired in the same release
+The v102.0 **Circuits pane** on the Activity screen is **deleted**, not left
+alongside — the Loads screen does everything it did plus the review layer.
+`renderCircuits`/`actTab`/`act-pane-circuits` are gone; `#screen-circuits` is
+now **Sub-activities** only. `circuitStats` survives (the CSV and the rollup
+card's phase line both use it), so nothing is orphaned.
+
+**Don't reintroduce:** a mean cycle time; `lcm3: 0` when capacity is unset;
+deleting a flagged lap instead of keeping it; a live-lap card that replaces the
+rollup; blocking invoice generation on unchecked laps; a prune that touches any
+field but `polyline`; an unbounded polyline on every circuit (the synced blob);
+raw laps on the invoice; per-truck capacity config (he has one truck — it was
+deliberately not built).
+
+**Tests:** `test-loads.js` (190 pure, pin
+`test_loads_tab_shows_completed_cycles_only_median_time_and_lcm3_rollup`) ·
+`test-loads-live.js` (137 live, headless Chrome — incl. real `TouchEvent`
+long-press, flag→rollup→localStorage→sync round-trip, and "not one dollar
+figure changes").
+
+---
+
 ## Data Model
 
 ### localStorage Keys
@@ -742,7 +846,7 @@ the pit) · linking batches to an invoice line · tonnage per circuit.
 | `mcn_vehicles` | Array | **v100** — user vehicles `{id,name,registration,make,model,year,cents_per_km,is_default}`. Synced. |
 | `mcn_activeTrip` | Object | **v100** — the ONE live trip in progress (polyline building). LOCAL-ONLY live buffer — NOT in SYNC_KEYS (avoids Firestore write-spam mid-trip). Sealed into `mcn_trips` on stop. |
 | `mcn_zones` | Array | **v102.0/v103.0** — activity zones `{id,name,mode:'circuit-pickup'\|'circuit-dump'\|'sub_activity',lat,lng,radius,cost?:{hourly_rate,output_unit}}`. `worksite` zones live in `mcn_sites`, not here. v102.0 `kind` records still resolve via `zoneMode()`. Synced. |
-| `mcn_circuits` | Array | **v102.0** — completed circuits `{id,date,pickup_name,dump_name,start_ts,end_ts,duration_s,load_s,haul_s,dump_s,return_s,legs[]}`. Synced. |
+| `mcn_circuits` | Array | **v102.0** — completed circuits `{id,date,pickup_name,dump_name,start_ts,end_ts,duration_s,load_s,haul_s,dump_s,return_s,legs[]}`. Synced. **v104.0 adds** `polyline[{lat,lng,t}]` (≤40 pts, pruned after 30 days, then `trail_pruned:true`), `confirmed_at`, `invalid`, `invalid_reason`, `invalidated_at`, `edited_by_user` — all additive; every other reader ignores them. |
 | `mcn_subsessions` | Array | **v103.0** — sub-activity sessions `{id,zone_id,activity,date,start_ts,end_ts,duration_s,work_session_id}`. Synced. |
 | `mcn_batches` | Array | **v103.0** — batch costings `{id,zone_id,activity,date,hours,rate,labour,material,total,output_qty,output_unit,cost_per_unit,notes}`. Synced. |
 | `mcn_activeSub` | Object | **v103.0** — the sub-activity in progress. LOCAL-ONLY live cursor; goes stale after 2h. |
@@ -944,10 +1048,16 @@ node test-fixes-v1018-live.js     # 39 live   · headless Chrome + CDP
 node test-earthmoving-mode.js     # 27 pure   · single-user mode surface
 node test-earthmoving-mode-live.js# 33 live   · full ON -> OFF -> ON cycle
 node test-circuits.js             # 104 pure  · circuit detection, modes, stats
-node test-circuits-live.js        # 62 live   · shared-sink wiring + CSV
+node test-circuits-live.js        # 61 live   · shared-sink wiring + CSV
 node test-subactivity.js          # 78 pure   · nested zones + batch costing
-node test-subactivity-live.js     # 82 live   · nesting, batch modal, cost report
+node test-subactivity-live.js     # 83 live   · nesting, batch modal, cost report
+node test-loads.js                # 190 pure  · median/LCM³/rollup/retime/prune (+ the pin)
+node test-loads-live.js           # 137 live  · Loads tab, long-press, invoice rollup
 ```
+Full suite as of v104.0: **759 pure + 432 live**. Run the live ones ONE AT A TIME —
+they each spawn Chrome on a fixed CDP port, and a leftover instance from a previous
+run makes the next one fail with `Cannot read properties of undefined
+(reading 'webSocketDebuggerUrl')`. `pkill -f remote-debugging-port` clears it.
 
 ```bash
 # Money-path regression tests (the only automated tests — money bugs cost $$):
@@ -1210,6 +1320,14 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
+- **v104.0 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
+  Steven asked for, in the shape of the Trip Log he already likes: map breadcrumb, day strip,
+  tap a lap to draw it, press and hold to retime or flag it. Daily rollup = loads · **median**
+  cycle time · LCM³ (loads × truck capacity) · productive hours, and **only that rollup** reaches
+  the invoice. Retires the v102.0 Circuits pane in the same commit. See "v104.0 — Loads" above.
+  **Verified:** 190 pure + 137 live (pin included); full suite 759 pure + 432 live green; money
+  paths proven unmoved by a dollar-figure diff with the block on/off and with laps flagged.
+  Screenshots in `plans/v104-shots/`.
 - **v103.0 — one zone system: circuits + sub-activities** — SHIPPED 2026-07-29 (Opus 5).
   Generalises the v102.0 circuit timer into a single geofence primitive read three ways
   (worksite / circuit pair / nested sub-activity). Steven's charcoal case: a small zone inside

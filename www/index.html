@@ -328,7 +328,11 @@
   /* ═══════════════ v101.7 TRIP LOG REVIEW SCREEN ═══════════════ */
   /* Full-bleed map + floating header + horizontal day strip. The palette is
      scoped to #screen-trips so the rest of the app keeps navy/amber untouched. */
-  #screen-trips{
+  /* v104.0: #screen-loads is the SAME review screen in a different subject —
+     full-bleed map, floating header, day strip, day sheet. It inherits the whole
+     palette and every .tl-* rule rather than growing a parallel design system,
+     which is also why a fix to one is a fix to both. */
+  #screen-trips,#screen-loads{
     --ink:#16211c; --ink-soft:#5c6660; --paper:#ffffff; --paper-dim:#eef0ec;
     --line:#dfe4dc; --line-soft:#edf0ec; --line-air:#b7c3bc;
     --accent:#e04a00; --accent-soft:#ffb599; --accent-tint:#fff7f3; --accent-ink:#ffffff;
@@ -339,7 +343,7 @@
     --tl-chip-bg:rgba(255,255,255,.94);
     padding:0;min-height:0
   }
-  .dark #screen-trips{
+  .dark #screen-trips,.dark #screen-loads{
     --ink:#eef0ec; --ink-soft:#b7c3bc; --paper:#22302a; --paper-dim:#1c2a23;
     --line:#35443c; --line-soft:#2b3a33; --tl-chip-bg:rgba(28,42,35,.94)
   }
@@ -349,13 +353,13 @@
      screen flows underneath it, but a fixed full-bleed screen would sit behind
      it and lose the header. Measured at render, 0 when the banner is hidden. */
   .tl-wrap{position:fixed;left:0;right:0;top:var(--tl-top-h,0px);bottom:var(--tl-nav-h,68px);overflow:hidden;background:var(--paper-dim)}
-  #tl-map{position:absolute;inset:0;background:var(--paper-dim);z-index:1}
+  #tl-map,#ld-map{position:absolute;inset:0;background:var(--paper-dim);z-index:1}
   /* Lift Leaflet's attribution clear of the day strip (kept visible — Esri's
      terms require it), and tone it down so it reads as a footnote. */
-  #tl-map .leaflet-bottom{bottom:var(--tl-strip-h,132px)}
-  #tl-map .leaflet-control-attribution{background:rgba(255,255,255,.72);font-size:9px;padding:1px 5px;border-radius:4px 0 0 0}
-  .dark #tl-map .leaflet-control-attribution{background:rgba(28,42,35,.72);color:var(--ink-soft)}
-  .dark #tl-map .leaflet-control-attribution a{color:var(--ink-soft)}
+  #tl-map .leaflet-bottom,#ld-map .leaflet-bottom{bottom:var(--tl-strip-h,132px)}
+  #tl-map .leaflet-control-attribution,#ld-map .leaflet-control-attribution{background:rgba(255,255,255,.72);font-size:9px;padding:1px 5px;border-radius:4px 0 0 0}
+  .dark #tl-map .leaflet-control-attribution,.dark #ld-map .leaflet-control-attribution{background:rgba(28,42,35,.72);color:var(--ink-soft)}
+  .dark #tl-map .leaflet-control-attribution a,.dark #ld-map .leaflet-control-attribution a{color:var(--ink-soft)}
   .tl-fallback{position:absolute;inset:0;z-index:1;display:none;align-items:center;justify-content:center;padding:40px 20px}
   .tl-fallback.on{display:flex}
   .tl-fallback svg{width:100%;height:100%;max-height:60vh}
@@ -472,6 +476,64 @@
   .tl-setup p{font-size:13px;color:var(--ink-soft);margin:0 0 16px;line-height:1.5}
   .tl-setup button{border:none;background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:12px 22px;
     font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
+
+  /* ═══════════════ v104.0 LOADS ═══════════════ */
+  /* Everything above is inherited. These are the pieces a load day has that a
+     trip day does not: the rollup card (the numbers that reach an invoice) and
+     the per-lap phase bar. */
+  .ld-roll{position:absolute;left:12px;right:12px;z-index:19;bottom:calc(var(--tl-strip-h,132px) + 10px);
+    background:var(--hero-panel);color:#fff;border-radius:var(--tl-radius);padding:13px 15px;box-shadow:var(--shadow-float)}
+  .ld-roll-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:9px}
+  /* A running lap sits ABOVE the day's totals, never in place of them. */
+  .ld-roll-live{display:flex;align-items:baseline;gap:7px;padding-bottom:9px;margin-bottom:9px;
+    border-bottom:1px solid rgba(255,255,255,.16);font-size:11.5px}
+  .ld-roll-live .tl-rec-dot{align-self:center}
+  .ld-roll-live b{font-family:'Archivo','Montserrat',system-ui,sans-serif;font-size:17px;font-weight:700;
+    color:var(--accent-soft);letter-spacing:-.3px}
+  .ld-roll-live span:last-child{opacity:.72;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ld-roll-when{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;opacity:.7}
+  .ld-roll-flag{font-size:11px;font-weight:700;color:var(--accent-soft)}
+  .ld-roll-grid{display:flex;gap:16px;flex-wrap:wrap}
+  .ld-stat{min-width:62px}
+  .ld-stat b{display:block;font-family:'Archivo','Montserrat',system-ui,sans-serif;font-size:21px;font-weight:700;
+    line-height:1.1;letter-spacing:-.5px}
+  .ld-stat span{display:block;font-size:10.5px;opacity:.72;margin-top:3px;white-space:nowrap}
+  .ld-stat.is-key b{color:var(--accent-soft)}
+  .ld-roll-note{font-size:11px;opacity:.68;margin-top:9px;line-height:1.4}
+
+  /* Per-lap row in the day sheet — extends .tl-seg */
+  .tl-seg.is-void{background:var(--paper-dim);border-style:dashed;opacity:.8}
+  .tl-seg.is-void .tl-seg-route,.tl-seg.is-void .tl-seg-km{color:var(--ink-soft);text-decoration:line-through}
+  .tl-seg.is-confirmed{border-color:#bfe3cc;background:#f6fbf7}
+  .dark .tl-seg.is-confirmed{border-color:#2f5d42;background:rgba(34,197,94,.07)}
+  .tl-seg.is-focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-tint)}
+  .ld-phases{display:flex;height:7px;border-radius:4px;overflow:hidden;margin-top:10px;background:var(--line-soft)}
+  .ld-phases i{display:block;height:100%}
+  .ld-ph-load{background:#e0a800}.ld-ph-haul{background:var(--accent)}
+  .ld-ph-dump{background:#8a5a2b}.ld-ph-ret{background:#5c7f9c}
+  .ld-phase-key{display:flex;gap:9px;flex-wrap:wrap;font-size:10.5px;color:var(--ink-soft);margin-top:5px}
+  .ld-phase-key i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:3px;vertical-align:-1px}
+  .ld-seg-tag{display:inline-block;padding:2px 7px;border-radius:999px;font-size:9.5px;font-weight:800;
+    letter-spacing:.4px;text-transform:uppercase;margin-top:7px}
+  .ld-tag-void{background:var(--line-soft);color:var(--ink-soft)}
+  .ld-tag-outlier{background:var(--accent-tint);color:var(--accent)}
+  .ld-tag-edited{background:var(--line-soft);color:var(--ink-soft)}
+  .ld-hint{font-size:11px;color:var(--ink-soft);margin-top:8px;font-style:italic}
+  .pill-confirmed{background:#e8f5ec;color:#1a7f42}
+  .pill-void{background:var(--line-soft);color:var(--ink-soft)}
+  .dark .pill-confirmed{background:rgba(34,197,94,.16);color:#5fd48a}
+  /* Reason chips in the lap modal */
+  .ld-reasons{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 2px}
+  .ld-reason{border:1.5px solid var(--border);background:transparent;color:var(--text2);border-radius:999px;
+    padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
+  .ld-reason.on{background:var(--amber);border-color:var(--amber);color:#fff}
+
+  /* Seven nav tabs still have to fit a 375px phone. */
+  @media(max-width:400px){
+    .nav-btn{font-size:9px;padding:12px 2px 10px;letter-spacing:.1px}
+    .nav-icon{width:24px;height:24px}
+    .nav-icon svg{width:21px;height:21px}
+  }
 
   /* ═══════════════ v101 TAX EXPORTS ═══════════════ */
   .tax-radio-row{display:flex;gap:8px}
@@ -1852,7 +1914,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       <button class="tl-act" id="tl-act-trip" onclick="tlToggleTrip()" aria-label="Start or stop a trip">▶</button>
       <button class="tl-act" onclick="openManualTripModal()" aria-label="Add a trip manually">✎</button>
       <button class="tl-act" onclick="tlExportCsv()" aria-label="Export CSV">⤓</button>
-      <button class="tl-act" onclick="showScreen('circuits')" aria-label="Circuit timer">🔁</button>
+      <button class="tl-act" onclick="showScreen('loads')" aria-label="Loads">🔁</button>
     </div>
     <div id="trip-live-slot"></div>
     <div class="tl-strip" id="tl-strip"></div>
@@ -1868,33 +1930,73 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 
-<!-- ACTIVITY SCREEN (v103.0) — circuits + sub-activities, one zone system -->
+<!-- LOADS SCREEN (v104.0) — the raw-cycle review tab.
+     Same shape as the Trip Log review screen, because it answers the same
+     question about a different measurement: "is what the GPS recorded actually
+     what happened?" Nothing derived from a circuit reaches an invoice without
+     passing through here first. -->
+<div id="screen-loads" class="screen">
+  <div class="tl-wrap">
+    <div id="ld-map"></div>
+    <div id="ld-fallback" class="tl-fallback"></div>
+    <div class="tl-head">
+      <div class="tl-head-row">
+        <button class="tl-mbtn" id="ld-prev" onclick="ldShiftMonth(-1)" aria-label="Previous month">‹</button>
+        <div class="tl-title-wrap">
+          <div class="tl-title" id="ld-title">Loads</div>
+          <div class="tl-metrics" id="ld-metrics"></div>
+        </div>
+        <button class="tl-mbtn" id="ld-next" onclick="ldShiftMonth(1)" aria-label="Next month">›</button>
+      </div>
+      <div class="tl-route" id="ld-route"></div>
+    </div>
+    <div class="tl-actions">
+      <button class="tl-act" id="ld-act-sat" onclick="ldToggleSat()" aria-label="Toggle satellite">🛰</button>
+      <button class="tl-act" onclick="exportCircuitsCSV()" aria-label="Export CSV">⤓</button>
+      <button class="tl-act" onclick="showScreen('circuits')" aria-label="Sub-activities">🔥</button>
+      <button class="tl-act" onclick="showScreen('settings')" aria-label="Manage zones">📍</button>
+    </div>
+    <div id="ld-roll-slot"></div>
+    <div class="tl-strip" id="ld-strip"></div>
+    <div class="tl-sheet" id="ld-sheet">
+      <div class="tl-sheet-grab"></div>
+      <div class="tl-sheet-head">
+        <div class="tl-sheet-title"><h4 id="ld-sheet-h">Day</h4><p id="ld-sheet-sub"></p></div>
+        <button class="tl-approve-all" id="ld-confirm-all" onclick="ldConfirmAll()">Confirm all</button>
+        <button class="tl-sheet-close" onclick="ldCloseSheet()" aria-label="Close">✕</button>
+      </div>
+      <div class="tl-sheet-body" id="ld-sheet-body"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Single-lap modal (v104.0) — reached by long-pressing a lap row -->
+<div class="modal-bg" id="load-modal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-title" id="load-modal-title">Lap <button class="modal-close" onclick="closeLoadModal()">✕</button></div>
+    <div id="load-modal-body"></div>
+  </div>
+</div>
+
+<!-- SUB-ACTIVITY SCREEN (v103.0) — the second reading of the zone visit stream.
+     The circuits pane that used to live here was replaced by the Loads review
+     screen above, which does everything it did and adds the review layer. -->
 <div id="screen-circuits" class="screen">
   <div class="header">
-    <h1>Activity</h1>
-    <p id="act-subtitle">Circuits and sub-activities</p>
+    <h1>Sub-activities</h1>
+    <p id="act-subtitle">Time and cost per batch</p>
   </div>
   <div class="section">
-    <div style="display:flex;gap:8px;margin-bottom:14px">
-      <button class="btn btn-primary btn-sm" id="act-tab-circuits" style="flex:1" onclick="actTab('circuits')">🔁 Circuits</button>
-      <button class="btn btn-secondary btn-sm" id="act-tab-sub" style="flex:1" onclick="actTab('sub')">🔥 Sub-activities</button>
-    </div>
-    <div id="act-pane-circuits">
-      <div id="circuit-live-slot"></div>
-      <div id="circuit-stats-slot"></div>
-      <div id="circuit-list-slot"></div>
-      <div class="btn-row" style="margin-top:14px">
-        <button class="btn btn-secondary" style="flex:1" onclick="showScreen('settings')">Manage zones</button>
-        <button class="btn btn-secondary" style="flex:1" onclick="exportCircuitsCSV()">⤓ Export CSV</button>
-      </div>
-    </div>
-    <div id="act-pane-sub" style="display:none">
+    <div id="act-pane-sub">
       <div id="sub-live-slot"></div>
       <div id="sub-cost-slot"></div>
       <div id="sub-list-slot"></div>
       <div class="btn-row" style="margin-top:14px">
         <button class="btn btn-secondary" style="flex:1" onclick="showScreen('settings')">Manage zones</button>
         <button class="btn btn-secondary" style="flex:1" onclick="exportBatchesCSV()">⤓ Export CSV</button>
+      </div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn btn-secondary" style="flex:1" onclick="showScreen('loads')">🔁 Loads</button>
       </div>
     </div>
     <div style="height:24px"></div>
@@ -2171,6 +2273,27 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         </div>
       </div>
     </div>
+    <!-- v104.0 Loads: the one number the load rollup needs from him -->
+    <div class="card card-collapsible" id="loads-card" data-collapse-default="collapsed">
+      <div class="card-title">🔁 Loads</div>
+      <div class="card-body">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px">
+          Every lap between your pickup and dump zones is timed automatically. The <b>Loads</b> tab is where you check them; only the daily summary — loads, median cycle time and LCM³ — ever reaches an invoice.
+        </div>
+        <div class="field"><label>Truck capacity (LCM³)</label>
+          <input type="number" id="s-truck-capacity" step="0.1" min="0" placeholder="e.g. 12" onchange="saveTruckCapacity()">
+          <div style="font-size:12px;color:var(--text2);margin-top:4px">Loose cubic metres per load. Total LCM³ = loads × this. Leave it blank and the app just won't show a volume — it won't guess one.</div>
+        </div>
+        <div class="toggle-row" style="padding:10px 0;border-top:1px solid var(--border)">
+          <div>
+            <div style="font-size:14px;font-weight:600">Show loads on the invoice</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:2px">Adds a production summary under the totals. Never changes a dollar figure.</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="s-loads-on-invoice" onchange="saveLoadsOnInvoicePref()"><span class="toggle-slider"></span></label>
+        </div>
+        <button class="btn btn-secondary" style="width:100%;margin-top:10px" onclick="showScreen('loads')">Open the Loads tab</button>
+      </div>
+    </div>
     <!-- v101 Tax exports: ATO cents-per-km / logbook methods + CSV/PDF export -->
     <div class="card card-collapsible" id="tax-exports-card" data-collapse-default="collapsed">
       <div class="card-title">📊 Tax exports</div>
@@ -2267,7 +2390,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v103.0';
+const APP_VERSION = 'v104.0';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -2414,6 +2537,7 @@ function forceAppUpdate(){ return otaCheck(false); }
   <button class="nav-btn" id="nav-btn-invoice" onclick="showScreen('invoice',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/></svg></span><span id="nav-invoice-label">Invoice</span></button>
   <button class="nav-btn" onclick="showScreen('analytics',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>Stats</button>
   <button class="nav-btn" onclick="showScreen('trips',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M5 17H3v-5l2-5h11l3 5h1a2 2 0 0 1 2 2v3h-2"/><circle cx="7.5" cy="17.5" r="1.6"/><circle cx="17.5" cy="17.5" r="1.6"/><line x1="9" y1="17" x2="16" y2="17"/></svg></span>Trips</button>
+  <button class="nav-btn" onclick="showScreen('loads',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 16V9l4-4h6v11"/><path d="M13 10h4l3 4v2h-2"/><circle cx="8" cy="17.5" r="1.7"/><circle cx="17" cy="17.5" r="1.7"/><line x1="10" y1="17.5" x2="15" y2="17.5"/><line x1="3" y1="17.5" x2="6" y2="17.5"/></svg></span>Loads</button>
   <button class="nav-btn" onclick="showScreen('settings',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings</button>
 </nav>
 
@@ -2917,7 +3041,13 @@ const DEFAULTS={
   tripAutoDetect:true,
   // v101.9: built for one earthmoving contractor. Toggle in the dev section
   // (tap the version number 5×) restores the full multi-trade surface.
-  earthmovingMode:true
+  earthmovingMode:true,
+  // v104.0 — loose cubic metres per load. 0 = not told yet, which is why the
+  // LCM³ figure reads "—" rather than a fabricated 0 until he sets it.
+  truckCapacityLcm:0,
+  // Cycle times are commercially loaded to hand a client, so the production
+  // block on the invoice is switchable. Default ON: he asked for it there.
+  showLoadsOnInvoice:true
 };
 
 function S(){return DB.def('settings',DEFAULTS)}
@@ -3484,6 +3614,29 @@ function saveBuildingSuppliesPref(){
   applyTradeVisibility();
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
 }
+// v104.0 — one number, one truck. Multi-truck capacity is deliberately NOT
+// built: he has one, and a per-vehicle picker on every lap would be a tax on
+// every load to serve a case that does not exist yet.
+function saveTruckCapacity(){
+  const s=S();
+  const el=document.getElementById('s-truck-capacity');
+  const v=el?parseFloat(el.value):NaN;
+  s.truckCapacityLcm=(isFinite(v)&&v>0)?v:0;   // blank / 0 / junk all mean "not set"
+  DB.set('settings',s);
+  try{ renderLoads(); }catch(_){}
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+  toast(s.truckCapacityLcm?('Truck capacity '+s.truckCapacityLcm+' LCM³'):'Truck capacity cleared');
+}
+function saveLoadsOnInvoicePref(){
+  const s=S();
+  const cb=document.getElementById('s-loads-on-invoice');
+  s.showLoadsOnInvoice=cb?cb.checked:false;
+  DB.set('settings',s);
+  try{ renderInvoice(); }catch(_){}
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+}
+window.saveTruckCapacity=saveTruckCapacity;
+window.saveLoadsOnInvoicePref=saveLoadsOnInvoicePref;
 // v101.9 — the dev section is revealed by tapping the version number 5 times.
 // Once revealed it stays revealed for the rest of the session.
 let _devTaps=0;
@@ -3569,8 +3722,11 @@ function showScreen(id,btn){
   }
   if(id==='analytics') renderAnalytics();
   if(id==='trips') renderTrips();
-  // v102.0/v103.0: the live timers only tick while the Activity screen is open.
-  if(id==='circuits'){ renderActivity(); startCircuitTick(); } else { if(window.stopCircuitTick) stopCircuitTick(); }
+  if(id==='loads') renderLoads();
+  // v102.0/v103.0/v104.0: the live timers only tick while a screen showing one
+  // is actually open.
+  if(id==='circuits'||id==='loads'){ startCircuitTick(); if(id==='circuits') renderSubActivities(); }
+  else { if(window.stopCircuitTick) stopCircuitTick(); }
   if(id==='settings') {loadSettings();renderSavedInvoices('settings');GeoLog.render();if(window.Health)Health.refresh();if(window.renderVehicles)renderVehicles();if(window.renderZonesCard)renderZonesCard();}
 }
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400)}
@@ -5309,11 +5465,34 @@ function renderInvoice(){
   } else {
     sc.style.display='none';
   }
+  // v104.0: an automatically-measured figure must not reach a client unlooked-at.
+  // This warns rather than BLOCKS — the load block is descriptive and changes no
+  // money, so refusing to invoice over it would be out of all proportion. Same
+  // fail-open reasoning as Health.gateStartShift's non-critical checks.
+  try{ renderUncheckedLoadsWarning(); }catch(_){}
   // U8: if the full invoice preview is already open, keep it in sync with the
   // current day selection (it used to go stale until re-tapped).
   const _pv=document.getElementById('invoice-preview-section');
   if(_pv && _pv.style.display==='block'){ try{ previewInvoice(); }catch(_){} }
 }
+
+function renderUncheckedLoadsWarning(){
+  const host=document.getElementById('invoice-day-list'); if(!host) return;
+  let el=document.getElementById('inv-loads-warn');
+  const data=_invoiceLoadRows(_getSelectedInvoiceDays());
+  const pending=data?data.total.pending:0;
+  if(!pending){ if(el) el.remove(); return; }
+  if(!el){
+    el=document.createElement('div'); el.id='inv-loads-warn';
+    el.style.cssText='margin-top:10px;padding:10px 12px;border-radius:10px;background:#FEF3C7;border:1px solid #FCD34D';
+    host.parentNode.insertBefore(el,host.nextSibling);
+  }
+  el.innerHTML='<div style="font-size:12px;font-weight:700;color:#92400E;margin-bottom:3px">'+
+      pending+' lap'+(pending===1?'':'s')+' not checked yet</div>'+
+    '<div style="font-size:12px;color:#92400E;line-height:1.45">These days carry recorded loads that will appear on the invoice as a production summary. Have a look before you send it.</div>'+
+    '<button class="btn btn-primary btn-sm" style="width:100%;margin-top:8px" onclick="showScreen(\'loads\')">Check the loads</button>';
+}
+window.renderUncheckedLoadsWarning=renderUncheckedLoadsWarning;
 
 // Get the list of days selected for invoicing
 function _getSelectedInvoiceDays(){
@@ -5327,6 +5506,57 @@ function _getSelectedInvoiceDays(){
     return uninvoiced;
   }
   return pool.filter(d=>_invoiceDaySelection.has(d.id||d.date));
+}
+
+// ── v104.0: the load rollup on an invoice ────────────────────────────────────
+// STRICTLY DESCRIPTIVE. It reports what the GPS measured — loads, median cycle
+// time, LCM³ — and computes NOT ONE CENT. It is appended after the totals and
+// never feeds grandTotal, GST, or any rate. The money path above is untouched,
+// which is why this lives in its own function instead of inside the row loop.
+//
+// Steven: "I don't necessarily need all data on invoice maybe only daily
+// average cycle time, total loads and LCM 3 based on truck capacity." So the
+// raw laps stay in the Loads tab and only this reaches a client — the same
+// compression the trip log applies to a month of GPS breadcrumbs.
+function _invoiceLoadRows(uiDays){
+  if((S().showLoadsOnInvoice===false)) return null;
+  const want={}; (uiDays||[]).forEach(d=>{ if(d&&d.date) want[d.date]=1; });
+  const scoped=circuits().filter(c=>c&&want[c.date]);
+  if(!scoped.length) return null;
+  const rows=loadsByDay(scoped,truckCapacity()).slice().reverse();   // oldest first, like the day table
+  const total=loadsRollup(scoped,truckCapacity());
+  if(!total.loads) return null;                    // every lap was flagged — nothing to report
+  return {rows:rows,total:total};
+}
+// Shared markup for the printed invoice and the on-screen preview, so the two
+// can never drift into saying different things about the same day.
+function _loadBlockHTML(data,print){
+  if(!data) return '';
+  const cap=data.total.capacity;
+  const cell=(v)=>`<td style="text-align:right">${v}</td>`;
+  const body=data.rows.map(r=>`<tr>
+      <td>${fmtDate(r.date)}</td>
+      ${cell(r.loads)}
+      ${cell(r.medianS!=null?fmtCircuitDur(r.medianS):'—')}
+      ${cell(r.lcm3!=null?(Math.round(r.lcm3*100)/100).toLocaleString('en-AU'):'—')}
+    </tr>`).join('');
+  const t=data.total;
+  const totalRow=`<tr style="font-weight:700;border-top:1px solid #111">
+      <td>Total</td>
+      ${cell(t.loads)}
+      ${cell(t.medianS!=null?fmtCircuitDur(t.medianS):'—')}
+      ${cell(t.lcm3!=null?(Math.round(t.lcm3*100)/100).toLocaleString('en-AU'):'—')}
+    </tr>`;
+  return `<div style="margin-top:${print?'18px':'14px'}">
+    <div style="font-weight:700;margin-bottom:4px">Production summary</div>
+    <table${print?'':' style="width:100%;border-collapse:collapse;font-size:12px"'}>
+      <thead><tr><th>Date</th><th style="text-align:right">Loads</th><th style="text-align:right">Median cycle</th><th style="text-align:right">LCM&sup3;</th></tr></thead>
+      <tbody>${body}${data.rows.length>1?totalRow:''}</tbody>
+    </table>
+    <div style="font-size:10px;color:#555;margin-top:4px">
+      Cycle time is the median of every completed pickup-to-dump-to-pickup lap.${cap?(' LCM&sup3; is loads &times; '+cap+' LCM&sup3; per load.'):''}
+    </div>
+  </div>`;
 }
 
 function buildInvoiceHTML(){
@@ -5413,7 +5643,9 @@ ${machineLinesHTML}
 ${travelLinesHTML}
 ${materialsLinesHTML}
 ${gstLines}
-</div></body></html>`;
+</div>
+${_loadBlockHTML(_invoiceLoadRows(ui),true)}
+</body></html>`;
 }
 
 function previewInvoice(){
@@ -5479,7 +5711,8 @@ function previewInvoice(){
 <hr class="inv-divider">
 <table class="inv-table"><thead><tr><th>Date</th><th>Start</th><th>Finish</th><th>Lunch</th><th>Hrs</th><th>Rate</th><th>Desc</th><th>Amt</th></tr></thead>
 <tbody>${rows||'<tr><td colspan="8" style="text-align:center;color:#999;padding:8px">No days to invoice</td></tr>'}</tbody></table>
-<div class="inv-totals">${sonLinesPreview}${machineLinesPreview}${travelLinesPreview}${materialsPreview}${gstPreview}</div>`;
+<div class="inv-totals">${sonLinesPreview}${machineLinesPreview}${travelLinesPreview}${materialsPreview}${gstPreview}</div>
+${_loadBlockHTML(_invoiceLoadRows(ui),false)}`;
   sec.style.display='block';sec.scrollIntoView({behavior:'smooth'});
 }
 
@@ -6062,6 +6295,11 @@ function loadSettings(){
   if(mhCb) mhCb.checked=!!(s.showMachineHire);
   const bsCb=document.getElementById('s-show-building-supplies');
   if(bsCb) bsCb.checked=!!(s.showBuildingSupplies);
+  // v104.0 Loads: truck capacity + the invoice production block
+  const tc=document.getElementById('s-truck-capacity');
+  if(tc) tc.value=(+s.truckCapacityLcm>0)?s.truckCapacityLcm:'';
+  const loi=document.getElementById('s-loads-on-invoice');
+  if(loi) loi.checked=(s.showLoadsOnInvoice!==false);   // absence = ON, same rule as earthmovingMode
   // Round-to-15 toggle (v91)
   const r15=document.getElementById('s-round-15');
   if(r15) r15.checked=!!(s.roundTo15);
@@ -8963,11 +9201,381 @@ function circuitDateOf(ts,D){
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 //__V102_CIRCUIT_PURE_END__
+
+//__V104_LOADS_PURE_START__  (extracted verbatim by test-loads.js — keep pure)
+// ═══ v104.0 LOADS — the review layer over recorded circuits ══════════════════
+// v103.0 records circuits. This is the layer that lets Steven LOOK at them
+// before any number derived from them reaches a client.
+//
+// The standing rule this exists to satisfy: an automatically-detected figure
+// gets a raw-data review screen BEFORE its summary flows to an invoice. The
+// work timer learned that the hard way (v90's confirm-into-days[]), the trip
+// log learned it again (v101.7's approve-the-day), and a cycle time is the
+// same shape of claim — measured by a machine, printed for a client.
+//
+// What reaches the invoice is ONLY the rollup: loads, median cycle, LCM³.
+// Never the raw laps. Steven: "I don't necessarily need all data on invoice
+// maybe only daily average cycle time, total loads and LCM 3 based on truck
+// capacity."
+//
+// NO DOM / NO DB / NO argless Date — deterministic and unit-testable.
+var LOADS_CFG = {
+  // A breadcrumb is for answering "did it really track that lap", which is a
+  // question you ask in the days after, not months later. 40 points draws a
+  // legible haul route and keeps a busy day's trails to a few KB in the synced
+  // blob; the trail is dropped after keep_days, the MEASUREMENTS never are.
+  polyline_max_points: 40,
+  polyline_keep_days: 30,
+  // A lap more than this many times the day's median is worth a second look —
+  // that is what a smoko at the tip face or a breakdown looks like. It is a
+  // HINT only. Auto-excluding it would silently delete genuinely slow laps,
+  // which is exactly the number Steven needs to see when a job is going bad.
+  outlier_multiple: 3
+};
+function _loadCfg(cfg,key){
+  var c=cfg||{};
+  return c[key]!=null ? c[key] : LOADS_CFG[key];
+}
+
+// ── Review status ────────────────────────────────────────────────────────────
+// Three states from two additive fields:
+//   pending   — recorded, never looked at (every circuit that predates v104.0)
+//   confirmed — Steven looked at it and said yes (`confirmed_at`)
+//   void      — flagged not-a-load: breakdown, meal break, drove through
+//               (`invalid` + `invalid_reason`)
+// A void lap is KEPT AND SHOWN, never deleted — the same rule intra-site trips
+// follow. Deleting it would make the GPS record disagree with the day, and the
+// whole point of this screen is that the two agree.
+// `confirmed_at` is an audit stamp, NOT a write lock: a mis-tap has to stay
+// correctable, so every one of these transitions is reversible.
+function isVoidLoad(c){ return !!(c && c.invalid); }
+function loadReviewStatus(c){
+  if(!c) return 'pending';
+  if(c.invalid) return 'void';
+  return c.confirmed_at ? 'confirmed' : 'pending';
+}
+// The laps that count. Everything downstream — the rollup, the invoice, the
+// LCM³ — is built from this, so "flagged" means "gone from the numbers" in
+// exactly one place.
+function countedLoads(list){
+  return (list||[]).filter(function(c){ return c && !isVoidLoad(c); });
+}
+
+// ── Median ───────────────────────────────────────────────────────────────────
+// Steven asked for the median, not the mean, and he is right: one breakdown or
+// one meal break at the tip face drags a mean up by minutes and makes the whole
+// day read slower than it was. The median is what an honest lap actually takes.
+// Empty returns null, NOT 0 — no laps is unknown, not instant. (Same rule as
+// cost_per_unit in the v103.0 batch block.)
+function medianOf(nums){
+  var a=(nums||[]).filter(function(n){ return typeof n==='number' && isFinite(n); })
+                  .slice().sort(function(x,y){ return x-y; });
+  if(!a.length) return null;
+  var m=a.length>>1;
+  return (a.length%2) ? a[m] : Math.round((a[m-1]+a[m])/2);
+}
+
+// ── The rollup ───────────────────────────────────────────────────────────────
+// The ONLY thing that reaches an invoice. Works over any list — one day, or a
+// whole invoice period. Over a period the median is taken across every counted
+// lap, not as a median of daily medians: a 3-lap day must not weigh the same as
+// a 30-lap one. (Same weighting argument as activityCostSummary.)
+function loadsRollup(list,capacityLcm){
+  var all=(list||[]).filter(Boolean);
+  var counted=countedLoads(all);
+  var durs=counted.map(function(c){ return +c.duration_s||0; }).filter(function(s){ return s>0; });
+  var totalS=durs.reduce(function(a,b){ return a+b; },0);
+  var cap=+capacityLcm||0;
+  var pairs={},order=[];
+  counted.forEach(function(c){
+    var k=(c.pickup_name||'?')+' → '+(c.dump_name||'?');
+    if(!pairs[k]){ pairs[k]=1; order.push(k); }
+  });
+  return {
+    loads: counted.length,
+    voided: all.length-counted.length,
+    medianS: medianOf(durs),
+    // Kept alongside so the screen can show BOTH and the gap between them is
+    // itself information — a mean far above the median means outliers.
+    meanS: durs.length ? Math.round(totalS/durs.length) : null,
+    fastestS: durs.length ? Math.min.apply(null,durs) : null,
+    slowestS: durs.length ? Math.max.apply(null,durs) : null,
+    totalS: totalS,
+    // Productive hours = time actually spent turning laps. Time in the shed,
+    // at smoko, or parked between cycles is not in any circuit, so it is
+    // excluded structurally rather than by subtracting a guess.
+    productiveHours: Math.round((totalS/3600)*100)/100,
+    capacity: cap>0 ? cap : null,
+    // No capacity set = no answer. NOT 0 — "0 LCM³" reads as "moved nothing",
+    // which is the opposite of "you haven't told me the truck size yet".
+    lcm3: cap>0 ? Math.round(counted.length*cap*100)/100 : null,
+    pairs: order,
+    pending: counted.filter(function(c){ return loadReviewStatus(c)==='pending'; }).length
+  };
+}
+function loadsForDate(circuits,date){
+  return (circuits||[]).filter(function(c){ return c && c.date===date; });
+}
+function loadMonthKeys(list){
+  var seen={},out=[];
+  (list||[]).forEach(function(c){ var k=monthKeyOf(c&&c.date); if(k&&!seen[k]){ seen[k]=1; out.push(k); } });
+  return out.sort().reverse();
+}
+// One rollup per day that actually has laps, NEWEST FIRST. This is what the
+// invoice iterates — a day with no circuits contributes no line, so an invoice
+// for a week of hand-dug work is byte-identical to one built before v104.0.
+function loadsByDay(circuits,capacityLcm){
+  var byDate={};
+  (circuits||[]).forEach(function(c){
+    if(!c||!c.date) return;
+    (byDate[c.date]||(byDate[c.date]=[])).push(c);
+  });
+  return Object.keys(byDate).sort().reverse().map(function(d){
+    var r=loadsRollup(byDate[d],capacityLcm);
+    r.date=d; r.circuits=byDate[d];
+    return r;
+  }).filter(function(r){ return r.loads>0 || r.voided>0; });
+}
+
+// ── Day strip ────────────────────────────────────────────────────────────────
+// A day is settled when every counted lap has been confirmed. Void laps hold
+// nothing back — flagging one IS the decision.
+function loadDayStatus(list){
+  var all=(list||[]).filter(Boolean);
+  if(!all.length) return 'none';
+  var counted=countedLoads(all);
+  if(!counted.length) return 'void';               // the whole day was flagged off
+  var anyPending=false;
+  counted.forEach(function(c){ if(loadReviewStatus(c)==='pending') anyPending=true; });
+  return anyPending?'pending':'confirmed';
+}
+// Only days that were actually worked get a row — 31 chips where 27 are blank
+// is noise, and the date on each chip makes a gap legible on its own. (The trip
+// strip builds the full month because km days and non-km days both mean
+// something there; a day with no laps means only "no laps".)
+// `bar` is 0–100 against the busiest day in the month, so the chips compare.
+function buildLoadStrip(circuits,monthKey,capacityLcm){
+  var rows=loadsByDay((circuits||[]).filter(function(c){
+    return c && monthKeyOf(c.date)===monthKey;
+  }),capacityLcm).slice().reverse();               // oldest → newest, calendar order
+  var maxLoads=0;
+  rows.forEach(function(r){ if(r.loads>maxLoads) maxLoads=r.loads; });
+  rows.forEach(function(r){
+    r.day=+String(r.date).slice(8,10);
+    r.status=loadDayStatus(r.circuits);
+    r.bar=maxLoads>0?Math.round((r.loads/maxLoads)*100):0;
+  });
+  return rows;
+}
+function loadsPeriodSummary(rows){
+  var o={days:0,loads:0,voided:0,pending:0,totalS:0,productiveHours:0,
+         medianS:null,lcm3:null,capacity:null};
+  var durs=[];
+  (rows||[]).forEach(function(r){
+    if(r.loads>0) o.days++;
+    o.loads+=r.loads; o.voided+=(r.voided||0); o.pending+=(r.pending||0);
+    o.totalS+=(r.totalS||0);
+    if(r.capacity!=null) o.capacity=r.capacity;
+    countedLoads(r.circuits).forEach(function(c){
+      var s=+c.duration_s||0; if(s>0) durs.push(s);
+    });
+  });
+  o.medianS=medianOf(durs);
+  o.productiveHours=Math.round((o.totalS/3600)*100)/100;
+  o.lcm3 = o.capacity ? Math.round(o.loads*o.capacity*100)/100 : null;
+  return o;
+}
+
+// ── Review transitions (all pure, all reversible) ────────────────────────────
+function _loadCopy(c){
+  var out={};
+  for(var k in c) if(Object.prototype.hasOwnProperty.call(c,k)) out[k]=c[k];
+  return out;
+}
+function applyLoadConfirm(c,nowMs){
+  var out=_loadCopy(c); out.confirmed_at=nowMs; return out;
+}
+function clearLoadConfirm(c){
+  var out=_loadCopy(c); delete out.confirmed_at; return out;
+}
+// Flag a lap as not-a-load. The reason is kept because "why is Tuesday short"
+// is a question that gets asked months later, and "breakdown" is the answer.
+// Voiding also clears the confirmation: a lap cannot be both counted-and-agreed
+// and struck out.
+function applyLoadVoid(c,reason,nowMs){
+  var out=_loadCopy(c);
+  out.invalid=true;
+  out.invalid_reason=reason||'other';
+  out.invalidated_at=nowMs;
+  delete out.confirmed_at;
+  return out;
+}
+function clearLoadVoid(c){
+  var out=_loadCopy(c);
+  delete out.invalid; delete out.invalid_reason; delete out.invalidated_at;
+  return out;
+}
+// Trim a recorded lap. A circuit runs pickup-arrival → next-pickup-arrival, so
+// the ONLY phases a trim can touch are the outermost ones: moving the start
+// later eats into the load phase, moving the end earlier eats into the return.
+// The haul and tip phases sit between two GPS events and are left alone —
+// there is no honest way to "edit" the time a loaded truck spent on the road.
+// Returns null when the result would be nonsense, so a caller can refuse.
+function retimeCircuit(c,startTs,endTs){
+  if(!c) return null;
+  var s=+startTs, e=+endTs;
+  if(!isFinite(s)||!isFinite(e)||e<=s) return null;
+  var out=_loadCopy(c);
+  var loadShift=s-(+c.start_ts||0);                // >0 = start pushed later
+  var endShift=(+c.end_ts||0)-e;                   // >0 = end pulled earlier
+  out.start_ts=s; out.end_ts=e;
+  out.duration_s=Math.max(0,Math.round((e-s)/1000));
+  out.load_s=Math.max(0,Math.round((+c.load_s||0)-loadShift/1000));
+  out.return_s=Math.max(0,Math.round((+c.return_s||0)-endShift/1000));
+  // The phases must never claim more time than the lap contains, or the
+  // breakdown line reads longer than the cycle above it.
+  var phases=out.load_s+(+out.haul_s||0)+(+out.dump_s||0)+out.return_s;
+  if(phases>out.duration_s){
+    var over=phases-out.duration_s;
+    var trimR=Math.min(out.return_s,over); out.return_s-=trimR; over-=trimR;
+    var trimL=Math.min(out.load_s,over); out.load_s-=trimL; over-=trimL;
+    // Trimmed so hard that the road and tip time alone no longer fit. He has
+    // overruled the GPS, so the middle phases are scaled to what is left rather
+    // than left reading longer than the lap that contains them.
+    if(over>0){
+      var mid=(+out.haul_s||0)+(+out.dump_s||0);
+      var k=mid>0?(out.duration_s/mid):0;
+      out.haul_s=Math.max(0,Math.round((+out.haul_s||0)*k));
+      out.dump_s=Math.max(0,out.duration_s-out.haul_s);
+    }
+  }
+  out.edited_by_user=true;
+  return out;
+}
+// Which laps look wrong. A hint for the eye, never a filter: returns ids only.
+function outlierLoads(list,cfg){
+  var counted=countedLoads(list);
+  var durs=counted.map(function(c){ return +c.duration_s||0; }).filter(function(s){ return s>0; });
+  var med=medianOf(durs);
+  // Under 3 laps there is no "typical" to be an outlier from, and calling the
+  // slower of two laps suspicious is just noise.
+  if(med==null||counted.length<3) return [];
+  var mult=_loadCfg(cfg,'outlier_multiple');
+  return counted.filter(function(c){ return (+c.duration_s||0) > med*mult; })
+                .map(function(c){ return c.id; });
+}
+// What "Confirm all" would do: everything counted and not already confirmed.
+// Unlike the trip log's approvalPlan there is nothing to guess — a recorded lap
+// is a measurement, not a category, so there is no lap it must refuse.
+function confirmPlan(list){
+  return countedLoads(list)
+    .filter(function(c){ return loadReviewStatus(c)!=='confirmed'; })
+    .map(function(c){ return c.id; });
+}
+// Per-lap rows for the day sheet.
+function loadSegments(list,cfg){
+  var out=outlierLoads(list,cfg), flagged={};
+  out.forEach(function(id){ flagged[id]=1; });
+  return (list||[]).slice()
+    .sort(function(a,b){ return (a.start_ts||0)-(b.start_ts||0); })
+    .map(function(c,i){
+      return {
+        id:c.id, n:i+1,
+        pair:(c.pickup_name||'?')+' → '+(c.dump_name||'?'),
+        start_ts:c.start_ts, end_ts:c.end_ts,
+        durationS:+c.duration_s||0,
+        loadS:+c.load_s||0, haulS:+c.haul_s||0, dumpS:+c.dump_s||0, returnS:+c.return_s||0,
+        status:loadReviewStatus(c),
+        reason:c.invalid_reason||null,
+        outlier:!!flagged[c.id] && !isVoidLoad(c),
+        edited:!!c.edited_by_user,
+        notes:c.notes||'',
+        hasTrail:!!(c.polyline&&c.polyline.length>1)
+      };
+    });
+}
+
+// ── Breadcrumb ───────────────────────────────────────────────────────────────
+// Keep the shape of the route with a bounded number of points. Always keeps the
+// first and last fix, so the trail still starts at the pit and ends at the pit.
+function decimatePolyline(pts,max){
+  var a=(pts||[]).filter(function(p){ return p&&p.lat!=null&&p.lng!=null; });
+  var n=max||LOADS_CFG.polyline_max_points;
+  if(a.length<=n) return a.slice();
+  var out=[],step=(a.length-1)/(n-1);
+  for(var i=0;i<n;i++) out.push(a[Math.round(i*step)]);
+  return out;
+}
+// Drop trails older than keep_days. This is the ONE thing that ever rewrites a
+// stored circuit, and it is deliberately limited to the `polyline` field: every
+// measurement — duration, phases, the flags, the confirmation — is left exactly
+// as it was. A number that has been on an invoice must never move.
+function pruneCircuitPolylines(list,nowMs,cfg){
+  var keepMs=_loadCfg(cfg,'polyline_keep_days')*24*60*60*1000;
+  var pruned=0;
+  var out=(list||[]).map(function(c){
+    if(!c||!c.polyline||!c.polyline.length) return c;
+    if((nowMs-(+c.start_ts||0))<=keepMs) return c;
+    var copy=_loadCopy(c);
+    delete copy.polyline;
+    copy.trail_pruned=true;                        // so the UI can say why, not just show nothing
+    pruned++;
+    return copy;
+  });
+  return {circuits:out,pruned:pruned};
+}
+// Split a lap's breadcrumb into its four phases so the map can draw the loaded
+// run and the empty run differently — which is the whole reason to look at it.
+// Phase boundaries come from the leg timestamps the circuit already carries.
+function circuitPhaseSplit(c){
+  var empty={atPickup:[],haul:[],atDump:[],ret:[]};
+  if(!c||!c.polyline||!c.polyline.length) return empty;
+  var legs=c.legs||[];
+  var haulOut=legs[0]?+legs[0].depart_ts:null, haulIn=legs[0]?+legs[0].arrive_ts:null;
+  var retOut=legs[1]?+legs[1].depart_ts:null;
+  // No legs recorded (a hand-added or retimed lap) — the trail is one run.
+  if(haulOut==null||haulIn==null||retOut==null) return {atPickup:[],haul:c.polyline.slice(),atDump:[],ret:[]};
+  var o={atPickup:[],haul:[],atDump:[],ret:[]};
+  c.polyline.forEach(function(p){
+    var t=+p.t||0;
+    if(t<=haulOut) o.atPickup.push(p);
+    else if(t<=haulIn) o.haul.push(p);
+    else if(t<=retOut) o.atDump.push(p);
+    else o.ret.push(p);
+  });
+  // Join the phases so the drawn line has no gaps at the boundaries.
+  if(o.atPickup.length&&o.haul.length) o.haul.unshift(o.atPickup[o.atPickup.length-1]);
+  if(o.haul.length&&o.atDump.length) o.atDump.unshift(o.haul[o.haul.length-1]);
+  if(o.atDump.length&&o.ret.length) o.ret.unshift(o.atDump[o.atDump.length-1]);
+  return o;
+}
+
+// ── Formatting ───────────────────────────────────────────────────────────────
+// LCM³ is loose cubic metres — Steven's unit for what actually leaves the pit.
+function fmtLcm(v){
+  if(v==null) return '—';
+  return (Math.round(v*100)/100).toLocaleString('en-AU')+' LCM³';
+}
+var LOAD_VOID_REASONS=[
+  {k:'breakdown', label:'Breakdown'},
+  {k:'break',     label:'Meal break'},
+  {k:'not_a_load',label:'Not a load'},
+  {k:'other',     label:'Other'}
+];
+function loadVoidLabel(k){
+  var m=LOAD_VOID_REASONS.filter(function(r){ return r.k===k; })[0];
+  return m?m.label:'Flagged';
+}
+//__V104_LOADS_PURE_END__
+
 window.circuitsFromFixes=circuitsFromFixes;
 window.circuitStats=circuitStats;
 window.zoneVisitsFromFixes=zoneVisitsFromFixes;
 window.circuitStatsOf=circuitStats;
 window.fmtCircuitDur=fmtCircuitDur;
+window.loadsRollup=loadsRollup;
+window.loadsByDay=loadsByDay;
+window.medianOf=medianOf;
 
 // ═══ v102.0 CIRCUIT TIMER — storage + detection (impure) ═════════════════════
 // Location comes from the ONE shared fix sink (checkNearbySites), which is
@@ -9017,12 +9625,25 @@ function rebuildCircuits(buf){
   const existing=circuits();
   const known={}; existing.forEach(c=>{ known[c.id]=true; });
   let added=0;
+  const src=buf||DB.def('circuitFixes',[]);
   r.circuits.forEach(function(c){
     c.id='c'+c.start_ts;
     if(known[c.id]) return;
     c.date=circuitDateOf(c.start_ts);
     c.created_at=Date.now();
     c.notes='';
+    // v104.0: bank the lap's own breadcrumb so the Loads screen can draw it
+    // long after the 6h fix buffer has rolled over. Decimated on the way in —
+    // 40 points draws the route and keeps a busy day to a few KB in the synced
+    // blob. Trails age out after LOADS_CFG.polyline_keep_days; the numbers never do.
+    try{
+      c.polyline=decimatePolyline(src.filter(function(f){
+        return f && f.t>=c.start_ts && f.t<=c.end_ts;
+      }).map(function(f){
+        return {lat:Math.round(f.lat*1e5)/1e5, lng:Math.round(f.lng*1e5)/1e5, t:f.t};
+      }),LOADS_CFG.polyline_max_points);
+      if(!c.polyline.length) delete c.polyline;
+    }catch(_){ delete c.polyline; }
     existing.push(c); added++;
     GeoLog.add('info','Circuit '+c.pickup_name+' → '+c.dump_name+' in '+fmtCircuitDur(c.duration_s)+
       ' (load '+fmtCircuitDur(c.load_s)+' · haul '+fmtCircuitDur(c.haul_s)+
@@ -9101,12 +9722,15 @@ function deleteZone(id){
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
   toast('Zone removed');
 }
+// v104.0: deleting is now the LAST resort, not the only one — the Loads screen
+// flags a bad lap instead, so the GPS record and the day still agree. Kept for
+// a genuinely junk record (a zone set up in the wrong place, say).
 function deleteCircuit(id){
-  if(!confirm('Delete this circuit?')) return;
+  if(!confirm('Delete this lap?\n\nIf it was a breakdown or a break, flag it instead — that keeps the record and takes it out of the numbers.')) return;
   DB.set('circuits',circuits().filter(c=>c.id!==id));
-  renderCircuits();
+  try{ renderLoads(); }catch(_){}
   if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
-  toast('Circuit deleted');
+  toast('Lap deleted');
 }
 window.deleteZone=deleteZone; window.deleteCircuit=deleteCircuit;
 
@@ -9243,106 +9867,12 @@ window.renderCircuitZones=renderCircuitZones;
 
 // ── Circuits screen ─────────────────────────────────────────────────────────
 let _circuitTick=null;
-function renderCircuits(){
-  const liveEl=document.getElementById('circuit-live-slot');
-  const statsEl=document.getElementById('circuit-stats-slot');
-  const listEl=document.getElementById('circuit-list-slot');
-  if(!listEl) return;
-  const zs=zones(), all=circuits().slice().sort((a,b)=>b.start_ts-a.start_ts);
 
-  // Live cycle in progress
-  // A cycle that's been "in progress" longer than the max isn't running — he
-  // knocked off hours ago. Show that, rather than a timer climbing past 10h.
-  const _acRaw=activeCircuit();
-  const _acStale=isStaleCircuit(_acRaw,Date.now(),CIRCUIT_CFG);
-  const ac=_acStale?null:_acRaw;
-  if(liveEl){
-    if(_acStale){
-      liveEl.innerHTML=`<div class="card" style="margin-bottom:12px">
-        <div style="font-size:13px;color:var(--text2)">No cycle running — the last lap out of ${escHtml(_acRaw.pickup_name)} never came back, so it wasn't counted. The next one starts on its own when you pull into a pickup zone.</div>
-      </div>`;
-    } else if(ac){
-      const elapsed=Math.round((Date.now()-ac.start_ts)/1000);
-      liveEl.innerHTML=`<div class="card" style="background:var(--navy);color:#fff;margin-bottom:12px">
-        <div style="font-size:12px;opacity:.75;letter-spacing:.5px;text-transform:uppercase">Cycle in progress</div>
-        <div style="font-size:34px;font-weight:800;margin:6px 0" id="circuit-live-timer">${fmtCircuitDur(elapsed)}</div>
-        <div style="font-size:13px;opacity:.85">From ${escHtml(ac.pickup_name)}${ac.dump_name?' · tipped at '+escHtml(ac.dump_name):' · heading out'}</div>
-      </div>`;
-    } else if(zs.length){
-      liveEl.innerHTML='<div class="card" style="margin-bottom:12px"><div style="font-size:13px;color:var(--text2)">No cycle running. It starts on its own when you pull into a pickup zone.</div></div>';
-    } else {
-      liveEl.innerHTML=`<div class="card" style="margin-bottom:12px">
-        <div style="font-weight:700;margin-bottom:6px">Set up two zones to start</div>
-        <div style="font-size:13px;color:var(--text2);margin-bottom:10px">Mark where you load and where you tip. Every lap between them is then timed automatically — you don't touch the phone.</div>
-        <button class="btn btn-primary" style="width:100%" onclick="showScreen('settings')">Set up zones</button>
-      </div>`;
-    }
-  }
-
-  // Stats per pickup → dump pair
-  if(statsEl){
-    const st=circuitStats(all);
-    statsEl.innerHTML=st.length?('<div class="card" style="margin-bottom:12px"><div class="card-title">Averages</div>'+
-      st.map(s=>`<div style="padding:8px 0;border-top:1px solid var(--border)">
-        <div style="font-weight:700;font-size:14px">${escHtml(s.pair)}</div>
-        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-size:13px">
-          <div><span style="color:var(--text2)">Laps</span> <b>${s.count}</b></div>
-          <div><span style="color:var(--text2)">Avg</span> <b style="color:var(--amber)">${fmtCircuitDur(s.avgS)}</b></div>
-          <div><span style="color:var(--text2)">Best</span> <b>${fmtCircuitDur(s.fastestS)}</b></div>
-          <div><span style="color:var(--text2)">Worst</span> <b>${fmtCircuitDur(s.slowestS)}</b></div>
-        </div>
-        <div style="font-size:11px;color:var(--text2);margin-top:6px">
-          load ${fmtCircuitDur(s.avgLoadS)} · haul ${fmtCircuitDur(s.avgHaulS)} · tip ${fmtCircuitDur(s.avgDumpS)} · back ${fmtCircuitDur(s.avgReturnS)}
-        </div>
-      </div>`).join('')+'</div>'):'';
-  }
-
-  // Recent circuits, newest first, grouped by day
-  if(!all.length){
-    listEl.innerHTML=zs.length?'<div class="card"><div style="font-size:13px;color:var(--text2)">No circuits logged yet.</div></div>':'';
-    return;
-  }
-  const byDay={};
-  all.forEach(c=>{ (byDay[c.date]=byDay[c.date]||[]).push(c); });
-  listEl.innerHTML=Object.keys(byDay).sort().reverse().map(function(date){
-    const list=byDay[date];
-    const total=list.reduce((a,c)=>a+(c.duration_s||0),0);
-    return `<div class="card" style="margin-bottom:12px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
-        <div style="font-weight:800">${fmtDate(date)}</div>
-        <div style="font-size:12px;color:var(--text2)">${list.length} lap${list.length!==1?'s':''} · ${fmtCircuitDur(total)}</div>
-      </div>
-      ${list.map(c=>`<div style="padding:8px 0;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px">
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:600">${escHtml(c.pickup_name)} → ${escHtml(c.dump_name)}</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:2px">${fmtTime(c.start_ts)}–${fmtTime(c.end_ts)} · load ${fmtCircuitDur(c.load_s)} · haul ${fmtCircuitDur(c.haul_s)} · tip ${fmtCircuitDur(c.dump_s)} · back ${fmtCircuitDur(c.return_s)}</div>
-        </div>
-        <div style="text-align:right;flex-shrink:0">
-          <div style="font-weight:800;color:var(--amber)">${fmtCircuitDur(c.duration_s)}</div>
-          <button class="btn btn-secondary btn-sm" style="margin-top:4px;font-size:11px;padding:3px 8px" onclick="deleteCircuit('${c.id}')">✕</button>
-        </div>
-      </div>`).join('')}
-    </div>`;
-  }).join('');
-}
-window.renderCircuits=renderCircuits;
-
-// ── Activity screen: tabs + sub-activity pane ───────────────────────────────
-let _actTab='circuits';
-function actTab(which){
-  _actTab=which;
-  const c=which==='circuits';
-  document.getElementById('act-pane-circuits').style.display=c?'block':'none';
-  document.getElementById('act-pane-sub').style.display=c?'none':'block';
-  document.getElementById('act-tab-circuits').className='btn btn-sm '+(c?'btn-primary':'btn-secondary');
-  document.getElementById('act-tab-sub').className='btn btn-sm '+(c?'btn-secondary':'btn-primary');
-  const sub=document.getElementById('act-subtitle');
-  if(sub) sub.textContent=c?'Cycle times — pickup → dump → back':'Time and cost per batch';
-  renderActivity();
-}
-window.actTab=actTab;
+// v104.0: the Circuits pane that used to live here was superseded by the Loads
+// review screen — same data, plus the raw-lap review the invoice depends on.
+// renderActivity now means "redraw whatever activity surface is on screen".
 function renderActivity(){
-  try{ renderCircuits(); }catch(_){}
+  try{ renderLoads(); }catch(_){}
   try{ renderSubActivities(); }catch(_){}
 }
 window.renderActivity=renderActivity;
@@ -9557,11 +10087,11 @@ window.exportBatchesCSV=exportBatchesCSV;
 function startCircuitTick(){
   stopCircuitTick();
   _circuitTick=setInterval(function(){
-    const ac=activeCircuit(); const el=document.getElementById('circuit-live-timer');
+    const ac=activeCircuit(); const el=document.getElementById('ld-live-timer');
     if(ac&&el){
       // Crossing the max mid-tick means the cycle just went stale — redraw once so
       // the card flips to "no cycle running" instead of ticking past the limit.
-      if(isStaleCircuit(ac,Date.now(),CIRCUIT_CFG)){ try{ renderCircuits(); }catch(_){} }
+      if(isStaleCircuit(ac,Date.now(),CIRCUIT_CFG)){ try{ renderLoads(); }catch(_){} }
       else el.textContent=fmtCircuitDur(Math.round((Date.now()-ac.start_ts)/1000));
     }
     // Same treatment for a sub-activity left open — it must not read "on now,
@@ -10858,6 +11388,625 @@ function _closeAndNextTripVehPrompt(){
   setTimeout(function(){ try{ maybePromptTripVehicle(); }catch(_){} },350);   // chain to the next pending trip
 }
 window.maybePromptTripVehicle=maybePromptTripVehicle;
+
+// ═══ v104.0 LOADS REVIEW SCREEN — map + day strip + confirm ══════════════════
+// Deliberately the same screen as the trip log, one file down: the map, the
+// floating header, the day strip and the sheet are all the SAME CSS and the
+// same interaction, because Steven already knows how to drive it. What differs
+// is the subject (recorded laps, not drives) and what a decision means
+// (confirm / flag, not business / private).
+//
+// Reads mcn_circuits EXACTLY as v103.0 writes it. The only fields this screen
+// adds are `confirmed_at`, `invalid`, `invalid_reason`, `invalidated_at` and
+// `polyline` — every other reader of mcn_circuits ignores all of them.
+var ldMonth=null;          // 'YYYY-MM' currently shown
+var ldSel=null;            // selected day 'YYYY-MM-DD', or null = All
+var ldFocus=null;          // one lap id drawn on its own, or null = the whole day
+var ldSat=false;
+var ldMap=null, ldBaseTopo=null, ldBaseSat=null, ldBaseSatRef=null, ldRouteLayer=null;
+
+function truckCapacity(){ var v=+((S()||{}).truckCapacityLcm); return isFinite(v)&&v>0?v:0; }
+window.truckCapacity=truckCapacity;
+
+function ldDefaultMonth(){
+  var ks=loadMonthKeys(circuits());
+  return ks.length?ks[0]:todayStr().slice(0,7);
+}
+// Age out old breadcrumbs. Runs on render and writes only when something
+// actually changed, so it never spams Firestore. It touches ONLY the polyline —
+// see pruneCircuitPolylines for why that boundary is load-bearing.
+function ldPruneTrails(){
+  try{
+    var res=pruneCircuitPolylines(circuits(),Date.now(),LOADS_CFG);
+    if(res.pruned){
+      DB.set('circuits',res.circuits);
+      try{ GeoLog.add('info','Pruned '+res.pruned+' GPS trail(s) older than '+LOADS_CFG.polyline_keep_days+' days (lap times kept)'); }catch(_){}
+    }
+    return res.pruned;
+  }catch(e){
+    try{ GeoLog.add('error','Trail prune failed: '+e.message); }catch(_){}
+    return 0;                                    // fail open: nothing is lost by keeping a trail
+  }
+}
+
+// ── Main render ──────────────────────────────────────────────────────────────
+function renderLoads(){
+  var wrap=document.querySelector('#screen-loads .tl-wrap'); if(!wrap) return;
+  if(!ldMonth) ldMonth=ldDefaultMonth();
+  ldPruneTrails();
+  var isActive=document.getElementById('screen-loads').classList.contains('active');
+  var all=circuits(), zs=zones();
+
+  // First run: no zones means nothing can ever be recorded, so say that rather
+  // than showing an empty month and letting him wonder what is broken.
+  var setup=document.getElementById('ld-setup');
+  var pick=zonesOfMode(zs,ZONE_MODES.PICKUP), dump=zonesOfMode(zs,ZONE_MODES.DUMP);
+  if(!all.length&&(!pick.length||!dump.length)){
+    if(!setup){
+      setup=document.createElement('div'); setup.id='ld-setup'; setup.className='tl-setup';
+      wrap.appendChild(setup);
+    }
+    setup.innerHTML='<h3>Set up a pickup and a dump</h3>'+
+      '<p>Mark where you load and where you tip. Every lap between them is then timed on its own — you never touch the phone. This screen is where you check them before they reach an invoice.</p>'+
+      '<button onclick="showScreen(\'settings\')">Set up zones</button>';
+  } else if(setup){ setup.remove(); }
+
+  var rows=buildLoadStrip(all,ldMonth,truckCapacity());
+  ldRenderHead(rows);
+  ldRenderStrip(rows);
+  ldRenderRollup(rows);
+  var sb=document.getElementById('ld-act-sat'); if(sb) sb.classList.toggle('on',ldSat);
+  if(isActive){
+    ldMeasure();
+    ldEnsureMap();
+    ldDraw();
+  }
+}
+window.renderLoads=renderLoads;
+
+function ldMeasure(){
+  var wrap=document.querySelector('#screen-loads .tl-wrap'); if(!wrap) return;
+  var nav=document.querySelector('.nav');
+  if(nav) wrap.style.setProperty('--tl-nav-h', nav.offsetHeight+'px');
+  var warn=document.getElementById('backup-warning');
+  var warnH=(warn&&warn.offsetParent!==null)?warn.offsetHeight:0;
+  wrap.style.setProperty('--tl-top-h', warnH+'px');
+  var strip=document.getElementById('ld-strip');
+  if(strip) wrap.style.setProperty('--tl-strip-h', strip.offsetHeight+'px');
+}
+
+function ldRenderHead(rows){
+  var sum=loadsPeriodSummary(rows);
+  var t=document.getElementById('ld-title'); if(t) t.textContent=tlMonthLabel(ldMonth);
+  var m=document.getElementById('ld-metrics');
+  if(m){
+    var bits='<b>'+sum.loads+'</b> load'+(sum.loads===1?'':'s');
+    if(sum.medianS!=null) bits+=' · <b>'+fmtCircuitDur(sum.medianS)+'</b> median';
+    if(sum.lcm3!=null) bits+=' · <b>'+fmtLcm(sum.lcm3)+'</b>';
+    if(sum.voided>0) bits+=' · <span class="tl-onsite">'+sum.voided+' flagged</span>';
+    if(sum.pending>0) bits+=' · <span class="tl-pending">'+sum.pending+' to check</span>';
+    m.innerHTML=bits||'No laps recorded';
+  }
+  var ks=loadMonthKeys(circuits()).slice().sort();
+  var prev=document.getElementById('ld-prev'), next=document.getElementById('ld-next');
+  if(prev) prev.disabled=!ks.some(function(k){return k<ldMonth;});
+  if(next) next.disabled=!ks.some(function(k){return k>ldMonth;});
+  ldRenderRouteLabel(rows);
+}
+function ldRenderRouteLabel(rows){
+  var el=document.getElementById('ld-route'); if(!el) return;
+  if(!ldSel){ el.className='tl-route'; el.innerHTML=''; return; }
+  var day=(rows||[]).filter(function(r){return r.date===ldSel;})[0];
+  if(!day){ el.className='tl-route'; el.innerHTML=''; return; }
+  el.className='tl-route on';
+  el.innerHTML='<div>'+escHtml(day.pairs.join(' · ')||'No completed laps')+'</div>'+
+    '<div class="tl-route-sub">'+day.loads+' load'+(day.loads===1?'':'s')+
+    (day.medianS!=null?(' · '+fmtCircuitDur(day.medianS)+' median'):'')+
+    (day.voided?(' · '+day.voided+' flagged'):'')+'</div>';
+}
+
+// ── The rollup card ──────────────────────────────────────────────────────────
+// The numbers that reach an invoice, on screen, before they do.
+// A running cycle is shown as a line ABOVE the totals, not instead of them: the
+// first build replaced the card while a lap was in progress, which meant the
+// day's figures were invisible for most of a working day — exactly when he'd
+// want to glance at them.
+function ldRenderRollup(rows){
+  var el=document.getElementById('ld-roll-slot'); if(!el) return;
+  var acRaw=activeCircuit();
+  var ac=(acRaw&&!isStaleCircuit(acRaw,Date.now(),CIRCUIT_CFG))?acRaw:null;
+  var liveHtml=ac?('<div class="ld-roll-live"><span class="tl-rec-dot"></span>'+
+      '<b id="ld-live-timer">'+fmtCircuitDur(Math.max(0,Math.round((Date.now()-ac.start_ts)/1000)))+'</b>'+
+      '<span>on this lap — from '+escHtml(ac.pickup_name||'pickup')+
+        (ac.dump_name?(' · tipped at '+escHtml(ac.dump_name)):' · heading out')+'</span></div>'):'';
+  var scope=ldSel?rows.filter(function(r){return r.date===ldSel;}):rows;
+  var sum=loadsPeriodSummary(scope);
+  if(!sum.loads&&!sum.voided){
+    // Nothing recorded yet, but a lap IS running — say so rather than nothing.
+    el.innerHTML=liveHtml?('<div class="ld-roll">'+liveHtml+'</div>'):'';
+    return;
+  }
+  var cap=truckCapacity();
+  // Where the time in a lap actually goes, averaged across the scope. Carried
+  // over from the pane this screen replaced — the rollup answers "how many and
+  // how fast", this answers "which leg is costing me".
+  var laps=[]; scope.forEach(function(r){ laps=laps.concat(countedLoads(r.circuits)); });
+  var st=circuitStats(laps);
+  var phaseLine=st.length?st.map(function(p){
+    return escHtml(p.pair)+' — load '+fmtCircuitDur(p.avgLoadS)+' · haul '+fmtCircuitDur(p.avgHaulS)+
+           ' · tip '+fmtCircuitDur(p.avgDumpS)+' · back '+fmtCircuitDur(p.avgReturnS);
+  }).join('<br>'):'';
+  el.innerHTML='<div class="ld-roll">'+
+    liveHtml+
+    '<div class="ld-roll-top">'+
+      '<div class="ld-roll-when">'+(ldSel?tlDowLabel(ldSel):tlMonthLabel(ldMonth))+'</div>'+
+      (sum.pending?('<div class="ld-roll-flag">'+sum.pending+' to check</div>'):'')+
+    '</div>'+
+    '<div class="ld-roll-grid">'+
+      '<div class="ld-stat is-key"><b>'+sum.loads+'</b><span>loads</span></div>'+
+      '<div class="ld-stat is-key"><b>'+(sum.medianS!=null?fmtCircuitDur(sum.medianS):'—')+'</b><span>median cycle</span></div>'+
+      '<div class="ld-stat is-key"><b>'+(sum.lcm3!=null?(Math.round(sum.lcm3*100)/100).toLocaleString('en-AU'):'—')+'</b><span>LCM³</span></div>'+
+      '<div class="ld-stat"><b>'+sum.productiveHours+'</b><span>productive hrs</span></div>'+
+    '</div>'+
+    (phaseLine?('<div class="ld-roll-note">'+phaseLine+'</div>'):'')+
+    (cap?'':'<div class="ld-roll-note">Set your truck capacity in Settings to get LCM³.</div>')+
+    (sum.voided?('<div class="ld-roll-note">'+sum.voided+' lap'+(sum.voided===1?'':'s')+' flagged and left out of these numbers.</div>'):'')+
+  '</div>';
+}
+
+function ldRenderStrip(rows){
+  var strip=document.getElementById('ld-strip'); if(!strip) return;
+  var sum=loadsPeriodSummary(rows);
+  var html='<button class="day-chip day-chip--all'+(ldSel?'':' sel')+'" onclick="ldSelectAll()">'+
+    '<div class="day-chip__big">All</div>'+
+    '<div class="day-chip__date">'+tlMonthLabel(ldMonth)+'</div>'+
+    '<div class="day-chip__km">'+sum.loads+' load'+(sum.loads===1?'':'s')+'</div>'+
+    '<div class="day-chip__bar"><i style="width:100%"></i></div>'+
+    '<span class="day-chip__pill '+(sum.pending?'pill-pending':'pill-confirmed')+'">'+
+      (sum.pending?(sum.pending+' to check'):(sum.medianS!=null?(fmtCircuitDur(sum.medianS)+' med'):'no laps'))+'</span>'+
+    '</button>';
+  html+=rows.map(function(r){
+    var flagged=r.voided?('<span class="day-chip__onsite">'+r.voided+' flagged</span>'):'';
+    return '<button class="day-chip'+(ldSel===r.date?' sel':'')+'" data-date="'+r.date+'" onclick="ldSelectDay(\''+r.date+'\')">'+
+      '<div class="day-chip__big">'+String(r.day).padStart(2,'0')+'</div>'+
+      '<div class="day-chip__date">'+tlDowLabel(r.date)+'</div>'+
+      '<div class="day-chip__km">'+r.loads+' load'+(r.loads===1?'':'s')+flagged+'</div>'+
+      '<div class="day-chip__bar"><i style="width:'+r.bar+'%"></i></div>'+
+      '<span class="day-chip__pill '+ldPillClass(r.status)+'">'+ldPillText(r)+'</span>'+
+      '</button>';
+  }).join('');
+  if(!rows.length){
+    html+='<div class="day-chip" style="min-width:auto;cursor:default;display:flex;align-items:center;color:var(--ink-soft);font-size:12px">'+
+      'No laps this month</div>';
+  }
+  strip.innerHTML=html;
+  if(ldSel){
+    var sel=strip.querySelector('.day-chip.sel');
+    if(sel&&sel.scrollIntoView) try{ sel.scrollIntoView({block:'nearest',inline:'center'}); }catch(_){}
+  } else { strip.scrollLeft=0; }
+}
+function ldPillClass(s){
+  if(s==='confirmed') return 'pill-confirmed';
+  if(s==='pending') return 'pill-pending';
+  if(s==='void') return 'pill-void';
+  return 'pill-tagged';
+}
+function ldPillText(r){
+  if(r.status==='void') return 'all flagged';
+  if(r.status==='pending') return '◉ '+r.pending+' to check';
+  if(r.status==='confirmed') return '✓ checked';
+  return r.loads+' laps';
+}
+
+// ── Map ──────────────────────────────────────────────────────────────────────
+// The loaded run and the empty run are drawn in different colours: seeing where
+// a lap actually slows down is the reason to look at a breadcrumb at all.
+var LD_HAUL_COLOUR='#e04a00';       // loaded, out to the tip
+var LD_RET_COLOUR='#5c7f9c';        // empty, back to the pit
+var LD_DWELL_COLOUR='#e0a800';      // in a zone: loading or tipping
+var LD_VOID_STYLE={color:'#7d8a83',dash:'2,5'};
+
+function ldEnsureMap(){
+  if(typeof L==='undefined') return false;
+  var el=document.getElementById('ld-map'); if(!el) return false;
+  if(ldMap){ try{ ldMap.invalidateSize(); }catch(_){} return true; }
+  try{
+    ldMap=L.map(el,{zoomControl:false,attributionControl:true}).setView([-28.65,151.93],9);
+    ldBaseTopo=L.tileLayer(TL_TILE_TOPO,{attribution:'Tiles &copy; Esri',maxZoom:19});
+    ldBaseSat=L.tileLayer(TL_TILE_SAT,{attribution:'Imagery &copy; Esri',maxZoom:19});
+    ldBaseSatRef=L.tileLayer(TL_TILE_SATREF,{maxZoom:19,pane:'overlayPane'});
+    (ldSat?ldBaseSat:ldBaseTopo).addTo(ldMap);
+    if(ldSat) ldBaseSatRef.addTo(ldMap);
+    ldRouteLayer=L.layerGroup().addTo(ldMap);
+    // The container is still sizing during the screen's fade-in, so the first
+    // fitBounds lands on a 0-height map. Re-fit once the real size is known.
+    setTimeout(function(){ try{ ldMap.invalidateSize(); ldDraw(); }catch(_){} },220);
+  }catch(e){
+    ldMap=null;
+    try{ GeoLog.add('error','Loads map init failed: '+e.message); }catch(_){}
+    return false;
+  }
+  return true;
+}
+function ldToggleSat(){
+  ldSat=!ldSat;
+  var b=document.getElementById('ld-act-sat'); if(b) b.classList.toggle('on',ldSat);
+  if(!ldMap) return;
+  try{
+    if(ldSat){ ldMap.removeLayer(ldBaseTopo); ldBaseSat.addTo(ldMap); ldBaseSatRef.addTo(ldMap); }
+    else { ldMap.removeLayer(ldBaseSat); ldMap.removeLayer(ldBaseSatRef); ldBaseTopo.addTo(ldMap); }
+  }catch(_){}
+}
+function ldVisibleLaps(){
+  var all=circuits();
+  if(ldFocus) return all.filter(function(c){ return c.id===ldFocus; });
+  if(ldSel) return loadsForDate(all,ldSel);
+  return all.filter(function(c){ return monthKeyOf(c.date)===ldMonth; });
+}
+function ldDraw(){
+  var list=ldVisibleLaps().filter(function(c){ return c.polyline&&c.polyline.length>1; });
+  if(!ldMap||!ldEnsureMap()){ ldDrawFallback(list); return; }
+  ldFallbackOff();
+  try{ ldRouteLayer.clearLayers(); }catch(_){}
+  // Zones always draw, even with no trail — "the pit is over there" is useful
+  // on its own, and it is how he checks a zone is where he thinks it is.
+  var bounds=null;
+  try{
+    zones().forEach(function(z){
+      if(z.lat==null||z.lng==null) return;
+      var m=zoneMode(z);
+      if(m!==ZONE_MODES.PICKUP&&m!==ZONE_MODES.DUMP) return;
+      var col=(m===ZONE_MODES.PICKUP)?'#1a7f42':'#c2311b';
+      L.circle([z.lat,z.lng],{radius:+z.radius||CIRCUIT_CFG.default_radius_m,color:col,weight:1.5,opacity:.7,
+        fillColor:col,fillOpacity:.1}).addTo(ldRouteLayer);
+      var b=L.latLngBounds([[z.lat,z.lng],[z.lat,z.lng]]).pad(0.001);
+      bounds=bounds?bounds.extend(b):b;
+    });
+  }catch(_){}
+  list.forEach(function(c){
+    var voided=isVoidLoad(c);
+    var ph=circuitPhaseSplit(c);
+    var runs=voided
+      ? [[c.polyline,LD_VOID_STYLE.color,LD_VOID_STYLE.dash]]
+      : [[ph.atPickup,LD_DWELL_COLOUR,null],[ph.haul,LD_HAUL_COLOUR,null],
+         [ph.atDump,LD_DWELL_COLOUR,null],[ph.ret,LD_RET_COLOUR,'6,7']];
+    runs.forEach(function(run){
+      var pts=(run[0]||[]).filter(Boolean).map(function(p){ return [p.lat,p.lng]; });
+      if(pts.length<2) return;
+      // White casing first so the trail stays legible over satellite imagery.
+      L.polyline(pts,{color:'#ffffff',weight:voided?5:8,opacity:voided?.35:.6,lineJoin:'round',lineCap:'round'}).addTo(ldRouteLayer);
+      var opts={color:run[1],weight:voided?2.5:4,opacity:voided?.75:.95,lineJoin:'round',lineCap:'round'};
+      if(run[2]) opts.dashArray=run[2];
+      L.polyline(pts,opts).addTo(ldRouteLayer);
+    });
+    var all=c.polyline.map(function(p){ return [p.lat,p.lng]; });
+    var b=L.latLngBounds(all);
+    bounds=bounds?bounds.extend(b):b;
+    if(ldFocus===c.id&&all.length){
+      L.circleMarker(all[0],{radius:6,color:'#fff',weight:2,fillColor:'#1a7f42',fillOpacity:1}).addTo(ldRouteLayer);
+      L.circleMarker(all[all.length-1],{radius:6,color:'#fff',weight:2,fillColor:'#c2311b',fillOpacity:1}).addTo(ldRouteLayer);
+    }
+  });
+  if(bounds){ try{ ldMap.fitBounds(bounds,ldFitOpts()); }catch(_){} }
+}
+// Same clamp as the trip log's — and animate:false is load-bearing for the same
+// reason: two fits fire in quick succession when a day is selected, and Leaflet
+// SILENTLY DROPS a setView issued during a zoom animation.
+function ldFitOpts(){
+  var mapH=(document.getElementById('ld-map')||{}).offsetHeight||600;
+  var headH=(document.querySelector('#screen-loads .tl-head')||{}).offsetHeight||90;
+  var sheet=document.getElementById('ld-sheet');
+  var top=headH+20;
+  var bottom=((sheet&&sheet.classList.contains('open'))
+    ? sheet.offsetHeight
+    : ((document.getElementById('ld-strip')||{}).offsetHeight||130))+20;
+  var maxPad=mapH*0.82;
+  if(top+bottom>maxPad){ var k=maxPad/(top+bottom); top=Math.round(top*k); bottom=Math.round(bottom*k); }
+  return {paddingTopLeft:[24,top],paddingBottomRight:[24,bottom],maxZoom:16,animate:false};
+}
+function ldDrawFallback(list){
+  var el=document.getElementById('ld-fallback'); if(!el) return;
+  el.classList.add('on');
+  var drawable=(list||[]).filter(function(c){ return c.polyline&&c.polyline.length>1; });
+  if(!drawable.length){
+    el.innerHTML='<div class="tl-empty"><h3>No trail to draw</h3><p>Laps recorded before this update, or older than '+
+      LOADS_CFG.polyline_keep_days+' days, keep their times but not their GPS trail.</p></div>';
+    return;
+  }
+  var all=[]; drawable.forEach(function(c){ c.polyline.forEach(function(p){ all.push(p); }); });
+  var lats=all.map(function(p){return p.lat;}), lngs=all.map(function(p){return p.lng;});
+  var minLa=Math.min.apply(null,lats),maxLa=Math.max.apply(null,lats);
+  var minLo=Math.min.apply(null,lngs),maxLo=Math.max.apply(null,lngs);
+  var rLa=(maxLa-minLa)||1e-6,rLo=(maxLo-minLo)||1e-6, W=320,H=320,pad=24;
+  var paths=drawable.map(function(c){
+    var ph=circuitPhaseSplit(c);
+    return [[ph.haul,LD_HAUL_COLOUR],[ph.ret,LD_RET_COLOUR],[ph.atPickup,LD_DWELL_COLOUR],[ph.atDump,LD_DWELL_COLOUR]]
+      .map(function(run){
+        var pts=(run[0]||[]).filter(Boolean).map(function(p){
+          var x=pad+((p.lng-minLo)/rLo)*(W-2*pad);
+          var y=H-pad-((p.lat-minLa)/rLa)*(H-2*pad);
+          return x.toFixed(1)+','+y.toFixed(1);
+        }).join(' ');
+        if(!pts) return '';
+        return '<polyline points="'+pts+'" fill="none" stroke="'+run[1]+'" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>';
+      }).join('');
+  }).join('');
+  el.innerHTML='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet">'+paths+'</svg>'+
+    '<div class="tl-fallback-note">Offline — showing the GPS trail without map tiles</div>';
+}
+function ldFallbackOff(){
+  var el=document.getElementById('ld-fallback');
+  if(el){ el.classList.remove('on'); el.innerHTML=''; }
+}
+
+// ── Selection ────────────────────────────────────────────────────────────────
+function ldSelectAll(){ ldSel=null; ldFocus=null; ldCloseSheet(); renderLoads(); }
+function ldSelectDay(date){
+  ldSel=(ldSel===date)?null:date;
+  ldFocus=null;
+  renderLoads();
+  if(ldSel) ldOpenSheet(ldSel); else ldCloseSheet();
+}
+function ldShiftMonth(dir){
+  var ks=loadMonthKeys(circuits()).slice().sort();
+  var cands=ks.filter(function(k){ return dir<0?k<ldMonth:k>ldMonth; });
+  if(!cands.length) return;
+  ldMonth=dir<0?cands[cands.length-1]:cands[0];
+  ldSel=null; ldFocus=null; ldCloseSheet(); renderLoads();
+}
+window.ldSelectAll=ldSelectAll; window.ldSelectDay=ldSelectDay;
+window.ldShiftMonth=ldShiftMonth; window.ldToggleSat=ldToggleSat;
+
+// ── Day sheet ────────────────────────────────────────────────────────────────
+function ldDayRow(date){
+  return buildLoadStrip(circuits(),ldMonth,truckCapacity()).filter(function(r){return r.date===date;})[0]||null;
+}
+function ldOpenSheet(date){
+  var row=ldDayRow(date); if(!row) return;
+  ldRenderSheet(row);
+  document.getElementById('ld-sheet').classList.add('open');
+  setTimeout(function(){ try{ ldDraw(); }catch(_){} },240);
+}
+function ldCloseSheet(){
+  var s=document.getElementById('ld-sheet'); if(!s||!s.classList.contains('open')) return;
+  s.classList.remove('open');
+  ldFocus=null;
+  setTimeout(function(){ try{ ldDraw(); }catch(_){} },240);
+}
+window.ldOpenSheet=ldOpenSheet; window.ldCloseSheet=ldCloseSheet;
+
+function ldRenderSheet(row){
+  var h=document.getElementById('ld-sheet-h'), sub=document.getElementById('ld-sheet-sub');
+  var body=document.getElementById('ld-sheet-body'), btn=document.getElementById('ld-confirm-all');
+  if(!body) return;
+  if(h) h.textContent=tlDowLabel(row.date);
+  if(sub) sub.textContent=row.loads+' load'+(row.loads===1?'':'s')+
+    (row.medianS!=null?(' · '+fmtCircuitDur(row.medianS)+' median'):'')+
+    (row.lcm3!=null?(' · '+fmtLcm(row.lcm3)):'')+
+    (row.voided?(' · '+row.voided+' flagged'):'');
+  var plan=confirmPlan(row.circuits);
+  if(btn){
+    btn.disabled=!plan.length;
+    btn.textContent=plan.length?('Confirm '+plan.length):'All checked';
+  }
+  var segs=loadSegments(row.circuits,LOADS_CFG);
+  body.innerHTML=segs.map(ldSegHtml).join('')+
+    '<div class="tl-seg-note">Tap a lap to see it on the map. Press and hold to edit or flag it.</div>';
+  ldWireRows();
+}
+function ldSegHtml(s){
+  var cls='tl-seg'+(s.status==='void'?' is-void':(s.status==='confirmed'?' is-confirmed':''))+
+          (ldFocus===s.id?' is-focus':'');
+  var tot=s.loadS+s.haulS+s.dumpS+s.returnS;
+  var pct=function(v){ return tot>0?((v/tot)*100).toFixed(1):0; };
+  var phases=tot>0?('<div class="ld-phases">'+
+      '<i class="ld-ph-load" style="width:'+pct(s.loadS)+'%"></i>'+
+      '<i class="ld-ph-haul" style="width:'+pct(s.haulS)+'%"></i>'+
+      '<i class="ld-ph-dump" style="width:'+pct(s.dumpS)+'%"></i>'+
+      '<i class="ld-ph-ret" style="width:'+pct(s.returnS)+'%"></i></div>'+
+    '<div class="ld-phase-key">'+
+      '<span><i class="ld-ph-load"></i>load '+fmtCircuitDur(s.loadS)+'</span>'+
+      '<span><i class="ld-ph-haul"></i>haul '+fmtCircuitDur(s.haulS)+'</span>'+
+      '<span><i class="ld-ph-dump"></i>tip '+fmtCircuitDur(s.dumpS)+'</span>'+
+      '<span><i class="ld-ph-ret"></i>back '+fmtCircuitDur(s.returnS)+'</span></div>'):'';
+  var tags='';
+  if(s.status==='void') tags+='<span class="ld-seg-tag ld-tag-void">'+escHtml(loadVoidLabel(s.reason))+' — not counted</span> ';
+  if(s.outlier) tags+='<span class="ld-seg-tag ld-tag-outlier">much slower than usual</span> ';
+  if(s.edited) tags+='<span class="ld-seg-tag ld-tag-edited">edited</span> ';
+  return '<div class="'+cls+'" id="ldseg-'+s.id+'" data-lap="'+s.id+'">'+
+    '<div class="tl-seg-top"><div style="flex:1;min-width:0">'+
+      '<div class="tl-seg-route">Lap '+s.n+' · '+escHtml(s.pair)+'</div>'+
+      '<div class="tl-seg-when">'+fmtTime(s.start_ts)+'–'+fmtTime(s.end_ts)+
+        (s.status==='confirmed'?' · ✓ checked':'')+
+        (s.hasTrail?'':' · no GPS trail kept')+'</div>'+
+    '</div><div><div class="tl-seg-km">'+fmtCircuitDur(s.durationS)+'</div>'+
+      '<div class="tl-seg-kmh">cycle</div></div></div>'+
+    phases+(tags?('<div>'+tags+'</div>'):'')+
+    (s.notes?('<div class="ld-hint">'+escHtml(s.notes)+'</div>'):'')+
+  '</div>';
+}
+// Tap = show this lap on the map. Press and hold = open it for editing.
+// Long-press rather than another button because the row is already dense, and
+// the destructive-ish action should take deliberate effort.
+function ldWireRows(){
+  var body=document.getElementById('ld-sheet-body'); if(!body) return;
+  Array.prototype.forEach.call(body.querySelectorAll('[data-lap]'),function(el){
+    var id=el.getAttribute('data-lap'), timer=null, fired=false, sx=0, sy=0;
+    var start=function(x,y){
+      fired=false; sx=x; sy=y;
+      timer=setTimeout(function(){
+        fired=true;
+        try{ if(navigator.vibrate) navigator.vibrate(25); }catch(_){}
+        openLoadModal(id);
+      },500);
+    };
+    var cancel=function(){ if(timer){ clearTimeout(timer); timer=null; } };
+    el.addEventListener('touchstart',function(e){
+      var t=e.touches[0]; start(t.clientX,t.clientY);
+    },{passive:true});
+    el.addEventListener('touchmove',function(e){
+      var t=e.touches[0];
+      // A scroll must never be read as a press — the sheet is a scrolling list.
+      if(Math.abs(t.clientX-sx)>10||Math.abs(t.clientY-sy)>10) cancel();
+    },{passive:true});
+    el.addEventListener('touchend',function(){ cancel(); if(!fired) ldToggleFocus(id); });
+    el.addEventListener('touchcancel',cancel);
+    el.addEventListener('mousedown',function(e){ start(e.clientX,e.clientY); });
+    el.addEventListener('mouseup',function(){ cancel(); if(!fired) ldToggleFocus(id); });
+    el.addEventListener('mouseleave',cancel);
+    // Right-click / trackpad long-press on a desktop reaches the same place.
+    el.addEventListener('contextmenu',function(e){ e.preventDefault(); cancel(); fired=true; openLoadModal(id); });
+  });
+}
+function ldToggleFocus(id){
+  ldFocus=(ldFocus===id)?null:id;
+  var row=ldSel?ldDayRow(ldSel):null;
+  if(row) ldRenderSheet(row);
+  ldDraw();
+}
+window.ldToggleFocus=ldToggleFocus;
+
+// ── Review actions ───────────────────────────────────────────────────────────
+// Every write goes through this one setter, so a lap edit reaches Firestore by
+// the SAME SYNC_KEYS path a detected lap does. No new sync code.
+function _ldSave(list){
+  DB.set('circuits',list);
+  if(window.CloudSync) window.CloudSync.pushAll().catch(function(){});
+}
+function _ldApply(id,fn){
+  var all=circuits(), i=-1;
+  all.forEach(function(c,n){ if(c.id===id) i=n; });
+  if(i<0) return false;
+  var next=fn(all[i]);
+  if(!next) return false;
+  all[i]=next; _ldSave(all);
+  return true;
+}
+function ldConfirmAll(){
+  if(!ldSel) return;
+  var row=ldDayRow(ldSel); if(!row) return;
+  var plan=confirmPlan(row.circuits);
+  if(!plan.length) return;
+  var ids={}; plan.forEach(function(id){ ids[id]=1; });
+  var now=Date.now();
+  _ldSave(circuits().map(function(c){ return ids[c.id]?applyLoadConfirm(c,now):c; }));
+  try{ if(navigator.vibrate) navigator.vibrate(15); }catch(_){}
+  try{ GeoLog.add('info','Loads: confirmed '+plan.length+' lap(s) on '+ldSel); }catch(_){}
+  toast('Checked '+plan.length+' lap'+(plan.length===1?'':'s'));
+  renderLoads();
+  var r=ldDayRow(ldSel); if(r) ldRenderSheet(r);
+}
+window.ldConfirmAll=ldConfirmAll;
+
+// ── Single-lap modal ─────────────────────────────────────────────────────────
+var _ldLapId=null, _ldReason=null;
+function openLoadModal(id){
+  var c=circuits().filter(function(x){ return x.id===id; })[0];
+  if(!c){ toast('Lap not found'); return; }
+  _ldLapId=id; _ldReason=c.invalid_reason||null;
+  var voided=isVoidLoad(c);
+  document.getElementById('load-modal-title').innerHTML=
+    escHtml((c.pickup_name||'?')+' → '+(c.dump_name||'?'))+' · '+fmtDate(c.date)+
+    ' <button class="modal-close" onclick="closeLoadModal()">✕</button>';
+  document.getElementById('load-modal-body').innerHTML=
+    '<div style="background:var(--surface2);border-radius:10px;padding:12px;font-size:13px;margin-bottom:14px">'+
+      '<div style="font-size:22px;font-weight:800;color:var(--amber)" id="lm-dur">'+fmtCircuitDur(c.duration_s)+'</div>'+
+      '<div style="color:var(--text2);margin-top:3px">load '+fmtCircuitDur(c.load_s)+' · haul '+fmtCircuitDur(c.haul_s)+
+        ' · tip '+fmtCircuitDur(c.dump_s)+' · back '+fmtCircuitDur(c.return_s)+'</div>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px">'+
+      '<div class="field" style="flex:1"><label>Start</label>'+
+        '<input type="time" id="lm-start" value="'+fmtTime(c.start_ts)+'" oninput="lmRecalc()"></div>'+
+      '<div class="field" style="flex:1"><label>Finish</label>'+
+        '<input type="time" id="lm-end" value="'+fmtTime(c.end_ts)+'" oninput="lmRecalc()"></div>'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--text2);margin:-6px 0 12px">Trimming the start shortens the loading time; trimming the finish shortens the run back. The time on the road is left as the GPS measured it.</div>'+
+    '<div class="field"><label>Note</label>'+
+      '<input type="text" id="lm-notes" value="'+escHtml(c.notes||'')+'" placeholder="optional"></div>'+
+    '<div class="field"><label>Don\'t count this lap</label>'+
+      '<div class="ld-reasons" id="lm-reasons">'+
+        LOAD_VOID_REASONS.map(function(r){
+          return '<button class="ld-reason'+(_ldReason===r.k?' on':'')+'" id="lm-r-'+r.k+'" onclick="lmSetReason(\''+r.k+'\')">'+r.label+'</button>';
+        }).join('')+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--text2);margin-top:6px">Flagged laps stay in the record and on the map — they just leave the load count, the median and the LCM³.</div>'+
+    '</div>'+
+    '<div class="btn-row" style="margin-top:14px">'+
+      '<button class="btn btn-secondary" style="flex:1" onclick="closeLoadModal()">Cancel</button>'+
+      '<button class="btn btn-primary" style="flex:1" onclick="saveLoadEdit()">Save</button>'+
+    '</div>'+
+    // Deleting is the last resort — flagging keeps the record and is what he
+    // should reach for — so it is a quiet link, not a full-width red bar begging
+    // to be mis-tapped next to Save.
+    (voided?'<button class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="lmUnflag()">Count it again</button>':'')+
+    '<div style="text-align:center;margin-top:12px">'+
+      '<a href="#" style="font-size:12px;color:var(--red)" onclick="event.preventDefault();closeLoadModal();deleteCircuit(\''+id+'\')">Delete this lap</a>'+
+    '</div>';
+  lmRecalc();
+  document.getElementById('load-modal').classList.add('open');
+}
+function closeLoadModal(){
+  document.getElementById('load-modal').classList.remove('open');
+  _ldLapId=null; _ldReason=null;
+}
+// The reason chips are a toggle: tapping the active one un-flags the lap, so
+// the modal never needs a separate "actually it was fine" control.
+function lmSetReason(k){
+  _ldReason=(_ldReason===k)?null:k;
+  LOAD_VOID_REASONS.forEach(function(r){
+    var b=document.getElementById('lm-r-'+r.k);
+    if(b) b.className='ld-reason'+(_ldReason===r.k?' on':'');
+  });
+}
+function lmUnflag(){ _ldReason=null; saveLoadEdit(); }
+// Preview the trimmed duration live, so he can see what he is doing to it.
+function _lmTimes(){
+  var c=circuits().filter(function(x){ return x.id===_ldLapId; })[0];
+  if(!c) return null;
+  var sv=(document.getElementById('lm-start')||{}).value||fmtTime(c.start_ts);
+  var ev=(document.getElementById('lm-end')||{}).value||fmtTime(c.end_ts);
+  // Times are edited as HH:MM against the lap's own date, so a lap is never
+  // silently moved to another day by the modal.
+  var s=_tsFromDateTime(c.date,sv), e=_tsFromDateTime(c.date,ev);
+  return {c:c,start:s,end:e};
+}
+function lmRecalc(){
+  var t=_lmTimes(); if(!t) return;
+  var el=document.getElementById('lm-dur'); if(!el) return;
+  var r=retimeCircuit(t.c,t.start,t.end);
+  el.textContent=r?fmtCircuitDur(r.duration_s):'—';
+  el.style.color=r?'var(--amber)':'var(--red)';
+}
+function saveLoadEdit(){
+  var t=_lmTimes(); if(!t){ closeLoadModal(); return; }
+  var notes=((document.getElementById('lm-notes')||{}).value||'').trim();
+  var reason=_ldReason, id=_ldLapId, now=Date.now();
+  var changedTimes=(t.start!==t.c.start_ts||t.end!==t.c.end_ts);
+  if(changedTimes&&!retimeCircuit(t.c,t.start,t.end)){
+    toast('Finish has to be after the start'); return;
+  }
+  var okd=_ldApply(id,function(c){
+    var next=c;
+    if(changedTimes) next=retimeCircuit(next,t.start,t.end)||next;
+    next=reason?applyLoadVoid(next,reason,now):clearLoadVoid(next);
+    // Editing a lap IS looking at it, so it comes out of the review queue —
+    // unless it was flagged, which is its own decision and needs no tick.
+    if(!reason) next=applyLoadConfirm(next,now);
+    next.notes=notes;
+    return next;
+  });
+  if(!okd){ toast('Lap not found'); closeLoadModal(); return; }
+  try{ GeoLog.add('info','Loads: lap '+id+(reason?(' flagged as '+reason):' confirmed')+
+    (changedTimes?(' · retimed '+fmtTime(t.start)+'–'+fmtTime(t.end)):'')); }catch(_){}
+  closeLoadModal();
+  toast(reason?('Flagged — '+loadVoidLabel(reason)):'Lap checked');
+  renderLoads();
+  var row=ldSel?ldDayRow(ldSel):null;
+  if(row) ldRenderSheet(row); else ldCloseSheet();
+}
+window.openLoadModal=openLoadModal; window.closeLoadModal=closeLoadModal;
+window.lmSetReason=lmSetReason; window.lmRecalc=lmRecalc;
+window.saveLoadEdit=saveLoadEdit; window.lmUnflag=lmUnflag;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // v101 TAX EXPORTS — ATO cents-per-km + logbook methods, CSV/PDF export.

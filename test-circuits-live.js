@@ -195,26 +195,31 @@ function serve() {
   ok('with no zones set up nothing is banked at all',
      await ev('DB.def("circuitFixes",[]).length') === before);
 
-  console.log('\nThe Circuits screen');
-  await ev(`showScreen('circuits')`);
-  await sleep(400);
-  ok('screen-circuits is active', await ev(`document.getElementById('screen-circuits').classList.contains('active')`));
-  const live = await ev(`document.getElementById('circuit-live-slot').innerHTML`);
-  ok('the live card shows a cycle in progress', /Cycle in progress/.test(live));
+  console.log('\nThe Loads screen (replaced the v102 Circuits pane in v104.0)');
+  await ev(`showScreen('loads')`);
+  await sleep(500);
+  ok('screen-loads is active', await ev(`document.getElementById('screen-loads').classList.contains('active')`));
+  const live = await ev(`document.getElementById('ld-roll-slot').innerHTML`);
+  ok('the rollup slot shows a cycle in progress', /ld-roll-live/.test(live), live.slice(0, 300));
   ok('…naming the pickup it started from', /Pit/.test(live));
-  const stats = await ev(`document.getElementById('circuit-stats-slot').innerHTML`);
-  ok('averages are shown', /Averages/.test(stats));
-  ok('…for the Pit → Tip run', /Pit → Tip/.test(stats));
-  ok('…counting 2 laps', /<b>2<\/b>/.test(stats), stats.slice(0, 400));
-  ok('…with a 13m 00s average', /13m 00s/.test(stats));
-  ok('…and the phase breakdown Steven can act on', /load 3m 00s/.test(stats) && /haul 4m 00s/.test(stats));
-  const list = await ev(`document.getElementById('circuit-list-slot').innerHTML`);
-  ok('both laps are listed', (list.match(/Pit → Tip/g) || []).length === 2, (list.match(/Pit → Tip/g) || []).length);
-  ok('…under the day heading with a day total', /30 Jul 2026/.test(list) && /2 laps/.test(list));
+  ok('the day strip lists the worked day',
+     /30/.test(await ev(`document.getElementById('ld-strip').innerHTML`)));
+  // The per-pair phase averages the old pane carried are now on the rollup card.
+  const dayHtml = await ev(`(function(){ ldSelectDay('2026-07-30'); return document.getElementById('ld-roll-slot').innerHTML; })()`);
+  await sleep(300);
+  ok('selecting the day shows its rollup', /median cycle/.test(dayHtml), dayHtml.slice(0, 300));
+  ok('…with 2 loads', />2<\/b><span>loads/.test(dayHtml), dayHtml.slice(0, 400));
+  ok('…a 13m 00s median', /13m 00s/.test(dayHtml));
+  ok('…and the phase breakdown Steven can act on',
+     /load 3m 00s/.test(dayHtml) && /haul 4m 00s/.test(dayHtml));
+  const sheet = await ev(`document.getElementById('ld-sheet-body').innerHTML`);
+  ok('both laps are listed in the day sheet', (sheet.match(/Pit → Tip/g) || []).length === 2, (sheet.match(/Pit → Tip/g) || []).length);
+  ok('…numbered', /Lap 1/.test(sheet) && /Lap 2/.test(sheet));
   ok('the live timer ticks only while the screen is open', await ev('!!_circuitTick'));
   await ev(`showScreen('log')`);
   ok('…and stops when you leave', await ev('!_circuitTick'));
-  await ev(`showScreen('circuits')`);
+  await ev(`ldSelectAll(); showScreen('loads')`);
+  await sleep(300);
 
   console.log('\nAn open cycle goes stale instead of counting forever');
   // Found by looking at the rendered screen: an open cycle from the morning read
@@ -223,16 +228,15 @@ function serve() {
     var ac=DB.get('activeCircuit');
     DB.set('activeCircuit',{pickup_zone_id:'z1',pickup_name:'Pit',
       start_ts:Date.now()-10*3600*1000,dump_name:null,dump_ts:null});
-    renderCircuits();
-    var h=document.getElementById('circuit-live-slot').innerHTML;
-    DB.set('activeCircuit',ac); renderCircuits();
+    renderLoads();
+    var h=document.getElementById('ld-roll-slot').innerHTML;
+    DB.set('activeCircuit',ac); renderLoads();
     return h;
   })()`);
-  ok('a 10-hour-old cycle does NOT show a running timer', !/Cycle in progress/i.test(staleHtml), staleHtml.slice(0, 200));
-  ok('…it says no cycle is running', /No cycle running/.test(staleHtml));
-  ok('…and explains that the lap was not counted', /never came back/.test(staleHtml));
+  ok('a 10-hour-old cycle does NOT show a running timer', !/ld-roll-live/.test(staleHtml), staleHtml.slice(0, 200));
+  ok('…it falls back to the day rollup instead', /median cycle/.test(staleHtml));
   ok('the live card is back to normal afterwards',
-     /Cycle in progress/i.test(await ev(`document.getElementById('circuit-live-slot').innerHTML`)));
+     /ld-roll-live/.test(await ev(`document.getElementById('ld-roll-slot').innerHTML`)));
 
   console.log('\nCSV export');
   const csv = await ev(`(function(){
