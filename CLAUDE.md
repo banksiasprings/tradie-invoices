@@ -22,11 +22,11 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v104.4 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v104.5 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.104.4 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
-| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.104.4 / versionCode 8 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.104.5 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.104.5 / versionCode 9 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -879,6 +879,63 @@ buttons against a stubbed bridge, and drives all three failure states plus
 reject / `opened:false` / no-bridge / throwing-run. No emulator needed. (This
 also fills the gap noted in v101.6: `test-health.js` was referenced but absent.)
 
+### v104.5 — zone radius, and the firewood shape
+Steven: *"three thousand meter radius is too big for the zones … some of the
+zones I want, say, fifty meters radius or thirty meter radius, it makes it very
+hard to select it because it's very touchy."* At a 3000 m max, 50 m sat **1.4%
+along the slider**; it is now **16%**.
+
+- **Activity zones: slider is 10–250 m, step 5.** Mode-dependent — a **work site
+  created from the Zones card keeps the full 3000 m range**, because Lucas Ranch
+  is 2900 m on purpose. The work-site geofence's own editor (the map picker,
+  `modal-radius-display`) is a different control and was **not touched at all**.
+- **Tap the number to type a radius**, up to 3000 m. `_czRadius` is the single
+  source of truth — `czSave` reads it, NOT the slider — because a hand-typed
+  2000 m cannot be represented on a 250 m slider and must not be silently
+  truncated. When the value exceeds the slider, the knob pins to the end and the
+  hint says why.
+
+**Containment is now allowed between activity zones.** v103.0 refused *any*
+overlap on the grounds that "which zone am I in" is a coin toss. That is true of
+PARTIAL overlap and false of CONTAINMENT: `zoneOfPoint()` breaks ties by
+**nearest centre**, so a small zone wholly inside a big one always wins while
+you stand in it. `zoneOverlapVerdict()` now returns:
+
+| geometry | verdict |
+|---|---|
+| separate circles | allowed |
+| partial overlap | refused — genuinely ambiguous |
+| contained, `d > 2·rInner` | **allowed** — deterministic |
+| contained, `d ≤ 2·rInner` | refused `concentric` |
+
+The `d > 2·rInner` threshold is *derived* from the nearest-centre rule, not
+guessed: inside the inner zone the worst-case distance to the outer centre is
+`d − a` where `a ≤ rInner`, so the inner wins everywhere iff `d > 2·rInner`.
+Below that the outer centre sits inside the inner zone and swallows part of it —
+a silent, partial dead spot, which is why it is refused rather than warned about.
+
+**This unlocks Steven's firewood workflow with no new mode:** pickup = the whole
+farm (hand-typed ~2000 m), dump = the charcoal shed (50 m) inside it. Verified
+end-to-end against the real detector — 2 loads recorded, `Farm → Charcoal shed`,
+clean visit stream, nothing abandoned.
+
+**Known limitation (NOT fixed, needs a decision):** one physical place cannot be
+two zones. The charcoal shed can be a `sub_activity` (batch costing) **or** a
+`circuit-dump` (firewood loads), not both — `zoneOfPoint()` returns ONE zone, so
+whichever centre is nearer wins and the other reading never fires. Stacked zones
+are refused at setup (`concentric`), so this fails loudly rather than silently.
+Fixing it means letting a visit belong to several zones at once, which touches
+the primitive both readings share — deliberately not attempted here.
+
+**Don't reintroduce:** reading the radius off the slider element; a slider max
+that applies to work sites; refusing containment; a containment threshold that
+isn't `2·rInner` (it is derived from `zoneOfPoint`, so they must agree).
+
+**Tests:** `test-zone-radius.js` (52 pure, pin
+`test_zone_radius_slider_max_is_250_and_manual_entry_accepts_up_to_3000`) —
+includes backward-compat for pre-v104.5 zones saved at 500/3000 m, and the full
+firewood run. Plus 17 new live cases in `test-circuits-live.js`.
+
 ### v104.4 — "tap to fix battery killer still not working" [the real root cause]
 v104.3 made the card *honest*; it did not fix the Motorola button. Field report
 came back on v104.3, and this time the **mirrored GeoLog settled it**:
@@ -1185,8 +1242,12 @@ node test-loads.js                # 190 pure  · median/LCM³/rollup/retime/prun
 node test-loads-live.js           # 161 live  · Loads tab, long-press, invoice rollup, deep-link
 node test-health-live.js          # 33 live   · Setup Health buttons + the 3 dead-card states
 node test-health-battery-fix.js   # 31 live   · the Motorola intent chain never dead-ends (SHOT=1 for shots)
+node test-zone-radius.js          # 52 pure   · radius slider/manual entry + nested zones (firewood)
 ```
-Full suite as of v104.4: **759 pure + 520 live**. Run the live ones ONE AT A TIME —
+Full suite as of v104.5: **811 pure + 537 live**. Live fixtures that assert a
+**running** circuit must re-stamp `activeCircuit.start_ts` to `Date.now()` first —
+a fixture-dated open cycle goes stale once the wall clock passes it, which turned
+two green tests red overnight. Run the live ones ONE AT A TIME —
 they each spawn Chrome on a fixed CDP port, and a leftover instance from a previous
 run makes the next one fail with `Cannot read properties of undefined
 (reading 'webSocketDebuggerUrl')`. `pkill -f remote-debugging-port` clears it.
@@ -1452,12 +1513,12 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
-- **v104.0 → v104.4 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
+- **v104.0 → v104.5 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
   Steven asked for, in the shape of the Trip Log he already likes: map breadcrumb, day strip,
   tap a lap to draw it, press and hold to retime or flag it. Daily rollup = loads · **median**
   cycle time · LCM³ (loads × truck capacity) · productive hours, and **only that rollup** reaches
   the invoice. Retires the v102.0 Circuits pane in the same commit. See "v104.0 — Loads" above.
-  **Verified:** 190 pure + 161 live (both pins); full suite 759 pure + 520 live green; money
+  **Verified:** 190 pure + 161 live (both pins); full suite 811 pure + 537 live green; money
   paths proven unmoved by a dollar-figure diff with the block on/off and with laps flagged.
   Screenshots in `plans/v104-shots/`. **v104.1** (same day) makes the four zone CTAs
   deep-link straight to the Zones card in Settings instead of the top of the screen —
@@ -1469,7 +1530,10 @@ look for `REJECTED` entries in the mirrored GeoLog.
   behind "tap to fix battery killer still not working": the Motorola branch fired the
   already-satisfied battery dialog, which Android closes instantly and silently. Diagnosed
   from the mirrored GeoLog (14 taps recorded, all reported successful by native).
-  **v104.4 needs an APK install — the intent chain is native.**
+  **v104.4 needs an APK install — the intent chain is native.** **v104.5** caps the activity-zone
+  radius slider at 250m (50m was 1.4% along a 3000m slider), adds tap-to-type up to 3000m, and
+  allows a small zone to sit INSIDE a big one — which is what makes the firewood workflow
+  (farm-wide pickup → charcoal shed dump) work with no new mode. See "v104.5 — zone radius".
 - **v103.0 — one zone system: circuits + sub-activities** — SHIPPED 2026-07-29 (Opus 5).
   Generalises the v102.0 circuit timer into a single geofence primitive read three ways
   (worksite / circuit pair / nested sub-activity). Steven's charcoal case: a small zone inside

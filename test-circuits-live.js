@@ -199,7 +199,18 @@ function serve() {
   await ev(`showScreen('loads')`);
   await sleep(500);
   ok('screen-loads is active', await ev(`document.getElementById('screen-loads').classList.contains('active')`));
-  const live = await ev(`document.getElementById('ld-roll-slot').innerHTML`);
+  // The drive fixture is stamped 2026-07-30, so whether its open cycle counts as
+  // "in progress" depends on today's date — it would go stale the moment the
+  // wall clock passed it. Re-stamp the live cursor to now so this asserts the
+  // live card, not the calendar.
+  const live = await ev(`(function(){
+    var ac=DB.get('activeCircuit');
+    DB.set('activeCircuit',Object.assign({},ac,{start_ts:Date.now()-90*1000}));
+    renderLoads();
+    var h=document.getElementById('ld-roll-slot').innerHTML;
+    DB.set('activeCircuit',ac);
+    return h;
+  })()`);
   ok('the rollup slot shows a cycle in progress', /ld-roll-live/.test(live), live.slice(0, 300));
   ok('…naming the pickup it started from', /Pit/.test(live));
   ok('the day strip lists the worked day',
@@ -235,8 +246,14 @@ function serve() {
   })()`);
   ok('a 10-hour-old cycle does NOT show a running timer', !/ld-roll-live/.test(staleHtml), staleHtml.slice(0, 200));
   ok('…it falls back to the day rollup instead', /median cycle/.test(staleHtml));
-  ok('the live card is back to normal afterwards',
-     /ld-roll-live/.test(await ev(`document.getElementById('ld-roll-slot').innerHTML`)));
+  ok('the live card is back to normal afterwards', await ev(`(function(){
+      var ac=DB.get('activeCircuit');
+      DB.set('activeCircuit',Object.assign({},ac,{start_ts:Date.now()-90*1000}));
+      renderLoads();
+      var on=/ld-roll-live/.test(document.getElementById('ld-roll-slot').innerHTML);
+      DB.set('activeCircuit',ac); renderLoads();
+      return on;
+    })()`));
 
   console.log('\nCSV export');
   const csv = await ev(`(function(){
@@ -316,6 +333,70 @@ function serve() {
      await ev(`zones().find(function(z){return z.name==='Far pit';}).mode`) === 'circuit-pickup');
   ok('…while the v102.0 kind-spelled zones still resolve',
      await ev(`zoneMode(zones().find(function(z){return z.name==='Pit';}))`) === 'circuit-pickup');
+
+  console.log('\nv104.5 — radius slider + manual entry');
+  await ev(`showScreen('settings')`); await sleep(400);
+  ok('the slider tops out at 250m for an activity zone', await ev(`(function(){
+      czSetMode('circuit-pickup'); return document.getElementById('cz-radius').max; })()`) === '250');
+  ok('…and steps in 5m, so 30m and 50m are pickable', await ev(`document.getElementById('cz-radius').step`) === '5');
+  ok('dragging the slider updates the number', await ev(`(function(){
+      var s=document.getElementById('cz-radius'); s.value=50;
+      s.dispatchEvent(new Event('input',{bubbles:true}));
+      return document.getElementById('cz-radius-display').textContent; })()`) === '50m');
+  ok('…and that is what czSave would use', await ev(`_czRadius`) === 50);
+
+  ok('tapping the number opens the manual input', await ev(`(function(){
+      document.getElementById('cz-radius-display').click();
+      return document.getElementById('cz-radius-edit').style.display; })()`) === 'block');
+  ok('…prefilled with the current radius', await ev(`document.getElementById('cz-radius-input').value`) === '50');
+  ok('a farm-scale 2000m is accepted', await ev(`(function(){
+      document.getElementById('cz-radius-input').value='2000'; czApplyRadius(); return _czRadius; })()`) === 2000);
+  ok('…shown on the number', await ev(`document.getElementById('cz-radius-display').textContent`) === '2000m');
+  ok('…with the slider pinned to its max rather than lying',
+     await ev(`+document.getElementById('cz-radius').value`) === 250);
+  ok('…and the hint explains why the knob is at the end',
+     /only reaches 250m/.test(await ev(`document.getElementById('cz-radius-hint').textContent`)),
+     await ev(`document.getElementById('cz-radius-hint').textContent`));
+  ok('over 3000 is capped, not rejected', await ev(`(function(){
+      czEditRadius(); document.getElementById('cz-radius-input').value='9999'; czApplyRadius(); return _czRadius; })()`) === 3000);
+  ok('junk input is refused and leaves the radius alone', await ev(`(function(){
+      var before=_czRadius; czEditRadius();
+      document.getElementById('cz-radius-input').value=''; czApplyRadius();
+      return _czRadius===before; })()`));
+
+  // A work site created from the Zones card keeps the full-range slider —
+  // Lucas Ranch is 2900m on purpose and that is not being touched.
+  ok('switching to Work site restores the 3000m slider', await ev(`(function(){
+      czSetMode('worksite'); return document.getElementById('cz-radius').max; })()`) === '3000');
+  ok('…and switching back to an activity zone re-caps it at 250', await ev(`(function(){
+      czSetMode('circuit-pickup'); return document.getElementById('cz-radius').max; })()`) === '250');
+
+  console.log('\nv104.5 — the firewood shape can actually be SET UP');
+  ok('a farm-scale pickup zone saves', await ev(`(function(){
+      var t=[]; var ot=window.toast; window.toast=function(m){t.push(m);};
+      DB.set('zones',[]);
+      czSetMode('circuit-pickup');
+      document.getElementById('cz-name').value='Farm';
+      _czLat=-28.560; _czLng=151.960; czSetRadius(2000); czSave();
+      window.toast=ot;
+      return zones().length===1 && zones()[0].radius===2000; })()`));
+  ok('…and the shed dump zone INSIDE it is no longer refused', await ev(`(function(){
+      var t=[]; var ot=window.toast; window.toast=function(m){t.push(m);};
+      czSetMode('circuit-dump');
+      document.getElementById('cz-name').value='Charcoal shed';
+      _czLat=-28.560+800/111320; _czLng=151.960; czSetRadius(50); czSave();
+      window.toast=ot;
+      return {n:zones().length, msg:t.join('|')}; })()`).then(r => r.n === 2 && !/overlap/i.test(r.msg)));
+  ok('a half-overlapping zone is STILL refused', await ev(`(function(){
+      var t=[]; var ot=window.toast; window.toast=function(m){t.push(m);};
+      var n=zones().length;
+      czSetMode('circuit-dump');
+      document.getElementById('cz-name').value='Bad';
+      _czLat=-28.560+800/111320+60/111320; _czLng=151.960; czSetRadius(50); czSave();
+      window.toast=ot;
+      return zones().length===n && /overlap/i.test(t.join('|')); })()`));
+  await ev(`DB.set('zones',[{id:'z1',name:'Pit',kind:'pickup',lat:-28.500,lng:151.900,radius:100},
+                            {id:'z2',name:'Tip',kind:'dump',lat:-28.489,lng:151.900,radius:100}]); renderZonesCard();`);
 
   console.log('\nRegression: nothing else was touched');
   ok('no work-day records were created', await ev('days().length') === 0);

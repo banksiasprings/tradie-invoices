@@ -238,11 +238,19 @@ function serve() {
 
   console.log('\nThe rollup card — the numbers that reach an invoice');
   const roll = await ev(`document.getElementById('ld-roll-slot').innerHTML`);
-  // The drive left a lap open at the pit, so the live line is up too. It must
-  // sit ABOVE the totals, not replace them — the first build hid the day's
-  // figures for the whole time a lap was running.
-  ok('a running lap is shown as a line above the totals', /ld-roll-live/.test(roll));
-  ok('…and does NOT hide them', /ld-roll-grid/.test(roll), roll.slice(0, 300));
+  // The drive left a lap open at the pit. Its timestamp is fixture-dated, so
+  // whether it still counts as "in progress" depends on today's wall clock —
+  // re-stamp it to now so this asserts the live card, not the calendar.
+  const rollLive = await ev(`(function(){
+    var ac=DB.get('activeCircuit');
+    DB.set('activeCircuit',Object.assign({},ac,{start_ts:Date.now()-60*1000}));
+    renderLoads();
+    var h=document.getElementById('ld-roll-slot').innerHTML;
+    DB.set('activeCircuit',ac); renderLoads();
+    return h;
+  })()`);
+  ok('a running lap is shown as a line above the totals', /ld-roll-live/.test(rollLive), rollLive.slice(0, 300));
+  ok('…and does NOT hide them', /ld-roll-grid/.test(rollLive), rollLive.slice(0, 300));
   ok('total loads', /<b>4<\/b><span>loads/.test(roll), roll.slice(0, 500));
   ok('median cycle time', /<b>10m 00s<\/b><span>median cycle/.test(roll), roll.slice(0, 700));
   ok('total LCM³', /<b>48<\/b><span>LCM³/.test(roll), roll.slice(0, 900));

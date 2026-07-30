@@ -2274,8 +2274,19 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
             </div>
           </div>
           <div class="field"><label>Radius (m)</label>
-            <input type="range" id="cz-radius" min="30" max="3000" step="10" value="100" oninput="document.getElementById('cz-radius-display').textContent=this.value+'m'" style="width:100%">
-            <div style="font-size:12px;color:var(--text2)"><span id="cz-radius-display">100m</span> — big enough to cover where you stop, small enough not to overlap another zone of the same kind</div>
+            <input type="range" id="cz-radius" min="10" max="250" step="5" value="100" oninput="czSetRadius(this.value)" style="width:100%">
+            <div style="font-size:12px;color:var(--text2)">
+              <button type="button" id="cz-radius-display" onclick="czEditRadius()" style="background:none;border:none;border-bottom:1px dashed var(--amber);color:var(--amber);font:inherit;font-weight:700;padding:0 1px;cursor:pointer">100m</button>
+              <span id="cz-radius-hint"> — big enough to cover where you stop, small enough not to overlap another zone of the same kind. Tap the number to type a bigger one.</span>
+            </div>
+            <div id="cz-radius-edit" style="display:none;margin-top:8px">
+              <div style="display:flex;gap:8px;align-items:center">
+                <input type="number" id="cz-radius-input" min="10" max="3000" step="5" style="flex:1;padding:9px 11px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:15px;background:var(--surface);color:var(--text)">
+                <button class="btn btn-primary btn-sm" onclick="czApplyRadius()">Set</button>
+                <button class="btn btn-secondary btn-sm" onclick="czCancelRadius()">✕</button>
+              </div>
+              <div style="font-size:11px;color:var(--text2);margin-top:4px">Metres, up to 3000. Only needed for a big pickup area — a whole paddock or the whole farm.</div>
+            </div>
           </div>
           <div id="cz-coords" style="font-size:12px;color:var(--text2);margin-bottom:8px">Not captured yet</div>
           <div class="btn-row">
@@ -2402,7 +2413,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v104.4';
+const APP_VERSION = 'v104.5';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -9447,6 +9458,55 @@ function fmtUnitCost(v,unit){
   return unit ? s+'/'+unit : s;
 }
 
+// ── Zone geometry rules (v104.5) ────────────────────────────────────────────
+// The useful radius range is 30–250 m: a shed is 30–50 m, a pickup spot ~100 m.
+// The slider covers that. Anything bigger is typed in by hand — which exists for
+// one real case Steven described: collecting firewood anywhere across the farm
+// and hauling it back to the charcoal shed. The pickup zone is then the WHOLE
+// FARM, and the dump zone sits inside it.
+var ZONE_RADIUS = {
+  slider_min: 10,
+  slider_max: 250,     // activity zones — the 90% case, spread across the full slider
+  worksite_max: 3000,  // the work-site fence is a different animal; unchanged
+  manual_max: 3000     // typed by hand, for farm-scale pickup zones
+};
+function clampZoneRadius(v,max){
+  var n=Math.round(+v||0);
+  var hi=max||ZONE_RADIUS.manual_max;
+  if(!(n>0)) return ZONE_RADIUS.slider_min;
+  return Math.max(ZONE_RADIUS.slider_min,Math.min(hi,n));
+}
+// May a new zone sit here, given the ones already saved?
+//
+// v103.0 refused ANY overlap between activity zones, on the grounds that "which
+// zone am I in" would be a coin toss. That is true of PARTIAL overlap, and false
+// of CONTAINMENT: zoneOfPoint() resolves ties by nearest centre, so a small zone
+// wholly inside a big one always wins while you are standing in it — which is
+// exactly the firewood shape (farm pickup, shed dump inside it).
+//
+// The one containment case that genuinely breaks is a small zone sitting near
+// the MIDDLE of the big one: from inside it, the big zone's centre can be nearer
+// than its own, so the big zone wins and the small one is never entered. Every
+// point of the inner zone is safely nearer its own centre iff d > 2·rInner, so
+// that is the test — derived from the same nearest-centre rule the detector
+// actually uses, not a guess.
+function zoneOverlapVerdict(lat,lng,radius,existing){
+  var out={ok:true,reason:null,zone:null};
+  var rA=+radius||0;
+  for(var i=0;i<(existing||[]).length;i++){
+    var z=existing[i];
+    if(!z||z.lat==null||z.lng==null) continue;
+    var rB=(+z.radius||CIRCUIT_CFG.default_radius_m);
+    var d=_fenceHaversine(lat,lng,z.lat,z.lng);
+    if(d>=rA+rB) continue;                       // separate circles — always fine
+    var rInner=Math.min(rA,rB), rOuter=Math.max(rA,rB);
+    var contained=(d+rInner)<=rOuter;
+    if(!contained) return {ok:false,reason:'partial',zone:z,dist:d};
+    // Contained. Safe only if you are always nearer the inner centre.
+    if(d<=2*rInner) return {ok:false,reason:'concentric',zone:z,dist:d};
+  }
+  return out;
+}
 // An open cycle that has run past max_circuit_s is not a cycle any more — he
 // knocked off, or moved to another job, with the app still holding the last
 // pickup arrival. Left alone the live card counts up forever (10h 30m the
@@ -10026,9 +10086,63 @@ function czSetMode(m){
   // Cost config only means anything for a sub-activity.
   const cost=document.getElementById('cz-cost-config');
   if(cost) cost.style.display=(m==='sub_activity')?'block':'none';
+  // v104.5 — the slider covers the range that mode actually uses. A work site is
+  // a different animal (Lucas Ranch is 2900 m, deliberately the whole farm), so
+  // it keeps the old full-range slider; activity zones get 10–250 m, where the
+  // useful values used to sit inside the first 2% of the travel.
   const rad=document.getElementById('cz-radius');
-  if(rad&&m==='worksite'&&+rad.value<300){ rad.value=500; const d=document.getElementById('cz-radius-display'); if(d) d.textContent='500m'; }
+  if(rad){
+    const isSite=(m===ZONE_MODES.WORKSITE);
+    rad.max=isSite?ZONE_RADIUS.worksite_max:ZONE_RADIUS.slider_max;
+    rad.step=isSite?10:5;
+    if(isSite && _czRadius<300) czSetRadius(500);
+    else if(!isSite && _czRadius>ZONE_RADIUS.slider_max) czSetRadius(_czRadius); // keep it, just pin the slider
+    else czSetRadius(_czRadius);
+  }
 }
+// The radius is held here, NOT read off the slider — a hand-typed 2000 m can't
+// be represented on a 250 m slider, and the slider must not silently truncate it.
+let _czRadius=100;
+function czSetRadius(v){
+  const isSite=(_czMode===ZONE_MODES.WORKSITE);
+  _czRadius=clampZoneRadius(v, isSite?ZONE_RADIUS.worksite_max:ZONE_RADIUS.manual_max);
+  const slider=document.getElementById('cz-radius');
+  const disp=document.getElementById('cz-radius-display');
+  const hint=document.getElementById('cz-radius-hint');
+  const sliderMax=+(slider&&slider.max)||ZONE_RADIUS.slider_max;
+  if(slider) slider.value=Math.min(_czRadius,sliderMax);
+  if(disp) disp.textContent=_czRadius+'m';
+  // Say so when the slider can no longer represent the value, otherwise the
+  // knob sitting at the far end looks like the number is wrong.
+  if(hint) hint.textContent = _czRadius>sliderMax
+    ? ' — typed by hand; the slider only reaches '+sliderMax+'m. Tap the number to change it.'
+    : ' — big enough to cover where you stop, small enough not to overlap another zone of the same kind. Tap the number to type a bigger one.';
+}
+function czEditRadius(){
+  const box=document.getElementById('cz-radius-edit');
+  const inp=document.getElementById('cz-radius-input');
+  if(!box||!inp) return;
+  inp.value=_czRadius;
+  box.style.display='block';
+  try{ inp.focus(); inp.select(); }catch(_){}
+}
+function czApplyRadius(){
+  const inp=document.getElementById('cz-radius-input');
+  if(!inp) return;
+  const raw=parseFloat(inp.value);
+  if(!isFinite(raw)||raw<=0){ toast('Enter a radius in metres'); return; }
+  const isSite=(_czMode===ZONE_MODES.WORKSITE);
+  const max=isSite?ZONE_RADIUS.worksite_max:ZONE_RADIUS.manual_max;
+  if(raw>max) toast('Capped at '+max+'m');
+  czSetRadius(raw);
+  czCancelRadius();
+}
+function czCancelRadius(){
+  const box=document.getElementById('cz-radius-edit');
+  if(box) box.style.display='none';
+}
+window.czSetRadius=czSetRadius; window.czEditRadius=czEditRadius;
+window.czApplyRadius=czApplyRadius; window.czCancelRadius=czCancelRadius;
 function czCaptureGPS(){
   const el=document.getElementById('cz-coords');
   if(!navigator.geolocation){ el.textContent='GPS not available'; return; }
@@ -10043,7 +10157,7 @@ function czSave(){
   const name=(document.getElementById('cz-name').value||'').trim();
   if(!name){ toast('Give the zone a name'); return; }
   if(_czLat==null){ toast('Capture the location first'); return; }
-  const radius=+document.getElementById('cz-radius').value||CIRCUIT_CFG.default_radius_m;
+  const radius=_czRadius||CIRCUIT_CFG.default_radius_m;   // v104.5: not the slider — see czSetRadius
 
   // A work site is a different animal: it belongs in mcn_sites so it arms the
   // native geofence and drives the work timer, exactly like one added the old way.
@@ -10063,11 +10177,21 @@ function czSave(){
     return;
   }
 
-  // Circuit and sub-activity zones must not overlap EACH OTHER — "which zone am
-  // I in" would become a coin toss. They may freely overlap a work site: a
-  // sub-activity zone is MEANT to sit inside one.
-  const clash=zones().find(z=>z.lat!=null&&_fenceHaversine(_czLat,_czLng,z.lat,z.lng) < (radius+(+z.radius||100)));
-  if(clash){ toast('That overlaps "'+clash.name+'" — move it or shrink the radius'); return; }
+  // v104.5 — PARTIAL overlap between activity zones is still refused ("which
+  // zone am I in" really is a coin toss). CONTAINMENT is now allowed, because
+  // zoneOfPoint() breaks ties by nearest centre and therefore resolves it
+  // deterministically — which is what makes Steven's firewood shape work: the
+  // pickup zone is the whole farm and the charcoal shed sits inside it.
+  // They may still freely overlap a work site; that was never the constraint.
+  const verdict=zoneOverlapVerdict(_czLat,_czLng,radius,zones());
+  if(!verdict.ok){
+    if(verdict.reason==='concentric'){
+      toast('Too close to the middle of "'+verdict.zone.name+'" — move it further out, or shrink it');
+    } else {
+      toast('That half-overlaps "'+verdict.zone.name+'" — move it, or make one fully contain the other');
+    }
+    return;
+  }
 
   const rec={ id:'z'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
               name:name, mode:_czMode, lat:_czLat, lng:_czLng, radius:radius, created_at:Date.now() };
@@ -10088,6 +10212,10 @@ function _czReset(){
   const n=document.getElementById('cz-name'); if(n) n.value='';
   _czLat=null; _czLng=null;
   const cd=document.getElementById('cz-coords'); if(cd){ cd.textContent='Not captured yet'; cd.style.color=''; }
+  // v104.5 — a hand-typed farm-scale radius must not silently carry over to the
+  // next zone, which is usually a 30 m shed.
+  czCancelRadius();
+  czSetRadius(_czMode===ZONE_MODES.WORKSITE?500:CIRCUIT_CFG.default_radius_m);
 }
 window.czSetMode=czSetMode; window.czCaptureGPS=czCaptureGPS; window.czSave=czSave;
 

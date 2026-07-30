@@ -310,7 +310,7 @@ function serve() {
     czSetMode('worksite');
     document.getElementById('cz-name').value='Back paddock';
     _czLat=-28.60; _czLng=151.95;
-    document.getElementById('cz-radius').value=800;
+    czSetRadius(800);
     czSave();
     return {sites:sites().length, zones:zones().length, fence:window.__fence};
   })()`);
@@ -327,7 +327,7 @@ function serve() {
     document.getElementById('cz-rate').value=75;
     document.getElementById('cz-unit').value='joint';
     _czLat=-28.55; _czLng=151.93;
-    document.getElementById('cz-radius').value=50;
+    czSetRadius(50);
     czSave();
     var z=zones().find(function(x){return x.name==='Welding bay';});
     return z && z.mode==='sub_activity' && z.cost.hourly_rate===75 && z.cost.output_unit==='joint';
@@ -341,7 +341,7 @@ function serve() {
        // 1015 m from the work-site centre: well inside the 2900 m fence, and
        // clear of every other activity zone.
        _czLat=-28.508; _czLng=151.905;
-       document.getElementById('cz-radius').value=40;
+       czSetRadius(40);
        var before=zones().length; czSave();
        return zones().length===before+1;
      })()`) === true);
@@ -350,9 +350,11 @@ function serve() {
     czSetMode('sub_activity');
     document.getElementById('cz-name').value='Clash';
     _czLat=-28.5500; _czLng=151.9300;      // right on top of Welding bay
-    document.getElementById('cz-radius').value=50;
+    czSetRadius(50);
     var before=zones().length; czSave(); window.toast=ot;
-    return zones().length===before && /overlaps/.test(toasts.join('|'));
+    // v104.5: still refused, with a message naming the actual geometry —
+    // stacked-on-top is 'too close to the middle', not a partial overlap.
+    return zones().length===before && /(overlap|Too close to the middle)/i.test(toasts.join('|'));
   })()`) === true);
 
   console.log('\nCSV export of batch costs');
