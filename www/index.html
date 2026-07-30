@@ -526,6 +526,10 @@
   .ld-tag-outlier{background:var(--accent-tint);color:var(--accent)}
   .ld-tag-edited{background:var(--line-soft);color:var(--ink-soft)}
   .ld-hint{font-size:11px;color:var(--ink-soft);margin-top:8px;font-style:italic}
+  /* v104.9 — what the tapped lap contributed */
+  .ld-focus-detail{margin-top:9px;padding-top:8px;border-top:1px dashed var(--line);
+    font-size:11.5px;color:var(--ink-soft);line-height:1.5}
+  .ld-focus-detail b{color:var(--ink)}
   .pill-confirmed{background:#e8f5ec;color:#1a7f42}
   .pill-void{background:var(--line-soft);color:var(--ink-soft)}
   .dark .pill-confirmed{background:rgba(34,197,94,.16);color:#5fd48a}
@@ -1805,6 +1809,16 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       <div class="card-title">Labour Summary</div>
       <div id="inv-subtotals-content"></div>
     </div>
+    <!-- v104.9 Work carried out — written from the day's own data, editable -->
+    <div class="card" id="inv-summary-card" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px">
+        <div class="card-title" style="margin:0">Work carried out</div>
+        <button class="btn btn-secondary btn-sm" onclick="invSummaryReset()">↻ Rebuild</button>
+      </div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Written from the loads, sub-activities and trips recorded for the selected days. Edit it however you like — what's here is what goes on the invoice.</div>
+      <textarea id="inv-summary-text" rows="5" oninput="invSummaryEdited()" onblur="try{previewInvoice()}catch(e){}"
+        style="width:100%;padding:11px 13px;border:1.5px solid var(--input-border);border-radius:var(--radius-sm);font-family:inherit;font-size:14px;line-height:1.6;background:var(--surface);color:var(--text);resize:vertical"></textarea>
+    </div>
     <!-- Team labour (connected employees) -->
     <div class="card" id="inv-team-card" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -2433,7 +2447,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v104.8';
+const APP_VERSION = 'v104.9';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -5521,6 +5535,16 @@ function renderInvoice(){
   } else {
     sc.style.display='none';
   }
+  // v104.9 — refresh the work summary for the current day selection, unless he
+  // has typed in it. An edit must survive re-renders; that is the whole point.
+  const sumCard=document.getElementById('inv-summary-card');
+  const sumEl=document.getElementById('inv-summary-text');
+  if(sumCard&&sumEl){
+    if(sumEl.dataset.userEdited!=='1'){
+      sumEl.value=buildWorkSummary(_invoiceSummaryDays(_getSelectedInvoiceDays()),fmtDate);
+    }
+    sumCard.style.display=(selectedCount&&(sumEl.value||'').trim())?'block':'none';
+  }
   // v104.0: an automatically-measured figure must not reach a client unlooked-at.
   // This warns rather than BLOCKS — the load block is descriptive and changes no
   // money, so refusing to invoice over it would be out of all proportion. Same
@@ -5615,6 +5639,76 @@ function _loadBlockHTML(data,print){
   </div>`;
 }
 
+// v104.9 — assemble what the pure summary builder needs for the selected days.
+// Reads circuits / sub-sessions / batches / trips. Touches no money.
+function _invoiceSummaryDays(uiDays){
+  var want={}; (uiDays||[]).forEach(function(d){ if(d&&d.date) want[d.date]=1; });
+  var dates=Object.keys(want).sort();
+  if(!dates.length) return [];
+  var cap=truckCapacity();
+  var allC=circuits(), allS=subsessions(), allB=batches(), allT=trips(), zs=zones();
+  return dates.map(function(date){
+    // Sub-activity hours for the day, plus any batch output recorded against it.
+    var byZone={},order=[];
+    allS.filter(function(x){ return x&&x.date===date; }).forEach(function(x){
+      if(!byZone[x.zone_id]){ byZone[x.zone_id]={name:x.activity,hours:0,output:0,unit:null,batches:0}; order.push(x.zone_id); }
+      byZone[x.zone_id].hours+=(+x.duration_s||0)/3600;
+    });
+    allB.filter(function(b){ return b&&b.date===date; }).forEach(function(b){
+      if(!byZone[b.zone_id]){ byZone[b.zone_id]={name:b.activity,hours:0,output:0,unit:null,batches:0}; order.push(b.zone_id); }
+      var z=byZone[b.zone_id];
+      z.output+=(+b.output_qty||0);
+      z.batches++;
+      if(!z.unit) z.unit=b.output_unit||null;
+    });
+    return {
+      date: date,
+      circuits: allC.filter(function(c){ return c&&c.date===date; }),
+      capacityLcm: cap,
+      subActivities: order.map(function(k){ return byZone[k]; }),
+      // Business travel only, and never on-site or disregarded movement.
+      businessKm: allT.filter(function(t){
+        return t && t.date===date && t.category==='business' && !isIntraSite(t) && !isDisregarded(t);
+      }).reduce(function(a,t){ return a+(+t.distance_km||0); },0)
+    };
+  });
+}
+// The text that goes on the invoice: his edit if he made one, else the generated
+// summary. The textarea is the single source of truth while the screen is open.
+function invoiceSummaryText(uiDays){
+  var el=document.getElementById('inv-summary-text');
+  if(el && el.dataset.userEdited==='1') return el.value;
+  return buildWorkSummary(_invoiceSummaryDays(uiDays),fmtDate);
+}
+function invSummaryEdited(){
+  var el=document.getElementById('inv-summary-text');
+  if(el) el.dataset.userEdited='1';
+}
+function invSummaryReset(){
+  var el=document.getElementById('inv-summary-text');
+  if(!el) return;
+  delete el.dataset.userEdited;
+  el.value=buildWorkSummary(_invoiceSummaryDays(_getSelectedInvoiceDays()),fmtDate);
+  try{ previewInvoice(); }catch(_){}
+  toast('Summary rebuilt from the day\'s data');
+}
+window.invSummaryEdited=invSummaryEdited; window.invSummaryReset=invSummaryReset;
+// Render the block for the printed invoice / preview. Plain paragraphs, because
+// a bulleted <ul> inside the jsPDF-free print path wraps badly on long lines.
+function _summaryBlockHTML(text,print){
+  if(!text||!String(text).trim()) return '';
+  var rows=String(text).split('\n').map(function(l){
+    var t=l.replace(/^[•\-\*]\s*/,'').trim();
+    if(!t) return '';
+    var bullet=/^[•\-\*]/.test(l.trim());
+    return '<div style="'+(bullet?'padding-left:12px;text-indent:-12px;':'font-weight:700;margin-top:6px;')+'">'+
+           (bullet?'&bull; ':'')+escHtml(t)+'</div>';
+  }).filter(Boolean).join('');
+  if(!rows) return '';
+  return '<div style="margin-top:'+(print?'16px':'12px')+';line-height:1.6">'+
+    '<div style="font-weight:700;margin-bottom:4px">Work carried out</div>'+rows+'</div>';
+}
+
 function buildInvoiceHTML(){
   const s=S(),ui=_getSelectedInvoiceDays();
   const numInput=document.getElementById('inv-num-input');
@@ -5700,6 +5794,7 @@ ${travelLinesHTML}
 ${materialsLinesHTML}
 ${gstLines}
 </div>
+${_summaryBlockHTML(invoiceSummaryText(ui),true)}
 ${_loadBlockHTML(_invoiceLoadRows(ui),true)}
 </body></html>`;
 }
@@ -5768,6 +5863,7 @@ function previewInvoice(){
 <table class="inv-table"><thead><tr><th>Date</th><th>Start</th><th>Finish</th><th>Lunch</th><th>Hrs</th><th>Rate</th><th>Desc</th><th>Amt</th></tr></thead>
 <tbody>${rows||'<tr><td colspan="8" style="text-align:center;color:#999;padding:8px">No days to invoice</td></tr>'}</tbody></table>
 <div class="inv-totals">${sonLinesPreview}${machineLinesPreview}${travelLinesPreview}${materialsPreview}${gstPreview}</div>
+${_summaryBlockHTML(invoiceSummaryText(ui),false)}
 ${_loadBlockHTML(_invoiceLoadRows(ui),false)}`;
   sec.style.display='block';sec.scrollIntoView({behavior:'smooth'});
 }
@@ -10110,6 +10206,68 @@ function circuitPhaseSplit(c){
   return o;
 }
 
+// ── v104.9 Auto-summary — what the day's data says, in words ─────────────────
+// Steven: "on the invoice ... in the details section, at the moment, it's very,
+// very limited. But we probably could put 'moved how many cubic meters from here
+// to there', a little bit of a description of what was done for the day via that
+// information that's being generated."
+//
+// PURE, and DESCRIPTIVE ONLY — it computes not one cent, exactly like the
+// production summary table it sits above. It reads what was already measured and
+// writes English.
+//
+// Empty sections are omitted rather than padded: a day of nothing but hauling
+// gets one line, not one line and three blanks. That is the whole difference
+// between a summary and a form.
+function _sumRound(n,dp){ var f=Math.pow(10,dp||0); return Math.round((+n||0)*f)/f; }
+function daySummaryLines(input){
+  var i=input||{};
+  var lines=[];
+  // Hauling, grouped by the pickup → dump pair so a two-face day reads as two
+  // lines rather than one averaged fiction.
+  var byPair={},order=[];
+  countedLoads(i.circuits).forEach(function(c){
+    var k=(c.pickup_name||'?')+'|'+(c.dump_name||'?');
+    if(!byPair[k]){ byPair[k]={pickup:c.pickup_name,dump:c.dump_name,loads:0,secs:0}; order.push(k); }
+    byPair[k].loads++; byPair[k].secs+=(+c.duration_s||0);
+  });
+  var cap=+i.capacityLcm||0;
+  order.forEach(function(k){
+    var p=byPair[k];
+    var vol=cap>0?(' ('+_sumRound(p.loads*cap,2).toLocaleString('en-AU')+' LCM³)'):'';
+    var route=(p.pickup&&p.dump)?(' from '+p.pickup+' to '+p.dump):'';
+    lines.push(p.loads+' load'+(p.loads===1?'':'s')+vol+' hauled'+route);
+  });
+  // Time actually spent turning laps.
+  var haulSecs=order.reduce(function(a,k){ return a+byPair[k].secs; },0);
+  if(haulSecs>0) lines.push(_sumRound(haulSecs/3600,1)+'h hauling');
+  // Sub-activities: hours, and output when a batch was costed.
+  (i.subActivities||[]).forEach(function(a){
+    if(!a||!(a.hours>0||a.output>0)) return;
+    var bits=a.name||'Work';
+    if(a.hours>0) bits+=' — '+_sumRound(a.hours,1)+'h';
+    if(a.output>0) bits+=(a.hours>0?', ':' — ')+_sumRound(a.output,2)+(a.unit?(' '+a.unit):'');
+    if(a.batches>1) bits+=' over '+a.batches+' batches';
+    lines.push(bits);
+  });
+  // Business travel, if any was logged and categorised.
+  var km=+i.businessKm||0;
+  if(km>0) lines.push(_sumRound(km,1)+' km travel');
+  return lines;
+}
+// One block per day, oldest first, with the date shown only when the invoice
+// covers more than one — a single-day invoice does not need "30 Jul:" on it.
+function buildWorkSummary(days,fmtDateFn){
+  var f=fmtDateFn||function(d){ return d; };
+  var withData=(days||[]).filter(function(d){ return d && daySummaryLines(d).length; });
+  if(!withData.length) return '';
+  var multi=withData.length>1;
+  return withData.map(function(d){
+    var lines=daySummaryLines(d);
+    return (multi?(f(d.date)+'\n'):'')+lines.map(function(l){ return '• '+l; }).join('\n');
+  }).join('\n\n');
+}
+
 // ── Formatting ───────────────────────────────────────────────────────────────
 // LCM³ is loose cubic metres — Steven's unit for what actually leaves the pit.
 function fmtLcm(v){
@@ -11647,27 +11805,10 @@ function tlRenderSheet(row){
 function tlWireRows(){
   var body=document.getElementById('tl-sheet-body'); if(!body) return;
   Array.prototype.forEach.call(body.querySelectorAll('[data-trip]'),function(el){
-    var id=el.getAttribute('data-trip'), timer=null, fired=false, sx=0, sy=0;
-    var start=function(x,y){
-      fired=false; sx=x; sy=y;
-      timer=setTimeout(function(){
-        fired=true;
-        try{ if(navigator.vibrate) navigator.vibrate(25); }catch(_){}
-        tlRowActions(id);
-      },500);
-    };
-    var cancel=function(){ if(timer){ clearTimeout(timer); timer=null; } };
-    el.addEventListener('touchstart',function(e){ var t=e.touches[0]; start(t.clientX,t.clientY); },{passive:true});
-    el.addEventListener('touchmove',function(e){
-      var t=e.touches[0];
-      if(Math.abs(t.clientX-sx)>10||Math.abs(t.clientY-sy)>10) cancel();   // a scroll is not a press
-    },{passive:true});
-    el.addEventListener('touchend',cancel);
-    el.addEventListener('touchcancel',cancel);
-    el.addEventListener('mousedown',function(e){ start(e.clientX,e.clientY); });
-    el.addEventListener('mouseup',cancel);
-    el.addEventListener('mouseleave',cancel);
-    el.addEventListener('contextmenu',function(e){ e.preventDefault(); cancel(); fired=true; tlRowActions(id); });
+    var id=el.getAttribute('data-trip');
+    // Same primitive as the Loads sheet (v104.9). No tap action here — the
+    // category buttons on the row are the tap targets.
+    wireRowGestures(el,{ onHold:function(){ tlRowActions(id); } });
   });
 }
 // v104.7 — long-press used to go straight to the delete confirm. Now that a trip
@@ -12613,6 +12754,21 @@ function ldSegHtml(s){
       '<span><i class="ld-ph-haul"></i>haul '+fmtCircuitDur(s.haulS)+'</span>'+
       '<span><i class="ld-ph-dump"></i>tip '+fmtCircuitDur(s.dumpS)+'</span>'+
       '<span><i class="ld-ph-ret"></i>back '+fmtCircuitDur(s.returnS)+'</span></div>'):'';
+  // v104.9 — a tap should tell you something, not just redraw the map. The
+  // focused row says what THIS lap contributed to the day's numbers.
+  var detail='';
+  if(ldFocus===s.id && s.status!=='void'){
+    var cap=truckCapacity();
+    var dayRow=ldSel?ldDayRow(ldSel):null;
+    var dayS=dayRow?dayRow.totalS:0;
+    var share=dayS>0?Math.round((s.durationS/dayS)*100):null;
+    detail='<div class="ld-focus-detail">'+
+      '<b>Lap '+s.n+'</b> · '+fmtTime(s.start_ts)+'–'+fmtTime(s.end_ts)+
+      (cap?(' · <b>'+cap+'</b> LCM³ of the day\'s total'):'')+
+      (share!=null?(' · <b>'+share+'%</b> of the day\'s lap time'):'')+
+      (s.hasTrail?' · trail shown on the map':' · no GPS trail kept for this one')+
+    '</div>';
+  }
   var tags='';
   if(s.status==='void') tags+='<span class="ld-seg-tag ld-tag-void">'+escHtml(loadVoidLabel(s.reason))+' — not counted</span> ';
   if(s.outlier) tags+='<span class="ld-seg-tag ld-tag-outlier">much slower than usual</span> ';
@@ -12625,41 +12781,94 @@ function ldSegHtml(s){
         (s.hasTrail?'':' · no GPS trail kept')+'</div>'+
     '</div><div><div class="tl-seg-km">'+fmtCircuitDur(s.durationS)+'</div>'+
       '<div class="tl-seg-kmh">cycle</div></div></div>'+
-    phases+(tags?('<div>'+tags+'</div>'):'')+
+    phases+detail+(tags?('<div>'+tags+'</div>'):'')+
     (s.notes?('<div class="ld-hint">'+escHtml(s.notes)+'</div>'):'')+
   '</div>';
 }
 // Tap = show this lap on the map. Press and hold = open it for editing.
 // Long-press rather than another button because the row is already dense, and
 // the destructive-ish action should take deliberate effort.
+// v104.9 — ONE gesture, ONE outcome.
+//
+// FIELD BUG (Steven, Loads tab): "if I tap on one of them, that should be the
+// only one that shows up ... sometimes it works, sometimes it doesn't."
+//
+// The v104.0 wiring listened to BOTH touch and mouse events. A touchscreen tap
+// fires touchstart → touchend and then, ~300 ms later, a SYNTHESISED
+// mousedown → mouseup for the same finger. Both `touchend` and `mouseup` ran the
+// tap action, so every tap selected the lap and then immediately deselected it —
+// net zero. The map therefore kept drawing the whole day, which is exactly the
+// "all showing up altogether as a big group" he described. It was intermittent
+// because browsers suppress the synthesised pair in some conditions (after a
+// scroll, or when the element is re-created between the two).
+//
+// Pointer Events are the fix: one unified model for touch, mouse and stylus with
+// no synthesis, so a gesture cannot be handled twice. `_fired` is an explicit
+// mutex on top, so tap and hold can never both run for one press.
+function wireRowGestures(el,opts){
+  var holdMs=(opts&&opts.holdMs)||500;
+  var slop=(opts&&opts.slop)||10;
+  var timer=null, fired=false, sx=0, sy=0, active=false;
+  function cancel(){ if(timer){ clearTimeout(timer); timer=null; } active=false; }
+  function down(x,y){
+    cancel();
+    active=true; fired=false; sx=x; sy=y;
+    timer=setTimeout(function(){
+      timer=null;
+      if(!active) return;
+      fired=true;                      // mutex: the tap on release is now dead
+      try{ if(navigator.vibrate) navigator.vibrate(25); }catch(_){}
+      if(opts.onHold) opts.onHold();
+    },holdMs);
+  }
+  function up(){
+    var wasActive=active, hadFired=fired;
+    cancel();
+    if(wasActive && !hadFired && opts.onTap) opts.onTap();
+  }
+  if(window.PointerEvent){
+    el.addEventListener('pointerdown',function(e){
+      if(e.button!=null && e.button!==0) return;      // right-click handled below
+      down(e.clientX,e.clientY);
+    });
+    el.addEventListener('pointermove',function(e){
+      // A scroll must never be read as a press — the sheet is a scrolling list.
+      if(active && (Math.abs(e.clientX-sx)>slop||Math.abs(e.clientY-sy)>slop)) cancel();
+    },{passive:true});
+    el.addEventListener('pointerup',up);
+    el.addEventListener('pointercancel',cancel);
+    el.addEventListener('pointerleave',cancel);
+  } else {
+    // No Pointer Events (very old WebView): touch only, and mouse only when no
+    // touch has been seen — never both for the same gesture.
+    var sawTouch=false;
+    el.addEventListener('touchstart',function(e){ sawTouch=true; var t=e.touches[0]; down(t.clientX,t.clientY); },{passive:true});
+    el.addEventListener('touchmove',function(e){
+      var t=e.touches[0];
+      if(active && (Math.abs(t.clientX-sx)>slop||Math.abs(t.clientY-sy)>slop)) cancel();
+    },{passive:true});
+    el.addEventListener('touchend',up);
+    el.addEventListener('touchcancel',cancel);
+    el.addEventListener('mousedown',function(e){ if(sawTouch) return; down(e.clientX,e.clientY); });
+    el.addEventListener('mouseup',function(){ if(sawTouch){ sawTouch=false; return; } up(); });
+    el.addEventListener('mouseleave',cancel);
+  }
+  // Right-click / trackpad hold on a desktop reaches the hold action directly.
+  el.addEventListener('contextmenu',function(e){
+    e.preventDefault(); cancel(); fired=true;
+    if(opts.onHold) opts.onHold();
+  });
+}
+window.wireRowGestures=wireRowGestures;
+
 function ldWireRows(){
   var body=document.getElementById('ld-sheet-body'); if(!body) return;
   Array.prototype.forEach.call(body.querySelectorAll('[data-lap]'),function(el){
-    var id=el.getAttribute('data-lap'), timer=null, fired=false, sx=0, sy=0;
-    var start=function(x,y){
-      fired=false; sx=x; sy=y;
-      timer=setTimeout(function(){
-        fired=true;
-        try{ if(navigator.vibrate) navigator.vibrate(25); }catch(_){}
-        openLoadModal(id);
-      },500);
-    };
-    var cancel=function(){ if(timer){ clearTimeout(timer); timer=null; } };
-    el.addEventListener('touchstart',function(e){
-      var t=e.touches[0]; start(t.clientX,t.clientY);
-    },{passive:true});
-    el.addEventListener('touchmove',function(e){
-      var t=e.touches[0];
-      // A scroll must never be read as a press — the sheet is a scrolling list.
-      if(Math.abs(t.clientX-sx)>10||Math.abs(t.clientY-sy)>10) cancel();
-    },{passive:true});
-    el.addEventListener('touchend',function(){ cancel(); if(!fired) ldToggleFocus(id); });
-    el.addEventListener('touchcancel',cancel);
-    el.addEventListener('mousedown',function(e){ start(e.clientX,e.clientY); });
-    el.addEventListener('mouseup',function(){ cancel(); if(!fired) ldToggleFocus(id); });
-    el.addEventListener('mouseleave',cancel);
-    // Right-click / trackpad long-press on a desktop reaches the same place.
-    el.addEventListener('contextmenu',function(e){ e.preventDefault(); cancel(); fired=true; openLoadModal(id); });
+    var id=el.getAttribute('data-lap');
+    wireRowGestures(el,{
+      onTap:  function(){ ldToggleFocus(id); },
+      onHold: function(){ openLoadModal(id); }
+    });
   });
 }
 function ldToggleFocus(id){

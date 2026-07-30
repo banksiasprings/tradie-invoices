@@ -22,11 +22,11 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v104.8 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v104.9 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.104.8 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
-| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.104.8 / versionCode 12 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.104.9 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.104.9 / versionCode 13 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -879,6 +879,67 @@ buttons against a stubbed bridge, and drives all three failure states plus
 reject / `opened:false` / no-bridge / throwing-run. No emulator needed. (This
 also fills the gap noted in v101.6: `test-health.js` was referenced but absent.)
 
+### v104.9 — the Loads tap bug, and an auto-written invoice description
+
+**The tap bug.** Steven: *"all of the loads are showing up altogether as a big
+group. When I try to click on them individually, sometimes it works, sometimes it
+doesn't … maybe it's getting confused because it's got a long pressed edit, and
+then maybe a short press to select it."*
+
+He was close but not right, and the difference matters. The rows **were** discrete
+with their own targets, the thresholds **were** fine, and nothing was bubbling.
+The v104.0 wiring listened to **both touch and mouse events** — and a touchscreen
+tap fires `touchstart`/`touchend` and then, ~300 ms later, a **synthesised**
+`mousedown`/`mouseup` for the same finger. Both `touchend` and `mouseup` ran the
+tap action, so **every tap selected the lap and immediately deselected it**. Net
+zero. The map therefore kept drawing the whole day — exactly the "big group" he
+saw. Intermittent because browsers suppress the synthesised pair in some
+conditions (after a scroll, or when the element is re-created between the two).
+
+**Fix: `wireRowGestures()`** — one shared primitive on **Pointer Events**, which
+unify touch/mouse/stylus with no synthesis, so a gesture cannot be handled twice.
+`fired` is an explicit mutex on top so tap and hold can never both run. A
+`touchstart`-guarded legacy path covers a WebView without Pointer Events. Both the
+Loads sheet and the Trip sheet use it, so the two screens behave identically.
+
+A tap now also **says something**: the focused row shows that lap's LCM³
+contribution and its share of the day's lap time, so selecting is informative
+rather than only redrawing the map.
+
+**The invoice description.** Steven: *"in the details section … we probably could
+put 'moved how many cubic meters from here to there', a little bit of a
+description of what was done for the day via that information that's being
+generated."*
+
+`daySummaryLines()` / `buildWorkSummary()` are **PURE and DESCRIPTIVE ONLY** —
+they compute not one cent, like the production table they sit above. Hauling is
+grouped by pickup→dump **pair**, so a two-face day reads as two lines rather than
+one averaged fiction. Empty sections are **omitted, not padded** — a hauling-only
+day is two lines, not two lines and three blanks.
+
+```
+Work carried out
+• 12 loads (144 LCM³) hauled from Ranch Pit to Dam Site
+• 3.2h hauling
+• Charcoal shed — 2.5h, 45 kg over 2 batches
+• 34.6 km travel
+```
+
+Editable in a textarea on the Invoice screen; `dataset.userEdited` makes the edit
+survive re-renders, and **↻ Rebuild** returns to the generated text. Multi-day
+invoices head each block with its date; single-day ones don't. No capacity set →
+the volume is simply omitted, never `0 LCM³`.
+
+**Don't reintroduce:** listening to touch AND mouse for the same gesture (that IS
+the bug); a tap handler that can fire twice; money in the summary; padding the
+summary with empty sections; a summary edit that a re-render wipes.
+
+**Tests:** `test-tap-summary.js` (71 pure — lifts the SHIPPED `wireRowGestures`
+out of source and drives it against a stub element, including the exact
+touch-then-synthesised-mouse sequence) + 34 live in `test-loads-live.js`
+dispatching real `PointerEvent`s plus the synthesised `MouseEvent` pair.
+Rendered invoice: `plans/v104-shots/invoice-with-summary.html`.
+
 ### v104.8 — no trip-end popup; a count on the tab instead
 Steven: *"Can we get rid of the confirm the trip pop up? I just find it annoying,
 and I'll just go into the trip tab when I wanna confirm and sort it all out …
@@ -1402,9 +1463,11 @@ node test-zone-radius.js          # 52 pure   · radius slider/manual entry + ne
 node test-disregard.js            # 60 pure   · trip delete + "don't record here" zones
 node test-edit-rows.js            # 62 pure   · edit a lap's duration / a trip's times
 node test-trip-popup.js           # 41 pure   · no trip-end popup by default + tab count
+node test-tap-summary.js          # 71 pure   · tap/hold mutex + invoice auto-summary
 ```
-Full suite as of v104.8: **974 pure + 606 live**. Live suites bind fixed HTTP + CDP
-ports, so a killed run leaves the port held and the next one dies with
+Full suite as of v104.9: **1045 pure + 637 live**. Live suites drive rows with **PointerEvent**, not TouchEvent — the
+row gestures moved to Pointer Events in v104.9 and a TouchEvent press now reaches
+nothing. Live suites bind fixed HTTP + CDP ports, so a killed run leaves the port held and the next one dies with
 `EADDRINUSE` — `lsof -ti tcp:<port> | xargs kill -9` clears it. Live fixtures that
 assert a **running** circuit must re-stamp `activeCircuit.start_ts` to `Date.now()` first —
 a fixture-dated open cycle goes stale once the wall clock passes it, which turned
@@ -1674,12 +1737,12 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
-- **v104.0 → v104.8 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
+- **v104.0 → v104.9 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
   Steven asked for, in the shape of the Trip Log he already likes: map breadcrumb, day strip,
   tap a lap to draw it, press and hold to retime or flag it. Daily rollup = loads · **median**
   cycle time · LCM³ (loads × truck capacity) · productive hours, and **only that rollup** reaches
   the invoice. Retires the v102.0 Circuits pane in the same commit. See "v104.0 — Loads" above.
-  **Verified:** 190 pure + 161 live (both pins); full suite 974 pure + 606 live green; money
+  **Verified:** 190 pure + 161 live (both pins); full suite 1045 pure + 637 live green; money
   paths proven unmoved by a dollar-figure diff with the block on/off and with laps flagged.
   Screenshots in `plans/v104-shots/`. **v104.1** (same day) makes the four zone CTAs
   deep-link straight to the Zones card in Settings instead of the top of the screen —
@@ -1701,6 +1764,9 @@ look for `REJECTED` entries in the mirrored GeoLog.
   case) and makes a trip's times editable. See "v104.7 — edit a recorded lap".
   **v104.8** switches the trip-end "which vehicle?" popup OFF by default (kept behind a
   setting) and puts an unreviewed count on the Trips tab instead. See "v104.8".
+  **v104.9** fixes the Loads tap bug (touch + synthesised mouse both firing, so every tap
+  selected then deselected) and auto-writes a "Work carried out" description on the
+  invoice from the day's loads, sub-activities and trips. See "v104.9".
 - **v103.0 — one zone system: circuits + sub-activities** — SHIPPED 2026-07-29 (Opus 5).
   Generalises the v102.0 circuit timer into a single geofence primitive read three ways
   (worksite / circuit pair / nested sub-activity). Steven's charcoal case: a small zone inside

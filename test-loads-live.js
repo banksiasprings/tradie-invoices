@@ -166,15 +166,15 @@ function serve() {
     const box = await ev(`(function(){var e=document.querySelector('${sel}');if(!e)return null;
       var r=e.getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+Math.min(20,r.height/2))};})()`);
     if (!box) return false;
+    // v104.9: the rows listen for POINTER events now (one model, no synthesised
+    // duplicates), so the press has to be driven the same way the browser would.
     await ev(`(function(){
       var e=document.querySelector('${sel}');
-      // Chrome requires real Touch instances here, not plain objects.
-      var t=new Touch({identifier:1,target:e,clientX:${box.x},clientY:${box.y}});
-      e.dispatchEvent(new TouchEvent('touchstart',{bubbles:true,touches:[t],changedTouches:[t]}));
+      e.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,clientX:${box.x},clientY:${box.y},button:0,pointerId:1,pointerType:'touch'}));
       window.__PRESSEL=e; return 1;
     })()`);
     await sleep(ms);
-    await ev(`window.__PRESSEL.dispatchEvent(new TouchEvent('touchend',{bubbles:true,touches:[],changedTouches:[]}))`);
+    await ev(`window.__PRESSEL.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,button:0,pointerId:1,pointerType:'touch'}))`);
     await sleep(200);
     return true;
   };
@@ -767,6 +767,126 @@ function serve() {
   ok('…and a good one reports success', await ev(`openSettingsAt('circuit-zones-card')`) === true);
   ok('the Health card CTAs still use their own reveal (untouched)',
      await ev(`typeof Health._reveal`) === 'function');
+
+  console.log("\nv104.9 — one tap selects ONE lap (the double-fire bug)");
+  await ev(`(function(){
+    var T0=new Date(2026,6,30,7,0,0).getTime();
+    function lap(id,m){ var s=T0+m*60000; return {id:id,date:'2026-07-30',pickup_name:'Ranch Pit',dump_name:'Dam Site',
+      start_ts:s,end_ts:s+600000,duration_s:600,load_s:120,haul_s:180,dump_s:90,return_s:210,
+      polyline:[{lat:-28.500,lng:151.900,t:s},{lat:-28.489,lng:151.900,t:s+300000},{lat:-28.500,lng:151.900,t:s+600000}],
+      notes:'',confirmed_at:1}; }
+    DB.set('circuits',[lap('q1',0),lap('q2',10),lap('q3',20),lap('q4',30)]);
+    ldSel=null; ldFocus=null; renderLoads(); ldSelectDay('2026-07-30');
+  })()`);
+  await sleep(600);
+  ok('four discrete rows, each its own tap target',
+     (await ev(`document.querySelectorAll('#ld-sheet-body [data-lap]').length`)) === 4);
+  ok('nothing is focused to begin with', await ev(`ldFocus===null`));
+
+  // A REAL touchscreen tap: pointer pair, then the synthesised mouse pair that
+  // Android also dispatches. Before v104.9 this toggled focus twice — on, then
+  // straight back off — which is why the map kept drawing the whole day.
+  const realTap = sel => ev(`(function(){
+    var e=document.querySelector('${sel}');
+    var r=e.getBoundingClientRect(), x=Math.round(r.left+r.width/2), y=Math.round(r.top+12);
+    function pe(t){ return new PointerEvent(t,{bubbles:true,clientX:x,clientY:y,button:0,pointerId:1,pointerType:'touch'}); }
+    function me(t){ return new MouseEvent(t,{bubbles:true,clientX:x,clientY:y,button:0}); }
+    e.dispatchEvent(pe('pointerdown'));
+    e.dispatchEvent(pe('pointerup'));
+    e.dispatchEvent(me('mousedown'));      // synthesised ~300ms later by the browser
+    e.dispatchEvent(me('mouseup'));
+    e.dispatchEvent(me('click'));
+    return true;
+  })()`);
+
+  await realTap('#ldseg-q2');
+  await sleep(400);
+  ok('PIN: one tap focuses exactly that lap', await ev(`ldFocus`) === 'q2', await ev(`ldFocus`));
+  ok('PIN: …and it does NOT bounce straight back off', await ev(`ldFocus!==null`));
+  ok('PIN: …only that lap is drawn', (await ev(`ldVisibleLaps().length`)) === 1);
+  ok('PIN: …which is the one tapped', await ev(`ldVisibleLaps()[0].id`) === 'q2');
+  ok('PIN: …the row is marked', /is-focus/.test(await ev(`document.getElementById('ldseg-q2').className`)));
+  ok('PIN: …and shows what that lap contributed',
+     /LCM³ of the day/.test(await ev(`document.getElementById('ldseg-q2').innerHTML`)),
+     (await ev(`document.getElementById('ldseg-q2').innerHTML`)).slice(-400));
+  ok('PIN: …no lap modal opened', (await ev(`document.getElementById('load-modal').classList.contains('open')`)) === false);
+
+  await realTap('#ldseg-q4');
+  await sleep(400);
+  ok('tapping a different lap moves the focus', await ev(`ldFocus`) === 'q4');
+  ok('…and still only draws one', (await ev(`ldVisibleLaps().length`)) === 1);
+  await realTap('#ldseg-q4');
+  await sleep(400);
+  ok('tapping the focused lap again clears it', await ev(`ldFocus===null`));
+  ok('…and the whole day comes back', (await ev(`ldVisibleLaps().length`)) === 4);
+
+  // Hold must still reach the editor, and must NOT also toggle focus.
+  await ev(`(function(){ ldFocus=null; ldRenderSheet(ldDayRow('2026-07-30')); })()`);
+  await sleep(200);
+  await press('#ldseg-q3', 700);
+  ok('a long press still opens the editor',
+     await ev(`document.getElementById('load-modal').classList.contains('open')`));
+  ok('…for that lap', await ev(`_ldLapId`) === 'q3');
+  ok('…and did NOT also change the focus', await ev(`ldFocus===null`));
+  await ev(`closeLoadModal()`);
+
+  console.log('\nv104.9 — the invoice writes what the day did');
+  await ev(`(function(){
+    var s=S(); s.truckCapacityLcm=12; DB.set('settings',s);
+    DB.set('subsessions',[{id:'s1',zone_id:'zs',activity:'Charcoal shed',date:'2026-07-30',
+      start_ts:1,end_ts:2,duration_s:9000}]);
+    DB.set('batches',[{id:'b1',zone_id:'zs',activity:'Charcoal shed',date:'2026-07-30',
+      hours:2.5,output_qty:45,output_unit:'kg',cost_per_unit:1.2,labour:100,material:35,total:135}]);
+    setTrips([{id:'t1',date:'2026-07-30',category:'business',distance_km:34.6,duration_min:40,
+      start_time:Date.now(),end_time:Date.now()+1}]);
+    showScreen('invoice');
+  })()`);
+  await sleep(900);
+  ok('the Work-carried-out card is on the Invoice screen',
+     await ev(`document.getElementById('inv-summary-card').style.display`) === 'block');
+  const summary = await ev(`document.getElementById('inv-summary-text').value`);
+  ok('…it describes the hauling', /4 loads \(48 LCM³\) hauled from Ranch Pit to Dam Site/.test(summary), summary);
+  ok('…the hauling hours', /0.7h hauling/.test(summary), summary);
+  ok('…the charcoal', /Charcoal shed — 2.5h, 45 kg/.test(summary), summary);
+  ok('…and the travel', /34.6 km travel/.test(summary), summary);
+  ok('…as bullets on their own lines', summary.split('\n').filter(function(l){return l.indexOf('•')===0;}).length === 4, summary);
+  const invHtml = await ev(`buildInvoiceHTML()`);
+  ok('the printed invoice carries the block', /Work carried out/.test(invHtml));
+  ok('…with each line rendered separately, not run together',
+     (invHtml.match(/&bull;/g) || []).length === 4, (invHtml.match(/&bull;/g) || []).length);
+  ok('…no literal backslash-n leaked into the page', !/\\n/.test(invHtml.slice(invHtml.indexOf('Work carried out'), invHtml.indexOf('Work carried out') + 800)));
+  ok('…and it sits above the production summary table',
+     invHtml.indexOf('Work carried out') < invHtml.indexOf('Production summary'));
+  ok('the money total is untouched', /Total Payable/.test(invHtml));
+  ok('editing it is what reaches the invoice', await ev(`(function(){
+      var el=document.getElementById('inv-summary-text');
+      el.value='• Shifted the lot, mate'; invSummaryEdited();
+      return /Shifted the lot, mate/.test(buildInvoiceHTML()); })()`));
+  ok('…and a re-render does not wipe the edit', await ev(`(function(){
+      renderInvoice();
+      return document.getElementById('inv-summary-text').value==='• Shifted the lot, mate'; })()`));
+  ok('Rebuild restores the generated text', await ev(`(function(){
+      invSummaryReset();
+      return /4 loads/.test(document.getElementById('inv-summary-text').value); })()`));
+  ok('a day with no recorded work produces no block at all', await ev(`(function(){
+      var c=circuits(), sb=subsessions(), b=batches(), t=trips();
+      DB.set('circuits',[]); DB.set('subsessions',[]); DB.set('batches',[]); setTrips([]);
+      var el=document.getElementById('inv-summary-text'); delete el.dataset.userEdited;
+      renderInvoice();
+      var h=buildInvoiceHTML();
+      DB.set('circuits',c); DB.set('subsessions',sb); DB.set('batches',b); setTrips(t);
+      return !/Work carried out/.test(h); })()`));
+  if (process.env.SHOT) {
+    const OUT = path.join(__dirname, 'plans', 'v104-shots');
+    fs.mkdirSync(OUT, { recursive: true });
+    await ev(`(function(){ var el=document.getElementById('inv-summary-text'); delete el.dataset.userEdited; renderInvoice(); })()`);
+    await sleep(400);
+    fs.writeFileSync(path.join(OUT, 'invoice-with-summary.html'), await ev(`buildInvoiceHTML()`));
+    console.log('  (invoice written to plans/v104-shots/invoice-with-summary.html)');
+  }
+  await ev(`(function(){ DB.set('subsessions',[]); DB.set('batches',[]); setTrips([]);
+    DB.set('circuits',window.__CIRC0||[]); showScreen('loads'); ldSel=null; ldFocus=null; renderLoads(); })()`);
+  await sleep(400);
 
   console.log('\nRegression: nothing else was touched');
   await ev(`(function(){ ldSelectAll(); renderLoads(); })()`);
