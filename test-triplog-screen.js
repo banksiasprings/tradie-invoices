@@ -21,12 +21,12 @@ const html = fs.readFileSync(path.join(__dirname, 'www', 'index.html'), 'utf8');
 const m = html.match(/\/\/__V102_TRIPLOG_PURE_START__[^\n]*\n([\s\S]*?)\/\/__V102_TRIPLOG_PURE_END__/);
 if (!m) { console.error('✗ could not find v102 trip-log pure markers in www/index.html'); process.exit(2); }
 const api = new Function(m[1] + `
-return {tripReviewStatus,isPendingTrip,isPrivateCat,monthKeyOf,daysInMonthKey,tripMonthKeys,
+return {groupOnSiteSegments, tripReviewStatus,isPendingTrip,isPrivateCat,monthKeyOf,daysInMonthKey,tripMonthKeys,
         filterTripsBy,dayStatus,buildDayStrip,periodSummary,applyTripCategory,clearTripCategory,
         approvalPlan,daySegments,routeLabelOf,
         pointInFence,tripPoints,classifyIntraSite,isIntraSite,intraSiteLocked,
         applyIntraSiteFlags,TRIP_INTRA_SITE_CFG};`)();
-const { tripReviewStatus, isPendingTrip, isPrivateCat, monthKeyOf, daysInMonthKey, tripMonthKeys,
+const { groupOnSiteSegments, tripReviewStatus, isPendingTrip, isPrivateCat, monthKeyOf, daysInMonthKey, tripMonthKeys,
         filterTripsBy, dayStatus, buildDayStrip, periodSummary, applyTripCategory, clearTripCategory,
         approvalPlan, daySegments, routeLabelOf,
         pointInFence, tripPoints, classifyIntraSite, isIntraSite, intraSiteLocked,
@@ -500,6 +500,86 @@ ok('pin: a yard lap inside the big fence IS filtered from km total',
 ok('pin: …and is reported as on-site instead', bothSum.onSiteKm === 7.25, bothSum.onSiteKm);
 ok('pin: …without being deleted', bothFlagged.length === 2);
 ok('pin: the day still shows both trips', buildDayStrip(bothFlagged, '2026-07')[26].count === 2);
+
+
+console.log('\n── v105.2: Steven\'s Thursday 30 Jul, from the screenshot ──────');
+{
+  // Header read: "109.2 km travel · 6 trips · 92.5 km business · +7 on-site (24.1 km)"
+  const T0 = Date.parse('2026-07-30T08:00:00');
+  let n = 0;
+  const t = (km, cat, onsite) => Object.assign({
+    id: 't' + (++n), date: '2026-07-30', category: cat, distance_km: km,
+    duration_min: 10, start_time: T0 + n * 6e5, end_time: T0 + n * 6e5 + 6e5
+  }, onsite ? { intraSite: true, intraSite_site: 'Lucas Ranch' } : {});
+  const trips = [t(40.0, 'business'), t(30.0, 'business'), t(22.5, 'business'),
+                 t(10.0, 'personal'), t(4.7, 'unknown'), t(2.0, 'unknown')];
+  [4.0, 3.5, 3.4, 3.6, 3.2, 3.2, 3.2].forEach(k => trips.push(t(k, 'unknown', true)));
+
+  const rows = buildDayStrip(filterTripsBy(trips, 'all'), '2026-07');
+  const day = rows.filter(r => r.date === '2026-07-30')[0];
+
+  console.log('  ── PIN: test_daily_total_km_excludes_on_site_trips');
+  ok('PIN: the day headline is 109.2 km', day.km === 109.2, day.km);
+  ok('PIN: on-site is 7 trips / 24.1 km, reported separately',
+     day.onSiteCount === 7 && day.onSiteKm === 24.1, { c: day.onSiteCount, km: day.onSiteKm });
+  ok('PIN: the headline EXCLUDES on-site — adding it would give 133.3',
+     day.km !== +(day.km + day.onSiteKm).toFixed(1) && +(day.km + day.onSiteKm).toFixed(1) === 133.3);
+  ok('PIN: …and the headline reconciles exactly as travel-only',
+     +(day.businessKm + day.privateKm + 6.7).toFixed(1) === day.km,
+     { b: day.businessKm, p: day.privateKm, total: day.km });
+  ok('PIN: business is 92.5', day.businessKm === 92.5, day.businessKm);
+  ok('PIN: the 16.7 km gap is private + untagged travel, NOT on-site',
+     +(day.km - day.businessKm).toFixed(1) === 16.7 && day.privateKm === 10);
+  ok('PIN: only the 6 travel trips are counted as trips', day.travelCount === 6, day.travelCount);
+  ok('PIN: an on-site trip contributes zero to business km', (() => {
+      const noOnsite = buildDayStrip(filterTripsBy(trips.filter(x => !isIntraSite(x)), 'all'), '2026-07')
+        .filter(r => r.date === '2026-07-30')[0];
+      return noOnsite.km === day.km && noOnsite.businessKm === day.businessKm;
+    })());
+
+  console.log('  ── PIN: test_monthly_total_km_excludes_on_site_trips');
+  const sum = periodSummary(rows);
+  ok('PIN: the month total is travel only', sum.totalKm === 109.2, sum.totalKm);
+  ok('PIN: …with on-site carried alongside', sum.onSiteKm === 24.1 && sum.onSiteCount === 7);
+  ok('PIN: …never folded in', sum.totalKm + sum.onSiteKm !== sum.totalKm);
+  ok('PIN: business % is computed on travel only, not travel+on-site',
+     sum.businessPct === Math.round((92.5 / 109.2) * 100), sum.businessPct);
+
+  console.log('  ── PIN: test_on_site_trips_collapse_to_single_summary_row_per_day');
+  const segs = daySegments(trips);
+  ok('PIN: daySegments still returns every trip', segs.length === 13, segs.length);
+  const g = groupOnSiteSegments(segs);
+  ok('PIN: the travel rows stay individual', g.travel.length === 6, g.travel.length);
+  ok('PIN: …and none of them is on-site', g.travel.every(x => !x.intraSite));
+  ok('PIN: the 7 on-site rows fold into ONE group', !!g.group && g.group.count === 7);
+  ok('PIN: …carrying their combined km', g.group.km === 24.1, g.group.km);
+  ok('PIN: …and naming the site when they share one', g.group.siteName === 'Lucas Ranch');
+  ok('PIN: …so the sheet draws 7 rows, not 13', g.travel.length + 1 === 7);
+  ok('PIN: the individual rows are kept for expansion', g.onsite.length === 7);
+  ok('PIN: …and their ids are retained', g.group.ids.length === 7 && g.group.ids[0] === segs.filter(x => x.intraSite)[0].id);
+  ok('PIN: a day with no on-site movement gets no group row',
+     groupOnSiteSegments(daySegments(trips.filter(x => !isIntraSite(x)))).group === null);
+  ok('PIN: a day of ONLY on-site movement is one row',
+     (() => { const o = groupOnSiteSegments(daySegments(trips.filter(isIntraSite)));
+              return o.travel.length === 0 && o.group.count === 7; })());
+  ok('PIN: mixed sites do not claim a single name', (() => {
+      const mixed = daySegments([t(1, 'unknown', true), Object.assign(t(1, 'unknown', true), { intraSite_site: 'Other' })]);
+      return groupOnSiteSegments(mixed).group.siteName === null;
+    })());
+  ok('PIN: empty and null are safe',
+     groupOnSiteSegments([]).group === null && groupOnSiteSegments(null).group === null);
+
+  console.log('  ── the grouping is display-only');
+  ok('PIN: it changes no km figure', (() => {
+      const after = buildDayStrip(filterTripsBy(trips, 'all'), '2026-07').filter(r => r.date === '2026-07-30')[0];
+      return after.km === day.km && after.businessKm === day.businessKm && after.onSiteKm === day.onSiteKm;
+    })());
+  ok('PIN: …and no trip record', trips.every(x => x.distance_km > 0));
+  ok('PIN: business/private/skip rows are untouched by it',
+     g.travel.filter(x => x.category === 'business').length === 3 &&
+     g.travel.filter(x => x.category === 'personal').length === 1 &&
+     g.travel.filter(x => x.status === 'pending').length === 2);
+}
 
 console.log('\n' + (fail === 0 ? '✅ ALL PASS' : '❌ FAIL') + `  (${pass} passed, ${fail} failed)`);
 process.exit(fail === 0 ? 0 : 1);

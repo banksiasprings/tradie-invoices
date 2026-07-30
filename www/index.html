@@ -435,6 +435,15 @@
   .tl-seg.is-onsite{background:var(--paper-dim);border-style:dashed;opacity:.82}
   .tl-seg.is-onsite .tl-seg-route,.tl-seg.is-onsite .tl-seg-km{color:var(--ink-soft)}
   .tl-seg-onsite{font-size:11.5px;font-weight:600;color:var(--ink-soft);margin-top:9px}
+  /* v105.2 — a day's worksite travel, folded into one row */
+  .tl-onsite-group{display:flex;align-items:center;gap:10px;border:1px dashed var(--line-air);
+    border-radius:var(--tl-radius-sm);padding:11px 13px;margin-bottom:10px;background:var(--paper-dim);
+    cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .tl-onsite-group.open{margin-bottom:6px;border-style:solid}
+  .tl-onsite-group-main{flex:1;min-width:0}
+  .tl-onsite-group-title{font-size:13.5px;font-weight:700;color:var(--ink)}
+  .tl-onsite-group-sub{font-size:11.5px;color:var(--ink-soft);margin-top:3px}
+  .tl-onsite-chev{font-size:13px;color:var(--ink-soft);flex-shrink:0}
   .pill-approved{background:#e8f5ec;color:#1a7f42}
   .pill-tagged{background:var(--line-soft);color:var(--ink-soft)}
   .dark .pill-approved{background:rgba(34,197,94,.16);color:#5fd48a}
@@ -2462,7 +2471,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v105.1';
+const APP_VERSION = 'v105.2';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -9497,6 +9506,38 @@ function daySegments(ts){
              status:isDisregarded(t)?'disregarded':(isIntraSite(t)?'onsite':tripReviewStatus(t)) };
   });
 }
+// v105.2 — fold a day's on-site movement into ONE row.
+//
+// Steven: "it's kind of annoying that it's making a big list of all the stuff
+// that I'm doing in the farm ... just put them all into one thing and just say
+// like 'worksite travel' ... it's sort of taking a bit too much room up."
+//
+// Seven paddock laps became seven rows he had already told the app to ignore.
+// They are NOT dropped — the safeguard he asked for is that the group opens — and
+// nothing about the maths changes: on-site km was already outside every total
+// (v101.7), and this only touches how the sheet is drawn.
+function groupOnSiteSegments(segs){
+  var travel=[], onsite=[];
+  (segs||[]).forEach(function(s){ (s&&s.intraSite?onsite:travel).push(s); });
+  var km=0; onsite.forEach(function(s){ km+=(+s.km||0); });
+  return {
+    travel: travel,
+    onsite: onsite,
+    group: onsite.length ? {
+      isOnSiteGroup: true,
+      count: onsite.length,
+      km: Math.round(km*100)/100,
+      // The site they were all inside, when it is the same one — "Worksite
+      // travel · Lucas Ranch" beats a bare count.
+      siteName: (function(){
+        var names={}, only=null, n=0;
+        onsite.forEach(function(s){ var k=s.siteName||''; if(!names[k]){ names[k]=1; n++; only=k; } });
+        return n===1?only:null;
+      })(),
+      ids: onsite.map(function(s){ return s.id; })
+    } : null
+  };
+}
 // "A → B → C" from whatever labels the trips carry, collapsing repeats where
 // one trip ends where the next begins. Empty string when nothing is labelled
 // yet — the caller falls back to a km/points summary rather than showing "→".
@@ -11934,6 +11975,15 @@ function tlToggleTrip(){ if(activeTrip()) stopTripActive(); else startTripManual
 // The approval flow writes through setTrips(), which is the existing v100 store
 // setter — so it rides the SYNC_KEYS path to Firestore exactly like a swipe-tag
 // did. No new sync code, no new collection.
+// Which day's worksite-travel group is open. Transient by design: he wants them
+// out of the way every time he opens the tab, not remembered as expanded.
+var _tlOnSiteOpen=null;
+function tlToggleOnSite(date){
+  _tlOnSiteOpen=(_tlOnSiteOpen===date)?null:date;
+  var row=tlDayRow(date);
+  if(row&&row.count) tlRenderSheet(row);
+}
+window.tlToggleOnSite=tlToggleOnSite;
 function tlDayRow(date){
   return buildDayStrip(tlMonthTrips(),tlMonth).filter(function(r){return r.date===date;})[0]||null;
 }
@@ -11951,6 +12001,7 @@ function tlOpenSheet(date){
 function tlCloseSheet(){
   var s=document.getElementById('tl-sheet'); if(!s||!s.classList.contains('open')) return;
   s.classList.remove('open');
+  _tlOnSiteOpen=null;
   setTimeout(function(){ try{ tlDraw(); }catch(_){} },240);
 }
 function tlRenderSheet(row){
@@ -11967,7 +12018,23 @@ function tlRenderSheet(row){
     btn.textContent=plan.approve.length?('Approve '+plan.approve.length):'All approved';
   }
   var segs=daySegments(row.trips);
-  body.innerHTML=segs.map(function(s,i){ return tlSegHtml(s,i); }).join('')+
+  // v105.2 — travel rows individually; on-site movement folded into one.
+  var g=groupOnSiteSegments(segs);
+  var expanded=(_tlOnSiteOpen===row.date);
+  var onsiteHtml='';
+  if(g.group){
+    onsiteHtml='<div class="tl-onsite-group'+(expanded?' open':'')+'" onclick="tlToggleOnSite(\''+row.date+'\')">'+
+      '<div class="tl-onsite-group-main">'+
+        '<div class="tl-onsite-group-title">🚜 Worksite travel'+
+          (g.group.siteName?(' · '+escHtml(g.group.siteName)):'')+'</div>'+
+        '<div class="tl-onsite-group-sub">'+g.group.count+' trip'+(g.group.count===1?'':'s')+
+          ' · '+g.group.km.toFixed(1)+' km · not counted as travel</div>'+
+      '</div>'+
+      '<div class="tl-onsite-chev">'+(expanded?'▾':'▸')+'</div>'+
+    '</div>'+
+    (expanded?g.onsite.map(function(s,i){ return tlSegHtml(s,i); }).join(''):'');
+  }
+  body.innerHTML=g.travel.map(function(s,i){ return tlSegHtml(s,i); }).join('')+onsiteHtml+
     '<div class="tl-seg-note">Press and hold a trip to remove it.</div>'+
     (plan.skip.length?('<div class="tl-seg-note">'+plan.skip.length+' trip'+(plan.skip.length===1?'':'s')+
       ' can\'t be approved in bulk — no category and nothing to suggest one. Tag '+
@@ -12004,8 +12071,15 @@ function tlRowActions(id){
     ? ((t.from_label||'Start')+' → '+(t.to_label||'End'))
     : ((+t.distance_km||0).toFixed(1)+' km · '+fmtTime(t.start_time));
   title.innerHTML=escHtml(label)+' <button class="modal-close" onclick="closeTripActions()">✕</button>';
+  // v105.2 — an on-site trip's useful action is "actually, that WAS travel", so
+  // it leads. Reclassifying is what pulls it out of the folded worksite group.
+  var onsite=isIntraSite(t);
   body.innerHTML=
-    '<button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="closeTripActions();openTripDetail(\''+id+'\')">Edit this trip</button>'+
+    (onsite
+      ? '<button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="closeTripActions();tlMarkAsTravel(\''+id+'\')">Count this as travel</button>'+
+        '<div style="font-size:11px;color:var(--text2);margin:-2px 0 14px">Takes it out of Worksite travel and asks you to tag it business or private.</div>'
+      : '')+
+    '<button class="btn '+(onsite?'btn-secondary':'btn-primary')+'" style="width:100%;margin-bottom:8px" onclick="closeTripActions();openTripDetail(\''+id+'\')">Edit this trip</button>'+
     '<div style="font-size:11px;color:var(--text2);margin:-2px 0 14px">Times, category, vehicle and notes.</div>'+
     '<button class="btn btn-secondary" style="width:100%" onclick="closeTripActions();confirmDeleteTrip(\''+id+'\')">Delete this trip</button>'+
     '<div style="font-size:11px;color:var(--text2);margin-top:6px">Removes it from the log for good. To keep it but leave it uncategorised, use Skip.</div>';

@@ -350,8 +350,19 @@ function serve() {
      await ev(`document.getElementById('tl-metrics').textContent`));
   await ev(`tlSelectDay('2026-07-08')`);
   await sleep(900);
-  ok('all three legs still visible in the day sheet',
-     await ev(`document.querySelectorAll('#tl-sheet-body .tl-seg').length`) === 3);
+  // v105.2: on-site legs now fold into one Worksite-travel row by default, so
+  // the travel leg shows individually and the two on-site ones are behind it.
+  ok('the travel leg is drawn individually',
+     await ev(`document.querySelectorAll('#tl-sheet-body .tl-seg[data-trip]:not(.is-onsite)').length`) === 1);
+  ok('the two on-site legs are folded into one Worksite-travel row',
+     await ev(`(function(){ var g=document.querySelector('#tl-sheet-body .tl-onsite-group');
+        return !!g && /2 trips/.test(g.textContent); })()`),
+     await ev(`(document.querySelector('#tl-sheet-body .tl-onsite-group')||{}).textContent`));
+  // Expand to check the individual legs still read correctly underneath.
+  await ev(`tlToggleOnSite('2026-07-08')`);
+  await sleep(400);
+  ok('all three legs are there once expanded',
+     await ev(`document.querySelectorAll('#tl-sheet-body .tl-seg[data-trip]').length`) === 3);
   ok('on-site legs are greyed', await ev(`document.querySelectorAll('#tl-sheet-body .tl-seg.is-onsite').length`) === 2);
   ok('on-site legs are labelled as such',
      /On-site movement/.test(await ev(`document.getElementById('tl-sheet-body').textContent`)));
@@ -586,6 +597,148 @@ function serve() {
     document.getElementById('trip-veh-prompt-modal').classList.remove('open');
     localStorage.setItem('mcn_trips',JSON.stringify([])); tlSel=null; renderTrips();
   })()`);
+  await sleep(300);
+
+  console.log("v105.2 — Steven's Thursday: worksite travel folded into one row");
+  await ev(`(function(){
+    localStorage.setItem('mcn_zones',JSON.stringify([]));
+    // A real work site, and trips whose polylines fall inside or outside it — so
+    // the on-site flags are DERIVED by tlSyncIntraSite exactly as in the field,
+    // not hand-set (which the classifier would rightly clear).
+    var M=111320, SITE={name:'Lucas Ranch',lat:-28.700,lng:152.000,radius:2900};
+    var T0=Date.parse('2026-07-30T08:00:00'), n=0;
+    function t(km,cat,onsite){ n++;
+      var pts = onsite
+        ? [{lat:SITE.lat+(200+n*30)/M,lng:SITE.lng,t:1},{lat:SITE.lat-(150+n*20)/M,lng:SITE.lng,t:2}]
+        : [{lat:SITE.lat+(9000+n*500)/M,lng:SITE.lng,t:1},{lat:SITE.lat+(14000+n*500)/M,lng:SITE.lng,t:2}];
+      return {id:'t'+n,date:'2026-07-30',category:cat,distance_km:km,
+        duration_min:10,start_time:T0+n*600000,end_time:T0+n*600000+600000,polyline:pts}; }
+    var trips=[t(40.0,'business'),t(30.0,'business'),t(22.5,'business'),
+               t(10.0,'personal'),t(4.7,'unknown'),t(2.0,'unknown')];
+    [4.0,3.5,3.4,3.6,3.2,3.2,3.2].forEach(function(k){ trips.push(t(k,'unknown',true)); });
+    localStorage.setItem('mcn_trips',JSON.stringify(trips));
+    localStorage.setItem('mcn_sites',JSON.stringify([SITE]));
+    tlMonth='2026-07'; tlFilter='all'; tlSel=null; _tlOnSiteOpen=null; renderTrips();
+  })()`);
+  await sleep(700);
+  const thuMetrics = await ev(`document.getElementById('tl-metrics').innerHTML`);
+  ok('PIN: the month header reads 109 km travel', /<b>109<\/b> km travel/.test(thuMetrics), thuMetrics);
+  ok('PIN: …with on-site as a separate footnote', /\+7 on-site/.test(thuMetrics), thuMetrics);
+  ok('PIN: …and 85% business, computed on travel only', /<b>85%<\/b> business/.test(thuMetrics), thuMetrics);
+
+  await ev(`tlSelectDay('2026-07-30')`);
+  await sleep(600);
+  const sub = await ev(`document.getElementById('tl-sheet-sub').textContent`);
+  ok('PIN: the day line shows 109.2 km travel', /109\.2 km travel/.test(sub), sub);
+  ok('PIN: …92.5 km business', /92\.5 km business/.test(sub), sub);
+  ok('PIN: …and +7 on-site (24.1 km) reported apart from it', /\+7 on-site \(24\.1 km\)/.test(sub), sub);
+  ok('PIN: the two do not add up to the headline — on-site is excluded',
+     !/133/.test(sub), sub);
+
+  console.log('\n  ── PIN: test_on_site_trips_collapse_to_single_summary_row_per_day');
+  ok('PIN: 6 travel rows are drawn individually',
+     (await ev(`document.querySelectorAll('#tl-sheet-body .tl-seg[data-trip]').length`)) === 6,
+     await ev(`document.querySelectorAll('#tl-sheet-body .tl-seg[data-trip]').length`));
+  ok('PIN: …plus exactly ONE worksite-travel row, not seven',
+     (await ev(`document.querySelectorAll('#tl-sheet-body .tl-onsite-group').length`)) === 1);
+  const grp = await ev(`document.querySelector('#tl-sheet-body .tl-onsite-group').textContent`);
+  ok('PIN: it is labelled Worksite travel', /Worksite travel/.test(grp), grp);
+  ok('PIN: …naming the site', /Lucas Ranch/.test(grp), grp);
+  ok('PIN: …with the count and km', /7 trips/.test(grp) && /24\.1 km/.test(grp), grp);
+  ok('PIN: …and says plainly it is not counted', /not counted as travel/.test(grp), grp);
+  ok('PIN: 7 rows on screen instead of 13',
+     (await ev(`document.querySelectorAll('#tl-sheet-body .tl-seg[data-trip], #tl-sheet-body .tl-onsite-group').length`)) === 7);
+
+  console.log('\n  ── PIN: test_tap_expand_on_worksite_summary_shows_individual_trips');
+  await ev(`document.querySelector('#tl-sheet-body .tl-onsite-group').click()`);
+  await sleep(400);
+  ok('PIN: tapping it expands', await ev(`!!document.querySelector('#tl-sheet-body .tl-onsite-group.open')`));
+  ok('PIN: …revealing all 7 individually',
+     (await ev(`document.querySelectorAll('#tl-sheet-body .tl-seg.is-onsite').length`)) === 7,
+     await ev(`document.querySelectorAll('#tl-sheet-body .tl-seg.is-onsite').length`));
+  ok('PIN: …each with the reclassify escape hatch',
+     (await ev(`document.querySelectorAll('#tl-sheet-body .tl-seg.is-onsite a[onclick*="tlMarkAsTravel"]').length`)) === 7);
+  ok('PIN: the travel rows are still there alongside',
+     (await ev(`document.querySelectorAll('#tl-sheet-body .tl-seg[data-trip]:not(.is-onsite)').length`)) === 6);
+  ok('PIN: tapping again folds it back', await ev(`(function(){
+      document.querySelector('#tl-sheet-body .tl-onsite-group').click();
+      return document.querySelectorAll('#tl-sheet-body .tl-seg.is-onsite').length===0; })()`));
+  ok('PIN: it reopens folded next time the day is opened', await ev(`(function(){
+      tlCloseSheet(); tlSelectDay('2026-07-30');
+      return _tlOnSiteOpen===null; })()`));
+  await sleep(400);
+
+  console.log('\n  ── PIN: test_long_press_on_individual_on_site_trip_shows_edit_delete_reclassify');
+  await ev(`(function(){ _tlOnSiteOpen='2026-07-30'; tlRenderSheet(tlDayRow('2026-07-30')); })()`);
+  await sleep(300);
+  const onsiteId = await ev(`document.querySelector('#tl-sheet-body .tl-seg.is-onsite').getAttribute('data-trip')`);
+  await ev(`tlRowActions('${onsiteId}')`);
+  await sleep(300);
+  ok('PIN: long-press on an on-site trip opens the actions',
+     await ev(`document.getElementById('trip-actions-modal').classList.contains('open')`));
+  const acts = await ev(`document.getElementById('trip-actions-body').innerHTML`);
+  ok('PIN: …offering Reclassify ("Count this as travel") first', /Count this as travel/.test(acts));
+  ok('PIN: …Edit', /Edit this trip/.test(acts));
+  ok('PIN: …and Delete', /Delete this trip/.test(acts));
+  ok('PIN: reclassifying pulls it out of the worksite group', await ev(`(function(){
+      closeTripActions(); tlMarkAsTravel('${onsiteId}');
+      var t=trips().find(function(x){return x.id==='${onsiteId}';});
+      return t.intraSite===false && t.intraSite_manual===true; })()`));
+  await sleep(400);
+  ok('PIN: …the group drops to 6', await ev(`(function(){
+      tlSelectDay('2026-07-30'); tlSelectDay('2026-07-30');
+      var g=document.querySelector('#tl-sheet-body .tl-onsite-group');
+      return g && /6 trips/.test(g.textContent); })()`));
+  ok('PIN: …and that km moves INTO the day total', await ev(`(function(){
+      var r=tlDayRow('2026-07-30'); return r.km>109.2 && r.onSiteKm<24.1; })()`));
+  ok('a travel row long-press does NOT offer reclassify', await ev(`(function(){
+      var id=document.querySelector('#tl-sheet-body .tl-seg[data-trip]:not(.is-onsite)').getAttribute('data-trip');
+      tlRowActions(id);
+      var h=document.getElementById('trip-actions-body').innerHTML;
+      closeTripActions();
+      return !/Count this as travel/.test(h) && /Edit this trip/.test(h); })()`));
+
+  if (process.env.SHOT) {
+    const OUT = path.join(__dirname, 'plans', 'v104-shots');
+    fs.mkdirSync(OUT, { recursive: true });
+    await ev(`(function(){
+      var lg=document.getElementById('screen-login'); if(lg) lg.style.display='none';
+      var w=document.getElementById('main-app-wrapper'); if(w) w.style.display='block';
+      var M=111320, SITE={name:'Lucas Ranch',lat:-28.700,lng:152.000,radius:2900};
+      var T0=Date.parse('2026-07-30T08:00:00'), n=0;
+      function t(km,cat,onsite){ n++;
+        var pts = onsite
+          ? [{lat:SITE.lat+(200+n*30)/M,lng:SITE.lng,t:1},{lat:SITE.lat-(150+n*20)/M,lng:SITE.lng,t:2}]
+          : [{lat:SITE.lat+(9000+n*500)/M,lng:SITE.lng,t:1},{lat:SITE.lat+(14000+n*500)/M,lng:SITE.lng,t:2}];
+        return {id:'t'+n,date:'2026-07-30',category:cat,distance_km:km,
+          duration_min:10,start_time:T0+n*600000,end_time:T0+n*600000+600000,polyline:pts}; }
+      var trips=[t(40.0,'business'),t(30.0,'business'),t(22.5,'business'),
+                 t(10.0,'personal'),t(4.7,'unknown'),t(2.0,'unknown')];
+      [4.0,3.5,3.4,3.6,3.2,3.2,3.2].forEach(function(k){ trips.push(t(k,'unknown',true)); });
+      DB.set('sites',[SITE]); setTrips(trips);
+      tlMonth='2026-07'; tlFilter='all'; _tlOnSiteOpen=null; renderTrips(); tlSelectDay('2026-07-30');
+    })()`);
+    await sleep(2600);   // let the previous test's toast clear
+    // Scroll the sheet so the folded Worksite-travel row is in frame.
+    await ev(`(function(){
+      var b=document.getElementById('tl-sheet-body');
+      var g=document.querySelector('#tl-sheet-body .tl-onsite-group');
+      if(g&&b) b.scrollTop = g.offsetTop - 140;
+    })()`);
+    await sleep(500);
+    const sh = await cmd('Page.captureScreenshot', { format: 'png' });
+    fs.writeFileSync(path.join(OUT, '10-worksite-travel-folded.png'), Buffer.from(sh.result.data, 'base64'));
+    await ev(`tlToggleOnSite('2026-07-30')`);
+    await sleep(500);
+    await ev(`(function(){ var b=document.getElementById('tl-sheet-body');
+      var g=document.querySelector('#tl-sheet-body .tl-onsite-group');
+      if(g&&b) b.scrollTop = g.offsetTop - 100; })()`);
+    await sleep(400);
+    const sh2 = await cmd('Page.captureScreenshot', { format: 'png' });
+    fs.writeFileSync(path.join(OUT, '11-worksite-travel-expanded.png'), Buffer.from(sh2.result.data, 'base64'));
+    console.log('  (screenshot → plans/v104-shots/10-worksite-travel-folded.png)');
+  }
+  await ev(`(function(){ setTrips([]); tlSel=null; _tlOnSiteOpen=null; renderTrips(); })()`);
   await sleep(300);
 
   console.log('Empty and offline states');

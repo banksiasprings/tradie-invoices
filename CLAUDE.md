@@ -22,11 +22,11 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v105.1 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v105.2 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.105.1 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
-| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.105.1 / versionCode 15 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.105.2 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.105.2 / versionCode 16 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -879,6 +879,54 @@ buttons against a stubbed bridge, and drives all three failure states plus
 reject / `opened:false` / no-bridge / throwing-run. No emulator needed. (This
 also fills the gap noted in v101.6: `test-health.js` was referenced but absent.)
 
+### v105.2 — worksite travel folded into one row (and the km were already right)
+
+**The reported bug that wasn't.** Steven, off a real day: *"they automatically
+cancelled them from the trip verification but they were still being added to the
+total for the day … The main thing is: does it add to the total for the day?"*
+
+**It doesn't, and it never did.** `buildDayStrip` has excluded intra-site km from
+`km`, `businessKm` and `privateKm` since v101.7. His Thursday reconciles exactly:
+
+```
+109.2 km travel  =  92.5 business + 10.0 private + 6.7 untagged
+ 24.1 km on-site  →  reported alongside, in nothing
+```
+
+The 92.5 + 24.1 = 116.6 arithmetic compares *business* against *total*; the real
+gap (109.2 − 92.5 = 16.7 km) is his private and untagged travel. Pinned with his
+actual screenshot figures as a fixture so it can never quietly change.
+
+**The real bug — clutter.** Seven paddock laps meant seven rows he had already
+told the app to ignore. `groupOnSiteSegments()` (pure) folds a day's on-site
+trips into **one** row:
+
+```
+🚜 Worksite travel · Lucas Ranch          ▸
+   7 trips · 24.1 km · not counted as travel
+```
+
+Tap to expand — the safeguard he asked for — and each trip underneath keeps its
+"Count this as travel" link. Long-press an on-site trip and **Reclassify leads**
+the action sheet (it is the useful one there), ahead of Edit and Delete; a travel
+row doesn't offer it. Reclassifying pulls the trip out of the group **and** moves
+its km into the day total, which is the correct coupling.
+
+The fold is **display-only** — no km figure, no trip record, no total changes —
+and the expand state is deliberately **transient**: he wants them out of the way
+every time, not remembered as open.
+
+**Don't reintroduce:** on-site km inside any total (it never was); a per-trip
+on-site row in the default view; a fold that hides trips with no way to open
+them; persisting the expanded state.
+
+**Tests:** 28 new pure in `test-triplog-screen.js` (Steven's Thursday, to the
+decimal) + 30 live in `test-triplog-screen-live.js`. The live fixture seeds a
+**real work site and real polylines** so the on-site flags are *derived* by
+`tlSyncIntraSite` exactly as in the field — hand-set flags get cleared by the
+classifier, which is itself worth knowing when writing these.
+Screenshots: `plans/v104-shots/10-worksite-travel-folded.png` (+ `11-…-expanded`).
+
 ### v105.1 — Setup Health wouldn't collapse; tap-to-fix was silent on an old APK
 
 **Both diagnosed off-device.** Wireless debugging was reportedly on, but the
@@ -1593,7 +1641,7 @@ node test-tap-summary.js          # 71 pure   · tap/hold mutex + invoice auto-s
 node test-settings.js             # 105 pure  · collapsible + dedupe + auto-save + v105.1 pins
 node test-settings-live.js        # 70 live   · auto-save, offline retry, collapse across relaunch
 ```
-Full suite as of v105.1: **1150 pure + 707 live**. Live suites drive rows with **PointerEvent**, not TouchEvent — the
+Full suite as of v105.2: **1178 pure + 737 live**. Live suites drive rows with **PointerEvent**, not TouchEvent — the
 row gestures moved to Pointer Events in v104.9 and a TouchEvent press now reaches
 nothing. Live suites bind fixed HTTP + CDP ports, so a killed run leaves the port held and the next one dies with
 `EADDRINUSE` — `lsof -ti tcp:<port> | xargs kill -9` clears it. Live fixtures that
@@ -1870,7 +1918,7 @@ look for `REJECTED` entries in the mirrored GeoLog.
   tap a lap to draw it, press and hold to retime or flag it. Daily rollup = loads · **median**
   cycle time · LCM³ (loads × truck capacity) · productive hours, and **only that rollup** reaches
   the invoice. Retires the v102.0 Circuits pane in the same commit. See "v104.0 — Loads" above.
-  **Verified:** 190 pure + 161 live (both pins); full suite 1150 pure + 707 live green; money
+  **Verified:** 190 pure + 161 live (both pins); full suite 1178 pure + 737 live green; money
   paths proven unmoved by a dollar-figure diff with the block on/off and with laps flagged.
   Screenshots in `plans/v104-shots/`. **v104.1** (same day) makes the four zone CTAs
   deep-link straight to the Zones card in Settings instead of the top of the screen —
@@ -1901,6 +1949,8 @@ look for `REJECTED` entries in the mirrored GeoLog.
   **v105.1** fixes Setup Health not collapsing (its title is nested beside the status pill, so
   the auto-wrap grabbed the pill as the body) and makes tap-to-fix speak up when the APK
   predates the v104.4 native intent fix — which the field log proves Steven's does.
+  **v105.2** folds a day's on-site trips into one "Worksite travel" row (tap to expand) and
+  pins that on-site km was already excluded from every total. See "v105.2".
 - **v103.0 — one zone system: circuits + sub-activities** — SHIPPED 2026-07-29 (Opus 5).
   Generalises the v102.0 circuit timer into a single geofence primitive read three ways
   (worksite / circuit pair / nested sub-activity). Steven's charcoal case: a small zone inside
