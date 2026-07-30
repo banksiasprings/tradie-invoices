@@ -22,11 +22,11 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v104.9 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v105.0 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.104.9 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
-| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.104.9 / versionCode 13 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.105.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.105.0 / versionCode 14 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -879,6 +879,69 @@ buttons against a stubbed bridge, and drives all three failure states plus
 reject / `opened:false` / no-bridge / throwing-run. No emulator needed. (This
 also fills the gap noted in v101.6: `test-health.js` was referenced but absent.)
 
+### v105.0 — Settings: collapsible, de-duplicated, auto-saving
+Satisfies **BACKLOG line 185** ("Collapsible Settings tabs", queued 2026-07-29
+for v105), plus two things Steven raised with it.
+
+**1. Every section collapses, and the state actually persists now.**
+All 23 Settings cards are collapsible (8 weren't). The everyday ones — Setup
+Health, Standard Rate, Business details, Vehicles — open by default; the long
+setup cards stay closed.
+
+*Why it was "forgotten":* state lived in raw `cc_*` localStorage keys **derived
+from the card's title text**. Two failure modes and he hit both — the keys sit
+outside `mcn_*`, so they were **never synced and never in a backup** (a reinstall
+or fresh sign-in lost the lot), and a title-derived key **orphans itself the
+moment a title is reworded**. Now: a stable explicit `data-collapse-key` per
+card, stored in **`mcn_settings.cardState`**, which rides the existing SYNC_KEYS
+path to Firestore and appears in the full backup. A card with no key is
+**reported to the console**, not silently given a fragile one. Existing `cc_*`
+values are migrated once, never overwriting a newer choice.
+
+**2. One canonical home per affordance.** Everything app/data-level now lives in
+**☁️ Account & Sync** — push, pull, sign out, Days→CSV, Full backup, Restore,
+Clear cache, Check for Update. The four loose buttons that floated above Saved
+Invoices are gone: *Restore* and *Clear cache* **moved** into the card (clear-cache
+is kept — the v82 cache trap needs it — just in one place), and **`exportData()`
+was DELETED**. It dumped only settings/days/invoices/sites; `exportFullBackup()`
+writes every `mcn_*` key. Leaving a partial backup beside a complete one is how
+someone restores and finds their trips missing.
+
+**3. Auto-save; the Save Settings button is gone.** Steven: *"if you edit
+something and you don't go on save settings, you just lose it … it seems like a
+bit of a trap."*
+
+`saveSettings(opts)` gained a **silent** mode; the bulk field read is otherwise
+**byte-identical** — auto-save changes *when* it runs, never *what* it writes,
+which is why there is no migration risk. One **delegated** listener on
+`#screen-settings` covers every `s-*` field, so a field added later is handled
+without anyone remembering to wire it.
+
+| control | saves |
+|---|---|
+| toggle / select / released slider | immediately on `change` |
+| text & number fields | 600 ms after typing stops, **and** on blur |
+| travel mode (buttons, not a field) | explicitly, guarded so re-render ≠ edit |
+
+**The local write happens before any cloud push**, so a failed sync can never
+lose an edit — only the *sync* retries, with exponential backoff capped at 60 s.
+The indicator says **Saving… → Saved ✓** (fades after 1.6 s) or **Not synced —
+will retry** (does *not* fade, because that one is still asking for something).
+
+**Don't reintroduce:** a Save Settings button; collapse state in raw
+localStorage or keyed off title text; a second home for any Account & Sync
+affordance; a partial backup alongside the full one; a cloud push that gates the
+local write.
+
+**Tests:** `test-settings.js` (83 pure, all five pins) ·
+`test-settings-live.js` (46 live — types, toggles, collapses, **relaunches the
+app**, and fails the network to prove the edit survives and the retry fires).
+
+⚠️ **Harness note:** `window.CloudSync` is assigned by the `type="module"`
+Firebase script, which loads **asynchronously**. A stub installed during boot is
+silently clobbered a moment later — install sync spies *after* waiting for it, or
+every push assertion measures nothing.
+
 ### v104.9 — the Loads tap bug, and an auto-written invoice description
 
 **The tap bug.** Steven: *"all of the loads are showing up altogether as a big
@@ -1464,8 +1527,10 @@ node test-disregard.js            # 60 pure   · trip delete + "don't record her
 node test-edit-rows.js            # 62 pure   · edit a lap's duration / a trip's times
 node test-trip-popup.js           # 41 pure   · no trip-end popup by default + tab count
 node test-tap-summary.js          # 71 pure   · tap/hold mutex + invoice auto-summary
+node test-settings.js             # 83 pure   · collapsible + dedupe + auto-save structure
+node test-settings-live.js        # 46 live   · auto-save, offline retry, collapse across relaunch
 ```
-Full suite as of v104.9: **1045 pure + 637 live**. Live suites drive rows with **PointerEvent**, not TouchEvent — the
+Full suite as of v105.0: **1128 pure + 683 live**. Live suites drive rows with **PointerEvent**, not TouchEvent — the
 row gestures moved to Pointer Events in v104.9 and a TouchEvent press now reaches
 nothing. Live suites bind fixed HTTP + CDP ports, so a killed run leaves the port held and the next one dies with
 `EADDRINUSE` — `lsof -ti tcp:<port> | xargs kill -9` clears it. Live fixtures that
@@ -1737,12 +1802,12 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
-- **v104.0 → v104.9 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
+- **v104.0 → v105.0 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
   Steven asked for, in the shape of the Trip Log he already likes: map breadcrumb, day strip,
   tap a lap to draw it, press and hold to retime or flag it. Daily rollup = loads · **median**
   cycle time · LCM³ (loads × truck capacity) · productive hours, and **only that rollup** reaches
   the invoice. Retires the v102.0 Circuits pane in the same commit. See "v104.0 — Loads" above.
-  **Verified:** 190 pure + 161 live (both pins); full suite 1045 pure + 637 live green; money
+  **Verified:** 190 pure + 161 live (both pins); full suite 1128 pure + 683 live green; money
   paths proven unmoved by a dollar-figure diff with the block on/off and with laps flagged.
   Screenshots in `plans/v104-shots/`. **v104.1** (same day) makes the four zone CTAs
   deep-link straight to the Zones card in Settings instead of the top of the screen —
@@ -1767,6 +1832,9 @@ look for `REJECTED` entries in the mirrored GeoLog.
   **v104.9** fixes the Loads tap bug (touch + synthesised mouse both firing, so every tap
   selected then deselected) and auto-writes a "Work carried out" description on the
   invoice from the day's loads, sub-activities and trips. See "v104.9".
+  **v105.0** makes every Settings section collapsible with state that actually persists
+  (it was keyed off title text in unsynced localStorage), removes the duplicated app/data
+  buttons, and replaces the Save Settings button with auto-save. Satisfies BACKLOG line 185.
 - **v103.0 — one zone system: circuits + sub-activities** — SHIPPED 2026-07-29 (Opus 5).
   Generalises the v102.0 circuit timer into a single geofence primitive read three ways
   (worksite / circuit pair / nested sub-activity). Steven's charcoal case: a small zone inside

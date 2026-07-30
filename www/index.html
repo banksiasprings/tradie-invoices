@@ -119,6 +119,11 @@
   .btn-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
 
   .badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.2px}
+  /* v105.0 auto-save indicator — confirmation, not chrome. */
+  .save-state{margin-left:6px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.3px;vertical-align:1px}
+  .save-saving{background:rgba(255,255,255,.16);color:rgba(255,255,255,.85)}
+  .save-saved{background:rgba(34,197,94,.22);color:#7ee2a8}
+  .save-retry{background:rgba(255,255,255,.16);color:#ffd08a}
   .badge-green{background:var(--success-light);color:var(--success)}
   .badge-amber{background:var(--amber-light);color:var(--amber)}
   .badge-blue{background:var(--blue-light);color:var(--blue)}
@@ -2050,12 +2055,12 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
 
 <!-- SETTINGS SCREEN -->
 <div id="screen-settings" class="screen">
-  <div class="header"><h1>Settings</h1><p>Business & rate details</p></div>
+  <div class="header"><h1>Settings</h1><p>Business &amp; rate details — changes save themselves <span id="settings-save-state" class="save-state" style="display:none"></span></p></div>
   <div class="section">
     <!-- v92 Setup Health — self-diagnostic of the settings that keep background
          tracking alive. Traffic-light rows + tap-to-fix. Auto-opens on startup if a
          critical check fails; Start Shift is blocked while critical checks fail. -->
-    <div class="card" id="health-card">
+    <div class="card card-collapsible" id="health-card" data-collapse-key="health">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px">
         <div class="card-title" style="margin:0">🩺 Setup Health</div>
         <span id="health-pill" class="health-pill hp-green">…</span>
@@ -2066,13 +2071,13 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       <button class="btn btn-secondary" style="width:100%;margin-top:12px;font-size:13px" onclick="Health.recheck()">↻ Re-check</button>
     </div>
     <!-- Hidden in single-user earthmoving mode (v101.9) — see settingsSurface() -->
-    <div class="card" id="trade-selector-card">
+    <div class="card card-collapsible" id="trade-selector-card" data-collapse-key="trade" data-collapse-default="collapsed">
       <div class="card-title">Trade / Industry</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:4px">Customises equipment types, labels, and terminology.</div>
       <div class="trade-grid" id="trade-selector-grid"></div>
     </div>
     <!-- Employee mode card — only visible when trade = employee -->
-    <div class="card" id="employee-settings-card" style="display:none">
+    <div class="card card-collapsible" id="employee-settings-card" style="display:none" data-collapse-key="employee" data-collapse-default="collapsed">
       <div class="card-title">👷 Employee details</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Your timesheets will be sent to your employer. Fill in their details here.</div>
       <div class="field"><label>Your name</label><input type="text" id="s-employee-name" placeholder="e.g. Jake Smith"></div>
@@ -2099,7 +2104,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       </div>
     </div>
     <!-- Team card — only visible for non-employee trades (boss side) -->
-    <div class="card" id="team-settings-card" style="display:none">
+    <div class="card card-collapsible" id="team-settings-card" style="display:none" data-collapse-key="team" data-collapse-default="collapsed">
       <div class="card-title">👥 Team</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Share your Business Code with employees so their hours sync directly to your invoices.</div>
       <div id="team-code-section">
@@ -2107,14 +2112,14 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       </div>
       <div id="team-member-list" style="margin-top:14px"></div>
     </div>
-    <div class="card">
+    <div class="card card-collapsible" data-collapse-key="clients" data-collapse-default="collapsed">
       <div class="card-title">Clients &amp; Sites</div>
       <div id="clients-sites-list"></div>
       <button class="btn btn-secondary" style="margin-top:8px" onclick="addClient()">+ Add client</button>
       <button class="btn btn-secondary" style="margin-top:8px" onclick="copyInquiryLink()">📤 Send inquiry link</button>
     </div>
     <!-- Plant & Equipment library -->
-    <div class="card card-collapsible" id="machines-lib-card" style="display:none">
+    <div class="card card-collapsible" id="machines-lib-card" style="display:none" data-collapse-key="plant" data-collapse-default="collapsed">
       <div class="card-title">🚜 Plant &amp; Equipment</div>
       <div class="card-body">
         <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Your machine library. Tap <strong>+ Add Machine</strong> when logging a day to pick from this list.</div>
@@ -2140,7 +2145,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       </div>
     </div>
     <!-- Materials catalogue -->
-    <div class="card card-collapsible">
+    <div class="card card-collapsible" data-collapse-key="materials" data-collapse-default="collapsed">
       <div class="card-title">Materials &amp; Parts catalogue</div>
       <div class="card-body">
         <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Your go-to materials. Tap <strong>+ Add</strong> on any day to quick-add from this list with a quantity.</div>
@@ -2152,7 +2157,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         </div>
       </div>
     </div>
-    <div class="card" id="business-settings-card">
+    <div class="card card-collapsible" id="business-settings-card" data-collapse-key="business">
       <div class="card-title">Business details</div>
       <div class="field"><label>Name</label><input type="text" id="s-name"></div>
       <div class="field"><label>ABN</label><input type="text" id="s-abn"></div>
@@ -2166,7 +2171,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         <div class="field"><label>Account #</label><input type="text" id="s-account"></div>
       </div>
     </div>
-    <div class="card card-collapsible">
+    <div class="card card-collapsible" data-collapse-key="invoice" data-collapse-default="collapsed">
       <div class="card-title">Invoice details</div>
       <div class="field"><label>Service description</label><input type="text" id="s-service"></div>
       <div class="field-row">
@@ -2174,7 +2179,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         <div class="field"><label>Annual increase (%)</label><input type="number" id="s-incpct" step="0.1" oninput="onGoalInput('rate')"></div>
       </div>
     </div>
-    <div class="card card-collapsible" data-collapse-default="collapsed">
+    <div class="card card-collapsible" data-collapse-default="collapsed" data-collapse-key="benchmarks">
       <div class="card-title">Rate increase benchmarks (AU)</div>
       <div class="benchmark">
         <div class="bench-item"><div class="bench-val">3.8%</div><div class="bench-label">CPI</div></div>
@@ -2183,7 +2188,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       </div>
       <div style="font-size:11px;color:var(--text2);margin-top:10px">Suggested: avg of above = ~7.8%/yr over 26 invoices</div>
     </div>
-    <div class="card">
+    <div class="card card-collapsible" data-collapse-key="rate">
       <div class="card-title">Standard Rate</div>
       <div class="field">
         <label>My rate ($/hr)</label><input type="number" id="s-rate" step="0.05" oninput="onGoalInput('rate')">
@@ -2229,7 +2234,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         <label class="toggle"><input type="checkbox" id="s-round-15" onchange="saveRoundTo15Pref()"><span class="toggle-slider"></span></label>
       </div>
     </div>
-    <div class="card card-collapsible">
+    <div class="card card-collapsible" data-collapse-key="travel" data-collapse-default="collapsed">
       <div class="card-title">Travel billing</div>
       <div class="card-body">
         <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Bill for travel to and from the job site.</div>
@@ -2248,7 +2253,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       </div>
     </div>
     <!-- v100 Trip Log: vehicles + auto-detect toggle -->
-    <div class="card card-collapsible" id="vehicles-card">
+    <div class="card card-collapsible" id="vehicles-card" data-collapse-key="vehicles">
       <div class="card-title">🚗 Vehicles &amp; Trip Log</div>
       <div class="card-body">
         <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Add your vehicle(s) for the km logbook. Set a cents-per-km rate for ATO claims.</div>
@@ -2278,7 +2283,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       </div>
     </div>
     <!-- v103.0 Zones: one place for work sites, circuit pairs, and sub-activities -->
-    <div class="card card-collapsible" id="circuit-zones-card" data-collapse-default="collapsed">
+    <div class="card card-collapsible" id="circuit-zones-card" data-collapse-default="collapsed" data-collapse-key="zones">
       <div class="card-title">📍 Zones</div>
       <div class="card-body">
         <div style="font-size:13px;color:var(--text2);margin-bottom:12px">
@@ -2331,7 +2336,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       </div>
     </div>
     <!-- v104.0 Loads: the one number the load rollup needs from him -->
-    <div class="card card-collapsible" id="loads-card" data-collapse-default="collapsed">
+    <div class="card card-collapsible" id="loads-card" data-collapse-default="collapsed" data-collapse-key="loads">
       <div class="card-title">🔁 Loads</div>
       <div class="card-body">
         <div style="font-size:13px;color:var(--text2);margin-bottom:12px">
@@ -2352,7 +2357,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       </div>
     </div>
     <!-- v101 Tax exports: ATO cents-per-km / logbook methods + CSV/PDF export -->
-    <div class="card card-collapsible" id="tax-exports-card" data-collapse-default="collapsed">
+    <div class="card card-collapsible" id="tax-exports-card" data-collapse-default="collapsed" data-collapse-key="tax">
       <div class="card-title">📊 Tax exports</div>
       <div class="card-body">
         <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Turn your logged trips into an ATO-ready km claim. Compare both methods, then export CSV or PDF for your accountant.</div>
@@ -2360,23 +2365,17 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       </div>
     </div>
     <!-- v101 ATO 12-week logbook -->
-    <div class="card card-collapsible" id="logbook-card" data-collapse-default="collapsed">
+    <div class="card card-collapsible" id="logbook-card" data-collapse-default="collapsed" data-collapse-key="logbook">
       <div class="card-title">📒 ATO Logbook (12-week)</div>
       <div class="card-body">
         <div id="logbook-body"><!-- rendered by renderLogbook() --></div>
       </div>
     </div>
     <!-- Work sites (GPS) and Plant/Materials now appear near top of settings -->
-    <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
-    <div style="height:12px"></div>
-    <button class="btn btn-secondary" onclick="clearCacheAndRefresh()" style="background:var(--amber-light);color:var(--amber);border-color:var(--amber)">🔄 Clear cache &amp; refresh app</button>
-    <div style="height:12px"></div>
-    <button class="btn btn-secondary" onclick="exportData()">⬇ Export all data (JSON backup)</button>
-    <label class="btn btn-secondary" style="display:block;text-align:center;margin-top:8px;cursor:pointer">
-      ⬆ Import data from JSON
-      <input type="file" accept=".json" style="display:none" onchange="importData(this)">
-    </label>
-    <div class="card card-collapsible" data-collapse-default="collapsed" style="margin-top:12px">
+    <!-- v105.0 — the Save Settings button is GONE (everything auto-saves), and
+         the app/data buttons that used to live loose here moved into
+         ☁️ Account & Sync, which is now the one home for them. -->
+    <div class="card card-collapsible" data-collapse-default="collapsed" style="margin-top:12px" data-collapse-key="invoices">
       <div class="card-title">📁 Saved Invoices</div>
       <div id="settings-saved-invoices-list"></div>
     </div>
@@ -2389,7 +2388,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       </div>
       <div style="font-size:11px;color:var(--text2);margin-top:6px">Auto follows your phone's day/night setting</div>
     </div>
-    <div class="card card-collapsible" style="margin-top:12px">
+    <div class="card card-collapsible" style="margin-top:12px" data-collapse-key="account" data-collapse-default="collapsed">
       <div class="card-title">☁️ Account &amp; Sync</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Signed in as <span id="cloud-account-display" style="font-weight:600;color:var(--text)">…</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
@@ -2404,6 +2403,22 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
           <button class="btn btn-secondary" onclick="exportFullBackup()" style="font-size:13px;padding:10px">Full backup (JSON)</button>
         </div>
         <div style="font-size:11px;color:var(--text2);margin-top:6px">CSV for your accountant/Xero · JSON is a complete restorable backup</div>
+        <!-- v105.0 — Import moved here from a loose button further up. It is the
+             counterpart to Full backup and belongs beside it. The old top-level
+             "Export all data" was a PARTIAL dump (settings/days/invoices/sites
+             only) and has been dropped: Full backup covers every mcn_* key. -->
+        <label class="btn btn-secondary" style="display:block;text-align:center;margin-top:8px;cursor:pointer;font-size:13px;padding:10px">
+          ⬆ Restore from a JSON backup
+          <input type="file" accept=".json" style="display:none" onchange="importData(this)">
+        </label>
+      </div>
+      <!-- v105.0 — the cache reset moved here too. It is not the same as
+           "Check for Update" (that is an OTA check; this unregisters the service
+           worker and clears the caches), and given the v82 cache-trap history it
+           earns its place — just in one place, not two. -->
+      <div style="border-top:1px solid var(--border);padding-top:14px;margin-bottom:14px">
+        <button class="btn btn-secondary" onclick="clearCacheAndRefresh()" style="width:100%;font-size:13px;padding:10px;background:var(--amber-light);color:var(--amber);border-color:var(--amber)">🔄 Clear cache &amp; refresh app</button>
+        <div style="font-size:11px;color:var(--text2);margin-top:6px">Use if the app seems stuck on an old version after an update.</div>
       </div>
       <div style="border-top:1px solid var(--border);padding-top:14px;display:flex;align-items:center;justify-content:space-between;gap:12px">
         <div style="font-size:13px;color:var(--text2)" onclick="devTapVersion()">Version <span id="app-version">—</span></div>
@@ -2416,7 +2431,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
     <!-- v101.9 dev section — revealed by tapping the version number 5 times.
          Deliberately out of the way: this is where the app stops being
          earthmoving-only and becomes the multi-trade product again. -->
-    <div class="card" id="dev-mode-card" style="display:none;margin-top:12px;border:1.5px dashed var(--amber)">
+    <div class="card card-collapsible" id="dev-mode-card" style="display:none;margin-top:12px;border:1.5px dashed var(--amber)" data-collapse-key="dev" data-collapse-default="collapsed">
       <div class="card-title">🔧 Developer</div>
       <div class="toggle-row" style="padding:10px 0">
         <div>
@@ -2426,7 +2441,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         <label class="toggle"><input type="checkbox" id="s-earthmoving-mode" onchange="saveEarthmovingModePref()"><span class="toggle-slider"></span></label>
       </div>
     </div>
-    <div class="card card-collapsible" data-collapse-default="collapsed" style="margin-top:12px">
+    <div class="card card-collapsible" data-collapse-default="collapsed" style="margin-top:12px" data-collapse-key="geolog">
       <div class="card-title">📍 Geo Event Log</div>
       <div class="card-body">
         <div id="geo-log-list" style="max-height:500px;overflow-y:auto"></div>
@@ -2447,7 +2462,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v104.9';
+const APP_VERSION = 'v105.0';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -2575,12 +2590,12 @@ function forceAppUpdate(){ return otaCheck(false); }
 <div id="screen-admin" class="screen">
   <div class="header"><h1>Admin</h1><p>Manage user accounts</p></div>
   <div class="section">
-    <div class="card">
+    <div class="card card-collapsible" data-collapse-key="admin_users" data-collapse-default="collapsed">
       <div class="card-title">👥 Registered Users</div>
       <div id="admin-user-list"><div style="color:var(--text2);font-size:13px">Tap refresh to load.</div></div>
       <button class="btn btn-secondary" style="margin-top:14px;width:100%" onclick="loadAdminUsers()">↻ Refresh</button>
     </div>
-    <div class="card" style="margin-top:12px;background:var(--amber-light);border-color:var(--amber)">
+    <div class="card card-collapsible" style="margin-top:12px;background:var(--amber-light);border-color:var(--amber)" data-collapse-key="admin_delete" data-collapse-default="collapsed">
       <div class="card-title" style="color:var(--amber)">⚠️ Deleting accounts</div>
       <div style="font-size:13px;color:var(--text2)">The Delete button removes all of a user's Firestore data. To fully remove their login credentials, go to <strong>Firebase Console → Authentication → Users</strong> and delete from there.</div>
     </div>
@@ -6436,6 +6451,7 @@ function loadSettings(){
   renderMaterialsLib();
   updateExtraLabels();
   initCollapsibleCards();
+  initSettingsAutoSave();          // v105.0
   renderClientsSites();
   // Extra worker toggle
   const ewCb=document.getElementById('s-show-extra-worker');
@@ -6481,7 +6497,11 @@ function loadSettings(){
   applyTradeVisibility();
 }
 
-function saveSettings(){
+// v105.0 — `opts.silent` suppresses the toasts so the same proven bulk-save can
+// be driven automatically. The READ of every field below is deliberately
+// untouched: auto-save changes WHEN this runs, never WHAT it writes.
+function saveSettings(opts){
+  const silent=!!(opts&&opts.silent);
   const s=S();
   s.name=document.getElementById('s-name').value||s.name;
   s.abn=document.getElementById('s-abn').value||s.abn;
@@ -6523,9 +6543,94 @@ function saveSettings(){
   document.getElementById('active-owner-rate').textContent='$'+s.rate+'/hr';
   document.getElementById('active-son-rate').textContent='$'+(s.sonrate||30)+'/hr';
   updateExtraLabels();
-  toast('Settings saved ✓');
-  if(window.CloudSync) window.CloudSync.pushAll().then(()=>toast('☁ Synced to cloud ✓')).catch(()=>{});
+  if(!silent) toast('Settings saved ✓');
+  if(window.CloudSync){
+    window.CloudSync.pushAll()
+      .then(()=>{ if(silent) _settingsSaveOk(); else toast('☁ Synced to cloud ✓'); })
+      .catch(()=>{ if(silent) _settingsSaveFailed(); });
+  } else if(silent) _settingsSaveOk();
 }
+
+// ── v105.0 auto-save ────────────────────────────────────────────────────────
+// Steven: "if you edit something and you don't go on save settings, you just
+// lose it ... it seems like a bit of a trap." It was. The button is gone.
+//
+// Timings by control type, because they want different things:
+//   toggles / selects / theme  → immediate (a tap is a decision)
+//   text + number fields       → 600 ms after typing stops, and on blur
+//   sliders (range)            → on release, not on every pixel of the drag
+const SETTINGS_SAVE_DEBOUNCE_MS = 600;
+let _autoSaveTimer=null, _autoSaveRetry=null, _autoSaveBackoff=1000;
+function autoSaveSettings(opts){
+  var now=!!(opts&&opts.immediate);
+  if(_autoSaveTimer){ clearTimeout(_autoSaveTimer); _autoSaveTimer=null; }
+  _settingsSavePending();
+  if(now){ _autoSaveRun(); return; }
+  _autoSaveTimer=setTimeout(function(){ _autoSaveTimer=null; _autoSaveRun(); },SETTINGS_SAVE_DEBOUNCE_MS);
+}
+function _autoSaveRun(){
+  try{ saveSettings({silent:true}); }
+  catch(e){ console.warn('[settings] auto-save failed:',e); _settingsSaveFailed(); }
+}
+// The local write in saveSettings already happened before any cloud push, so an
+// edit is never lost to a network failure — only the SYNC is retried, with
+// backoff, and the indicator keeps saying so until it lands.
+function _settingsSaveFailed(){
+  _setSaveState('retry');
+  if(_autoSaveRetry) clearTimeout(_autoSaveRetry);
+  _autoSaveRetry=setTimeout(function(){
+    _autoSaveRetry=null;
+    if(window.CloudSync){
+      window.CloudSync.pushAll().then(function(){ _autoSaveBackoff=1000; _settingsSaveOk(); })
+        .catch(function(){ _autoSaveBackoff=Math.min(_autoSaveBackoff*2,60000); _settingsSaveFailed(); });
+    }
+  },_autoSaveBackoff);
+}
+function _settingsSavePending(){ _setSaveState('saving'); }
+function _settingsSaveOk(){ _setSaveState('saved'); }
+let _saveStateTimer=null;
+function _setSaveState(state){
+  var el=document.getElementById('settings-save-state');
+  if(!el) return;
+  if(_saveStateTimer){ clearTimeout(_saveStateTimer); _saveStateTimer=null; }
+  el.className='save-state save-'+state;
+  el.textContent = state==='saving' ? 'Saving…'
+                 : state==='retry'  ? 'Not synced — will retry'
+                 : 'Saved ✓';
+  el.style.display='inline-block';
+  // "Saved" is confirmation, not status — it fades. "Not synced" stays put,
+  // because that one is still asking for something.
+  if(state==='saved') _saveStateTimer=setTimeout(function(){ el.style.display='none'; },1600);
+}
+// One delegated listener for the whole screen, so a field added later is covered
+// without anyone remembering to wire it.
+function initSettingsAutoSave(){
+  var scr=document.getElementById('screen-settings');
+  if(!scr||scr._autoSaveInit) return;
+  scr._autoSaveInit=true;
+  var isSettingField=function(t){
+    if(!t||!t.id||t.id.indexOf('s-')!==0) return false;
+    return t.tagName==='INPUT'||t.tagName==='SELECT'||t.tagName==='TEXTAREA';
+  };
+  scr.addEventListener('input',function(e){
+    var t=e.target;
+    if(!isSettingField(t)) return;
+    if(t.type==='checkbox'||t.type==='radio') return;   // handled on change
+    if(t.type==='range') return;                        // handled on release
+    autoSaveSettings();
+  });
+  scr.addEventListener('change',function(e){
+    var t=e.target;
+    if(!isSettingField(t)) return;
+    // A tap on a switch, a pick from a select, or a released slider: no reason
+    // to make him wait 600 ms to find out it stuck.
+    autoSaveSettings({immediate:true});
+  });
+  scr.addEventListener('blur',function(e){
+    if(isSettingField(e.target)) autoSaveSettings({immediate:true});
+  },true);   // capture: blur does not bubble
+}
+window.autoSaveSettings=autoSaveSettings; window.initSettingsAutoSave=initSettingsAutoSave;
 
 // --- Trade profile UI helpers ---
 function renderTradeSelector(){
@@ -6705,7 +6810,48 @@ function updateExtraLabels(){
   if(sl) sl.textContent=lbl+' rate ($/hr)';
 }
 
+// v105.0 — which sections are open now lives in mcn_settings.cardState.
+//
+// It used to be raw `cc_*` localStorage keys derived from the TITLE TEXT. Two
+// problems, and Steven hit both: the keys are outside `mcn_*`, so they were
+// never synced and never in a backup — a reinstall or a fresh sign-in lost the
+// lot ("for some reason, I got forgotten") — and a key built from the title
+// silently orphaned itself the moment a title was reworded.
+//
+// Now: a STABLE explicit key per card, stored in the settings blob, which rides
+// the existing SYNC_KEYS path to Firestore and appears in the full backup.
+function cardStateStore(){
+  var st=S().cardState;
+  return (st&&typeof st==='object')?st:{};
+}
+function setCardState(key,open){
+  var s=S();
+  var st=(s.cardState&&typeof s.cardState==='object')?s.cardState:{};
+  st[key]=open?'open':'collapsed';
+  s.cardState=st;
+  DB.set('settings',s);
+  if(window.CloudSync) window.CloudSync.pushAll().catch(function(){});
+}
+// One-time lift of anything already saved under the old scheme, so a user who
+// had it how they liked it keeps it.
+function _migrateCardState(){
+  var s=S();
+  if(s._cardStateMigrated) return;
+  var st=(s.cardState&&typeof s.cardState==='object')?s.cardState:{};
+  try{
+    document.querySelectorAll('#screen-settings .card-collapsible').forEach(function(card){
+      var k=card.dataset.collapseKey; if(!k||st[k]!=null) return;
+      var title=card.querySelector('.card-title'); if(!title) return;
+      var legacy=localStorage.getItem('cc_'+title.textContent.trim().replace(/[^a-z0-9]/gi,'_').slice(0,30));
+      if(legacy==='collapsed'||legacy==='open') st[k]=legacy;
+    });
+  }catch(_){}
+  s.cardState=st; s._cardStateMigrated=true;
+  DB.set('settings',s);
+}
 function initCollapsibleCards(){
+  _migrateCardState();
+  var st=cardStateStore();
   document.querySelectorAll('#screen-settings .card-collapsible').forEach(card=>{
     const title=card.querySelector('.card-title');if(!title)return;
     // Wrap body content once
@@ -6715,21 +6861,25 @@ function initCollapsibleCards(){
       while(title.nextSibling) body.appendChild(title.nextSibling);
       card.appendChild(body);
     }
-    const key='cc_'+(card.dataset.collapseKey||title.textContent.trim().replace(/[^a-z0-9]/gi,'_').slice(0,30));
-    const saved=localStorage.getItem(key);
+    // A missing data-collapse-key is a bug, not a fallback: a title-derived key
+    // is what broke this in the first place.
+    const key=card.dataset.collapseKey;
+    if(!key){ try{ console.warn('[settings] card has no data-collapse-key:',title.textContent); }catch(_){} return; }
+    const saved=st[key];
     const defCollapsed=card.dataset.collapseDefault==='collapsed';
-    if(saved==='collapsed'||(saved===null&&defCollapsed)) card.classList.add('collapsed');
+    if(saved==='collapsed'||(saved==null&&defCollapsed)) card.classList.add('collapsed');
     else card.classList.remove('collapsed');
-    // Prevent duplicate listeners by using a flag
     if(!card._ccInit){
       card._ccInit=true;
       title.addEventListener('click',()=>{
         card.classList.toggle('collapsed');
-        localStorage.setItem(key,card.classList.contains('collapsed')?'collapsed':'open');
+        setCardState(key,!card.classList.contains('collapsed'));
       });
     }
   });
 }
+window.initCollapsibleCards=initCollapsibleCards;
+window.cardStateStore=cardStateStore; window.setCardState=setCardState;
 
 // v104.1 — deep-link into a Settings card instead of dumping the user at the top
 // of a long screen. Steven, on the Loads empty state: "when you tap setup zone in
@@ -7113,9 +7263,18 @@ function setTravelModeBtn(mode){
   const hrField=document.getElementById('travel-hr-rate-field');
   if(kmField) kmField.style.display=(mode==='km')?'block':'none';
   if(hrField) hrField.style.display=(mode==='time')?'block':'none';
+  // v105.0 — travel mode is chosen with BUTTONS, not a form field, so the
+  // delegated change-listener never sees it. Save it explicitly.
+  // `loadTravelSettings` calls this during render, hence the guard.
+  if(!_travelBtnRestoring) try{ autoSaveSettings({immediate:true}); }catch(_){}
 }
+let _travelBtnRestoring=false;
 
 function loadTravelSettings(){
+  _travelBtnRestoring=true;
+  try{ return _loadTravelSettingsInner(); } finally { _travelBtnRestoring=false; }
+}
+function _loadTravelSettingsInner(){
   const s=S();
   const mode=s.travelMode||'none';
   setTravelModeBtn(mode);
@@ -8039,12 +8198,10 @@ function clearCacheAndRefresh(){
   } else { doReload(); }
 }
 
-function exportData(){
-  const d={settings:S(),days:days(),invoices:invoices(),sites:sites()},
-        b=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}),
-        u=URL.createObjectURL(b),a=document.createElement('a');
-  a.href=u;a.download='invoices_backup.json';a.click();URL.revokeObjectURL(u);toast('Data exported ✓');
-}
+// v105.0 — exportData() removed. It dumped only settings/days/invoices/sites;
+// exportFullBackup() in Account & Sync writes every mcn_* key and is the one
+// canonical export. Leaving a partial backup next to a complete one is how
+// someone restores and finds their trips missing.
 
 function importData(input){
   const file=input.files[0];if(!file)return;
