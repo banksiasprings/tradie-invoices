@@ -520,6 +520,104 @@ function serve() {
     })()`));
   ok('it warns but does NOT block — generating still works', await ev(`typeof generateInvoice`) === 'function');
 
+  console.log("\nv104.7 — Steven's 45-minute Hitachi lap, corrected end to end");
+  // Rebuild the day as it happened: four honest laps plus one where he sat in
+  // another machine inside the dump zone for 40 minutes.
+  await ev(`(function(){
+    window.__CIRC0=circuits();          // restored below — later tests need the real trails
+    var T0=new Date(2026,6,30,7,0,0).getTime();
+    function lap(id,startMin,ph){
+      var d=ph[0]+ph[1]+ph[2]+ph[3], s=T0+startMin*60000;
+      return {id:id,date:'2026-07-30',pickup_name:'Pit',dump_name:'Tip',
+        start_ts:s,end_ts:s+d*1000,duration_s:d,
+        load_s:ph[0],haul_s:ph[1],dump_s:ph[2],return_s:ph[3],
+        legs:[{kind:'haul',depart_ts:s+ph[0]*1000,arrive_ts:s+(ph[0]+ph[1])*1000},
+              {kind:'return',depart_ts:s+(ph[0]+ph[1]+ph[2])*1000,arrive_ts:s+d*1000}],
+        notes:'',confirmed_at:1};
+    }
+    DB.set('circuits',[lap('h1',0,[120,180,90,210]),lap('h2',10,[120,180,90,210]),
+                       lap('h3',20,[120,180,90,210]),lap('h4',30,[120,180,90,210]),
+                       lap('h5',45,[60,90,45+2400,105])]);
+    ldSel=null; ldFocus=null; renderLoads(); ldSelectDay('2026-07-30');
+  })()`);
+  await sleep(600);
+  const roll0 = await ev(`loadsRollup(loadsForDate(circuits(),'2026-07-30'),12)`);
+  ok('5 loads recorded, one of them 45 minutes', roll0.loads === 5 && roll0.slowestS === 2700, roll0);
+  ok('…productive hours inflated to 1.42', roll0.productiveHours === 1.42, roll0.productiveHours);
+  ok('…and 60 LCM³', roll0.lcm3 === 60);
+
+  // Long-press the bad row → the edit modal.
+  await ev(`(function(){ ldRenderSheet(ldDayRow('2026-07-30')); })()`);
+  await sleep(200);
+  await press('#ldseg-h5', 700);
+  ok('long-pressing the 45-min row opens the editor',
+     await ev(`document.getElementById('load-modal').classList.contains('open')`));
+  ok('…for that lap', await ev(`_ldLapId`) === 'h5');
+  const editModal = await ev(`document.getElementById('load-modal-body').innerHTML`);
+  ok('…with a direct duration field', /id="lm-mins"/.test(editModal));
+  ok('…prefilled with the recorded 45 minutes', await ev(`document.getElementById('lm-mins').value`) === '45');
+  ok('…and it names where the extra time will come from',
+     /tipping/.test(editModal), (editModal.match(/comes off [^<]*/) || [''])[0]);
+  ok('…start and finish are still editable too',
+     /id="lm-start"/.test(editModal) && /id="lm-end"/.test(editModal));
+
+  // Type 5 minutes.
+  await ev(`(function(){ document.getElementById('lm-mins').value='5'; lmDurEdited(); })()`);
+  await sleep(200);
+  ok('the preview updates to 5m 00s', await ev(`document.getElementById('lm-dur').textContent`) === '5m 00s');
+  ok('…the finish time input follows', await ev(`document.getElementById('lm-end').value`) === '07:50');
+  ok('…and the hint says what is being removed',
+     /Taking 40m 00s off tipping/.test(await ev(`document.getElementById('lm-dur-hint').textContent`)),
+     await ev(`document.getElementById('lm-dur-hint').textContent`));
+  ok('nothing is committed until Save', await ev(`circuits().find(c=>c.id==='h5').duration_s`) === 2700);
+
+  await ev(`saveLoadEdit()`);
+  await sleep(500);
+  ok('SAVE: the lap is now 5 minutes', await ev(`circuits().find(c=>c.id==='h5').duration_s`) === 300);
+  ok('SAVE: …the 40 minutes came off tipping', await ev(`circuits().find(c=>c.id==='h5').dump_s`) === 45);
+  ok('SAVE: …the haul out is untouched', await ev(`circuits().find(c=>c.id==='h5').haul_s`) === 90);
+  ok('SAVE: …and it is durable in localStorage',
+     (await ev(`JSON.parse(localStorage.getItem('mcn_circuits')).find(function(c){return c.id==='h5';}).duration_s`)) === 300);
+  ok('SAVE: …and reached the sync path', await ev(`window.__SYNCED.indexOf('pushAll')>=0`));
+
+  const roll1 = await ev(`loadsRollup(loadsForDate(circuits(),'2026-07-30'),12)`);
+  ok('ROLLUP: still 5 loads — a real lap was kept, not thrown away', roll1.loads === 5);
+  ok('ROLLUP: …LCM³ unchanged at 60', roll1.lcm3 === 60);
+  ok('ROLLUP: …productive hours drop to 0.75', roll1.productiveHours === 0.75, roll1.productiveHours);
+  ok('ROLLUP: …which is exactly 40 minutes less',
+     Math.round((roll0.productiveHours - roll1.productiveHours) * 60) === 40);
+  ok('ROLLUP: …and the slowest lap is no longer the phantom', roll1.slowestS === 600);
+  ok('ROLLUP: the card on screen agrees',
+     /<b>0.75<\/b><span>productive hrs/.test(await ev(`document.getElementById('ld-roll-slot').innerHTML`)),
+     (await ev(`document.getElementById('ld-roll-slot').innerHTML`)).slice(0, 600));
+  ok('the neighbouring laps were not touched',
+     await ev(`circuits().filter(function(c){return c.id!=='h5';}).every(function(c){return c.duration_s===600&&c.dump_s===90;})`));
+  ok('the edited row is badged in the sheet',
+     /ld-tag-edited/.test(await ev(`document.getElementById('ld-sheet-body').innerHTML`)));
+
+  console.log('\nCancel changes nothing');
+  await ev(`openLoadModal('h1')`); await sleep(300);
+  await ev(`(function(){ document.getElementById('lm-mins').value='1'; lmDurEdited(); closeLoadModal(); })()`);
+  await sleep(300);
+  ok('a cancelled edit leaves the lap alone', await ev(`circuits().find(c=>c.id==='h1').duration_s`) === 600);
+  ok('…and the rollup is unmoved',
+     (await ev(`loadsRollup(loadsForDate(circuits(),'2026-07-30'),12).productiveHours`)) === 0.75);
+  ok('a duration of 0 is refused', await ev(`(function(){
+      var t=[]; var ot=window.toast; window.toast=function(m){t.push(m);};
+      openLoadModal('h1'); document.getElementById('lm-mins').value='0'; lmDurEdited(); saveLoadEdit();
+      window.toast=ot; closeLoadModal();
+      return circuits().find(function(c){return c.id==='h1';}).duration_s===600 && /minutes/.test(t.join('|')); })()`));
+  ok('the clock-time path still works independently', await ev(`(function(){
+      openLoadModal('h2');
+      document.getElementById('lm-end').value='07:18';   // 10min -> 8min
+      lmTimesEdited(); saveLoadEdit();
+      var c=circuits().find(function(x){return x.id==='h2';});
+      return c.duration_s===480 && c.haul_s===180; })()`));
+  // Put the real detected circuits (with their GPS trails) back — the prune
+  // tests below are about trails, and these fixtures deliberately have none.
+  await ev(`(function(){ DB.set('circuits',window.__CIRC0); ldSel=null; ldFocus=null; renderLoads(); })()`);
+  await sleep(400);
+
   console.log('\nOld trails age out; the numbers never do');
   ok('a lap older than the retention window loses only its trail', await ev(`(function(){
       var c=circuits();

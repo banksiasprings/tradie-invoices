@@ -22,11 +22,11 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v104.6 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v104.7 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.104.6 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
-| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.104.6 / versionCode 10 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.104.7 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.104.7 / versionCode 11 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -879,6 +879,58 @@ buttons against a stubbed bridge, and drives all three failure states plus
 reject / `opened:false` / no-bridge / throwing-run. No emulator needed. (This
 also fills the gap noted in v101.6: `test-health.js` was referenced but absent.)
 
+### v104.7 — edit a recorded lap, and a recorded trip
+Field case (2026-07-30): Steven ran dump-truck cycles, then got into the Hitachi
+for 40 minutes **without leaving the dump zone**. GPS saw one continuous
+45-minute "load". The real lap was about five.
+
+**Audit first — what already existed:**
+
+| | before v104.7 |
+|---|---|
+| Loads row long-press | **Edit existed** (v104.0): start, finish, live duration, notes, flag, delete |
+| Trip row long-press | **delete only** (v104.6) |
+| Trip detail modal | category / vehicle / notes — **times were display-only** |
+
+So the Loads editor was there. What it could *not* do is this lap: `retimeCircuit()`
+trims only the OUTER phases, deliberately (no honest way to edit road time), but
+the dead time sat in the **middle**, in the tip phase. Trimming the finish would
+have taken it off the run back, which is not where it was — and it demanded
+time-of-day arithmetic to land on "5 minutes".
+
+**`setCircuitDuration(c, seconds)`** — say how long the lap really was. The
+removed time comes off the **longest phase**, spilling into the next longest if
+one can't absorb it. That is a stated heuristic, and the right one: a sit-around
+is exactly what makes one phase tower over the others. In his lap `dump_s` is
+~40 min against ~2 min each for the rest, so the correction lands precisely on
+tipping and the haul out is left as GPS measured it. Start is held fixed (the
+arrival was right); the finish moves.
+
+**The modal now has two mutually-exclusive edit paths** and the one he touched
+last wins (`_lmMode`) — a duration and a finish time can disagree, and silently
+picking one would reshape the lap behind his back. Each keeps the other's control
+in sync, and the hint names the phase being shortened.
+
+**Editing beats flagging here, and the tests say why:** flagging the lap would
+have dropped a real load and 12 LCM³ he actually moved. Editing keeps the load
+count and the LCM³ and removes only the 40 minutes — productive hours 1.42 → 0.75.
+
+**Trip side:** start/finish are now editable (`setTripTimes`, recomputes
+`duration_min`). **Distance is NOT touched** — it comes from the GPS trail and
+feeds the ATO claim; letting a time edit rewrite a km figure would be exactly the
+wrong kind of convenience. Long-press now opens **Edit / Delete** rather than
+jumping straight to the delete confirm, which became the wrong default once Edit
+existed.
+
+**Don't reintroduce:** a duration edit that reshapes phases without saying which;
+both edit paths applying at once; a trip time edit that rewrites `distance_km`;
+long-press going straight to a destructive action.
+
+**Tests:** `test-edit-rows.js` (62 pure, pins
+`test_loads_row_long_press_edit_adjusts_duration_and_recomputes_rollup` and
+`test_trip_row_long_press_edit_adjusts_time_and_category`) + 31 live in
+`test-loads-live.js` replaying the exact 45-min lap through the real modal.
+
 ### v104.6 — delete a trip, and "don't record trips here" zones
 Steven: *"driving around at home … I've got no way to disregard it or delete it
 … unless I put a circle around home and you can disregard a lot as well."*
@@ -1306,9 +1358,12 @@ node test-health-live.js          # 33 live   · Setup Health buttons + the 3 de
 node test-health-battery-fix.js   # 31 live   · the Motorola intent chain never dead-ends (SHOT=1 for shots)
 node test-zone-radius.js          # 52 pure   · radius slider/manual entry + nested zones (firewood)
 node test-disregard.js            # 60 pure   · trip delete + "don't record here" zones
+node test-edit-rows.js            # 62 pure   · edit a lap's duration / a trip's times
 ```
-Full suite as of v104.6: **871 pure + 556 live**. Live fixtures that assert a
-**running** circuit must re-stamp `activeCircuit.start_ts` to `Date.now()` first —
+Full suite as of v104.7: **933 pure + 586 live**. Live suites bind fixed HTTP + CDP
+ports, so a killed run leaves the port held and the next one dies with
+`EADDRINUSE` — `lsof -ti tcp:<port> | xargs kill -9` clears it. Live fixtures that
+assert a **running** circuit must re-stamp `activeCircuit.start_ts` to `Date.now()` first —
 a fixture-dated open cycle goes stale once the wall clock passes it, which turned
 two green tests red overnight. Run the live ones ONE AT A TIME —
 they each spawn Chrome on a fixed CDP port, and a leftover instance from a previous
@@ -1576,12 +1631,12 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
-- **v104.0 → v104.6 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
+- **v104.0 → v104.7 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
   Steven asked for, in the shape of the Trip Log he already likes: map breadcrumb, day strip,
   tap a lap to draw it, press and hold to retime or flag it. Daily rollup = loads · **median**
   cycle time · LCM³ (loads × truck capacity) · productive hours, and **only that rollup** reaches
   the invoice. Retires the v102.0 Circuits pane in the same commit. See "v104.0 — Loads" above.
-  **Verified:** 190 pure + 161 live (both pins); full suite 871 pure + 556 live green; money
+  **Verified:** 190 pure + 161 live (both pins); full suite 933 pure + 586 live green; money
   paths proven unmoved by a dollar-figure diff with the block on/off and with laps flagged.
   Screenshots in `plans/v104-shots/`. **v104.1** (same day) makes the four zone CTAs
   deep-link straight to the Zones card in Settings instead of the top of the screen —
@@ -1599,6 +1654,8 @@ look for `REJECTED` entries in the mirrored GeoLog.
   (farm-wide pickup → charcoal shed dump) work with no new mode. See "v104.5 — zone radius".
   **v104.6** adds long-press-to-delete on a trip row and a fifth zone mode, `disregard`
   ("don't record trips here") so driving around home stays out of the log. See "v104.6".
+  **v104.7** lets a recorded lap's duration be corrected outright (the 40-minutes-in-the-Hitachi
+  case) and makes a trip's times editable. See "v104.7 — edit a recorded lap".
 - **v103.0 — one zone system: circuits + sub-activities** — SHIPPED 2026-07-29 (Opus 5).
   Generalises the v102.0 circuit timer into a single geofence primitive read three ways
   (worksite / circuit pair / nested sub-activity). Steven's charcoal case: a small zone inside

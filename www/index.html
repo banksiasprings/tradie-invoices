@@ -2006,6 +2006,14 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 
+<!-- Trip row actions (v104.7) — long-press a trip row -->
+<div class="modal-bg" id="trip-actions-modal">
+  <div class="modal" style="max-width:340px">
+    <div class="modal-title" id="trip-actions-title">Trip <button class="modal-close" onclick="closeTripActions()">✕</button></div>
+    <div id="trip-actions-body"></div>
+  </div>
+</div>
+
 <!-- Manual fix steps (v104.4) — the escape hatch for when no settings page resolves -->
 <div class="modal-bg" id="health-steps-modal">
   <div class="modal" style="max-width:380px">
@@ -2414,7 +2422,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v104.6';
+const APP_VERSION = 'v104.7';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -9887,6 +9895,70 @@ function retimeCircuit(c,startTs,endTs){
   out.edited_by_user=true;
   return out;
 }
+// v104.7 — set a lap's duration outright.
+//
+// The field case this exists for: Steven ran dump-truck cycles, then hopped into
+// the Hitachi for 40 minutes without leaving the dump zone. GPS saw one 45-minute
+// "load". The real lap was about five.
+//
+// retimeCircuit() deliberately trims only the OUTER phases, because there is no
+// honest way to edit the time a loaded truck spent on the road. But that dead
+// time sat in the MIDDLE — in the tip phase — so trimming the finish would take
+// it off the run back, which is not where it was.
+//
+// So the removed time comes off the LONGEST phase, spilling into the next longest
+// if one can't absorb it all. That is a stated heuristic, not a measurement, and
+// it is the right one: a sit-around is exactly what makes one phase tower over
+// the others. In his lap `dump_s` is ~40 min against a couple of minutes each
+// for the rest, so the correction lands precisely where the waiting happened.
+//
+// The start is held fixed and the end moves — a lap begins when he arrived,
+// which the GPS got right; it is the leaving that is in question.
+function setCircuitDuration(c,seconds){
+  if(!c) return null;
+  var want=Math.round(+seconds);
+  if(!isFinite(want)||want<=0) return null;
+  var out={};
+  for(var k in c) if(Object.prototype.hasOwnProperty.call(c,k)) out[k]=c[k];
+  var start=+c.start_ts||0;
+  out.duration_s=want;
+  out.end_ts=start+want*1000;
+  out.edited_by_user=true;
+
+  var keys=['load_s','haul_s','dump_s','return_s'];
+  var cur=keys.reduce(function(a,k2){ return a+(+out[k2]||0); },0);
+  if(cur<=0){ return out; }                    // no phase breakdown to adjust
+  var delta=want-cur;                          // <0 = remove time, >0 = add it
+  if(delta===0) return out;
+  if(delta>0){
+    // Lengthening: give it to the longest phase. Rare, and there is no better
+    // guess than "the part that already dominates".
+    var big=keys[0];
+    keys.forEach(function(k2){ if((+out[k2]||0)>(+out[big]||0)) big=k2; });
+    out[big]=(+out[big]||0)+delta;
+    return out;
+  }
+  // Shortening: peel off the longest phase first, then the next longest.
+  var remove=-delta;
+  for(var guard=0; guard<keys.length && remove>0; guard++){
+    var target=keys[0];
+    keys.forEach(function(k2){ if((+out[k2]||0)>(+out[target]||0)) target=k2; });
+    var have=+out[target]||0;
+    if(have<=0) break;
+    var take=Math.min(have,remove);
+    out[target]=have-take;
+    remove-=take;
+  }
+  return out;
+}
+// Which lap phase absorbed an edit — so the UI can say so rather than silently
+// reshaping the breakdown under him.
+function longestPhaseOf(c){
+  var keys=[['load_s','loading'],['haul_s','the haul out'],['dump_s','tipping'],['return_s','the run back']];
+  var best=null,bv=-1;
+  keys.forEach(function(p){ var v=+((c||{})[p[0]])||0; if(v>bv){ bv=v; best=p[1]; } });
+  return bv>0?best:null;
+}
 // Which laps look wrong. A hint for the eye, never a filter: returns ids only.
 function outlierLoads(list,cfg){
   var counted=countedLoads(list);
@@ -11527,7 +11599,7 @@ function tlWireRows(){
       timer=setTimeout(function(){
         fired=true;
         try{ if(navigator.vibrate) navigator.vibrate(25); }catch(_){}
-        confirmDeleteTrip(id);
+        tlRowActions(id);
       },500);
     };
     var cancel=function(){ if(timer){ clearTimeout(timer); timer=null; } };
@@ -11541,9 +11613,34 @@ function tlWireRows(){
     el.addEventListener('mousedown',function(e){ start(e.clientX,e.clientY); });
     el.addEventListener('mouseup',cancel);
     el.addEventListener('mouseleave',cancel);
-    el.addEventListener('contextmenu',function(e){ e.preventDefault(); cancel(); fired=true; confirmDeleteTrip(id); });
+    el.addEventListener('contextmenu',function(e){ e.preventDefault(); cancel(); fired=true; tlRowActions(id); });
   });
 }
+// v104.7 — long-press used to go straight to the delete confirm. Now that a trip
+// can genuinely be edited, jumping to the destructive action would be the wrong
+// default, so the hold opens a choice.
+function tlRowActions(id){
+  var t=trips().filter(function(x){ return x.id===id; })[0];
+  if(!t){ toast('Trip not found'); return; }
+  var body=document.getElementById('trip-actions-body');
+  var title=document.getElementById('trip-actions-title');
+  if(!body||!title){ confirmDeleteTrip(id); return; }   // fail toward the old path
+  var label=(t.from_label||t.to_label)
+    ? ((t.from_label||'Start')+' → '+(t.to_label||'End'))
+    : ((+t.distance_km||0).toFixed(1)+' km · '+fmtTime(t.start_time));
+  title.innerHTML=escHtml(label)+' <button class="modal-close" onclick="closeTripActions()">✕</button>';
+  body.innerHTML=
+    '<button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="closeTripActions();openTripDetail(\''+id+'\')">Edit this trip</button>'+
+    '<div style="font-size:11px;color:var(--text2);margin:-2px 0 14px">Times, category, vehicle and notes.</div>'+
+    '<button class="btn btn-secondary" style="width:100%" onclick="closeTripActions();confirmDeleteTrip(\''+id+'\')">Delete this trip</button>'+
+    '<div style="font-size:11px;color:var(--text2);margin-top:6px">Removes it from the log for good. To keep it but leave it uncategorised, use Skip.</div>';
+  document.getElementById('trip-actions-modal').classList.add('open');
+}
+function closeTripActions(){
+  var m=document.getElementById('trip-actions-modal');
+  if(m) m.classList.remove('open');
+}
+window.tlRowActions=tlRowActions; window.closeTripActions=closeTripActions;
 function confirmDeleteTrip(id){
   var t=trips().filter(function(x){ return x.id===id; })[0];
   if(!t){ toast('Trip not found'); return false; }
@@ -11754,7 +11851,16 @@ function openTripDetail(id){
   el.innerHTML=
     _polySvg(t.polyline).replace('class="trip-poly"','class="trip-poly" style="height:120px"')+
     '<div style="text-align:center;margin:14px 0"><div class="trip-live-km" style="color:var(--amber)">'+(+t.distance_km||0).toFixed(1)+' <span style="font-size:15px">km</span></div>'+
-      '<div style="font-size:12px;color:var(--text2);margin-top:4px">'+fmtDate(t.date)+' · '+fmtTime(t.start_time)+(t.end_time?('–'+fmtTime(t.end_time)):'')+' · '+Math.round(t.duration_min||0)+' min</div></div>'+
+      '<div style="font-size:12px;color:var(--text2);margin-top:4px" id="td-when">'+fmtDate(t.date)+' · '+fmtTime(t.start_time)+(t.end_time?('–'+fmtTime(t.end_time)):'')+' · '+Math.round(t.duration_min||0)+' min</div></div>'+
+    // v104.7 — the times were display-only. A trip that started before he
+    // actually set off, or ran on after he arrived, had no way to be corrected.
+    '<div style="display:flex;gap:8px">'+
+      '<div class="field" style="flex:1"><label>Start</label>'+
+        '<input type="time" id="td-start" value="'+fmtTime(t.start_time)+'" onchange="setTripTimes(\''+id+'\')"></div>'+
+      '<div class="field" style="flex:1"><label>Finish</label>'+
+        '<input type="time" id="td-end" value="'+(t.end_time?fmtTime(t.end_time):'')+'" onchange="setTripTimes(\''+id+'\')"></div>'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--text2);margin:-6px 0 12px">Changing these only moves the clock times and the minutes — the distance stays as the GPS measured it.</div>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">'+TRIP_CATS.map(function(c){
       return '<button class="cat-badge cat-'+c+'" style="border:2px solid '+(c===cat?TRIP_CAT_META[c].hex:'transparent')+';cursor:pointer;padding:6px 12px" onclick="setTripCategory(\''+id+'\',\''+c+'\')">'+TRIP_CAT_META[c].icon+' '+TRIP_CAT_META[c].label+'</button>';
     }).join('')+'</div>'+
@@ -11778,6 +11884,25 @@ function setTripCategory(id,cat){
   openTripDetail(id); renderTrips();
 }
 function setTripVehicle(id,vid){ var all=trips();var t=all.find(function(x){return x.id===id;});if(!t)return;t.vehicle_id=vid;t.edited_by_user=true;setTrips(all);openTripDetail(id); }
+// v104.7 — correct a trip's clock times. Distance is NOT touched: it comes from
+// the GPS trail, and letting a time edit silently rewrite a km figure that feeds
+// the ATO claim would be exactly the wrong kind of convenience.
+function setTripTimes(id){
+  var all=trips(); var t=all.find(function(x){return x.id===id;}); if(!t) return;
+  var sEl=document.getElementById('td-start'), eEl=document.getElementById('td-end');
+  if(!sEl) return;
+  var ns=_tsFromDateTime(t.date,sEl.value);
+  var ne=(eEl&&eEl.value)?_tsFromDateTime(t.date,eEl.value):null;
+  if(!ns){ toast('Enter a start time'); openTripDetail(id); return; }
+  if(ne!=null && ne<=ns){ toast('Finish has to be after the start'); openTripDetail(id); return; }
+  t.start_time=ns;
+  if(ne!=null){ t.end_time=ne; t.duration_min=Math.round((ne-ns)/60000); }
+  t.edited_by_user=true;
+  setTrips(all);
+  try{ GeoLog.add('info','Trip '+id+' times corrected'); }catch(_){}
+  openTripDetail(id); renderTrips();
+}
+window.setTripTimes=setTripTimes;
 function setTripNotes(id,val){ var all=trips();var t=all.find(function(x){return x.id===id;});if(!t)return;t.notes=val;t.edited_by_user=true;setTrips(all); }
 function deleteTrip(id){
   if(!confirm('Delete this trip?')) return;
@@ -12518,7 +12643,7 @@ var _ldLapId=null, _ldReason=null;
 function openLoadModal(id){
   var c=circuits().filter(function(x){ return x.id===id; })[0];
   if(!c){ toast('Lap not found'); return; }
-  _ldLapId=id; _ldReason=c.invalid_reason||null;
+  _ldLapId=id; _ldReason=c.invalid_reason||null; _lmMode='none';
   var voided=isVoidLoad(c);
   document.getElementById('load-modal-title').innerHTML=
     escHtml((c.pickup_name||'?')+' → '+(c.dump_name||'?'))+' · '+fmtDate(c.date)+
@@ -12529,13 +12654,22 @@ function openLoadModal(id){
       '<div style="color:var(--text2);margin-top:3px">load '+fmtCircuitDur(c.load_s)+' · haul '+fmtCircuitDur(c.haul_s)+
         ' · tip '+fmtCircuitDur(c.dump_s)+' · back '+fmtCircuitDur(c.return_s)+'</div>'+
     '</div>'+
+    '<div class="field"><label>How long was this lap really?</label>'+
+      '<div style="display:flex;gap:8px;align-items:center">'+
+        '<input type="number" id="lm-mins" min="1" step="1" value="'+Math.max(1,Math.round((+c.duration_s||0)/60))+'" oninput="lmDurEdited()" style="flex:1">'+
+        '<span style="font-size:14px;color:var(--text2)">minutes</span>'+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--text2);margin-top:4px" id="lm-dur-hint">'+
+        'If you sat in another machine mid-cycle, put the real lap time in here — the extra comes off '+
+        (longestPhaseOf(c)||'the longest part of the lap')+', where the waiting was.</div>'+
+    '</div>'+
     '<div style="display:flex;gap:8px">'+
       '<div class="field" style="flex:1"><label>Start</label>'+
-        '<input type="time" id="lm-start" value="'+fmtTime(c.start_ts)+'" oninput="lmRecalc()"></div>'+
+        '<input type="time" id="lm-start" value="'+fmtTime(c.start_ts)+'" oninput="lmTimesEdited()"></div>'+
       '<div class="field" style="flex:1"><label>Finish</label>'+
-        '<input type="time" id="lm-end" value="'+fmtTime(c.end_ts)+'" oninput="lmRecalc()"></div>'+
+        '<input type="time" id="lm-end" value="'+fmtTime(c.end_ts)+'" oninput="lmTimesEdited()"></div>'+
     '</div>'+
-    '<div style="font-size:11px;color:var(--text2);margin:-6px 0 12px">Trimming the start shortens the loading time; trimming the finish shortens the run back. The time on the road is left as the GPS measured it.</div>'+
+    '<div style="font-size:11px;color:var(--text2);margin:-6px 0 12px">Or set the clock times instead — trimming the start shortens the loading time, trimming the finish shortens the run back.</div>'+
     '<div class="field"><label>Note</label>'+
       '<input type="text" id="lm-notes" value="'+escHtml(c.notes||'')+'" placeholder="optional"></div>'+
     '<div class="field"><label>Don\'t count this lap</label>'+
@@ -12585,24 +12719,66 @@ function _lmTimes(){
   var s=_tsFromDateTime(c.date,sv), e=_tsFromDateTime(c.date,ev);
   return {c:c,start:s,end:e};
 }
+// v104.7 — two ways to fix a lap, and the one he touched last is the one that
+// applies. Mixing them would be ambiguous: a duration and a finish time can
+// disagree, and silently picking one would reshape the lap behind his back.
+var _lmMode='none';        // 'dur' | 'times' | 'none'
+function lmDurEdited(){ _lmMode='dur'; lmRecalc(); }
+function lmTimesEdited(){ _lmMode='times'; lmRecalc(); }
+function _lmMinutes(){
+  var el=document.getElementById('lm-mins');
+  var v=el?parseFloat(el.value):NaN;
+  return (isFinite(v)&&v>0)?Math.round(v*60):null;
+}
 function lmRecalc(){
   var t=_lmTimes(); if(!t) return;
   var el=document.getElementById('lm-dur'); if(!el) return;
-  var r=retimeCircuit(t.c,t.start,t.end);
+  var r=_lmPreview(t);
   el.textContent=r?fmtCircuitDur(r.duration_s):'—';
   el.style.color=r?'var(--amber)':'var(--red)';
+  // Keep the other control honest rather than letting it show a stale figure.
+  if(_lmMode==='dur' && r){
+    var endEl=document.getElementById('lm-end');
+    if(endEl) endEl.value=fmtTime(r.end_ts);
+  } else if(_lmMode==='times' && r){
+    var minEl=document.getElementById('lm-mins');
+    if(minEl) minEl.value=Math.max(1,Math.round(r.duration_s/60));
+  }
+  var hint=document.getElementById('lm-dur-hint');
+  if(hint && r && _lmMode==='dur'){
+    var shrunk=(r.duration_s < (+t.c.duration_s||0));
+    hint.textContent = shrunk
+      ? ('Taking '+fmtCircuitDur((+t.c.duration_s||0)-r.duration_s)+' off '+(longestPhaseOf(t.c)||'the longest part of the lap')+'.')
+      : 'If you sat in another machine mid-cycle, put the real lap time in here.';
+  }
+}
+// What Save would produce, without committing it.
+function _lmPreview(t){
+  if(!t) return null;
+  if(_lmMode==='dur'){
+    var secs=_lmMinutes();
+    if(secs==null) return null;
+    // A start-time change still applies underneath a duration edit.
+    var base=(t.start!==t.c.start_ts) ? (retimeCircuit(t.c,t.start,Math.max(t.start+60000,t.end))||t.c) : t.c;
+    return setCircuitDuration(base,secs);
+  }
+  return retimeCircuit(t.c,t.start,t.end);
 }
 function saveLoadEdit(){
   var t=_lmTimes(); if(!t){ closeLoadModal(); return; }
   var notes=((document.getElementById('lm-notes')||{}).value||'').trim();
   var reason=_ldReason, id=_ldLapId, now=Date.now();
-  var changedTimes=(t.start!==t.c.start_ts||t.end!==t.c.end_ts);
-  if(changedTimes&&!retimeCircuit(t.c,t.start,t.end)){
-    toast('Finish has to be after the start'); return;
+  var preview=_lmPreview(t);
+  var changedTimes=(_lmMode==='dur')
+    ? (preview && preview.duration_s!==(+t.c.duration_s||0))
+    : (t.start!==t.c.start_ts||t.end!==t.c.end_ts);
+  if(_lmMode==='dur' && _lmMinutes()==null){ toast('Enter how many minutes the lap took'); return; }
+  if(changedTimes&&!preview){
+    toast(_lmMode==='dur'?'Enter how many minutes the lap took':'Finish has to be after the start'); return;
   }
   var okd=_ldApply(id,function(c){
     var next=c;
-    if(changedTimes) next=retimeCircuit(next,t.start,t.end)||next;
+    if(changedTimes) next=preview||next;
     next=reason?applyLoadVoid(next,reason,now):clearLoadVoid(next);
     // Editing a lap IS looking at it, so it comes out of the review queue —
     // unless it was flagged, which is its own decision and needs no tick.
@@ -12621,6 +12797,7 @@ function saveLoadEdit(){
 }
 window.openLoadModal=openLoadModal; window.closeLoadModal=closeLoadModal;
 window.lmSetReason=lmSetReason; window.lmRecalc=lmRecalc;
+window.lmDurEdited=lmDurEdited; window.lmTimesEdited=lmTimesEdited;
 window.saveLoadEdit=saveLoadEdit; window.lmUnflag=lmUnflag;
 
 // ═══════════════════════════════════════════════════════════════════════════
