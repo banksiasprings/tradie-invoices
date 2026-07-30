@@ -79,7 +79,11 @@
   .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:12px 4px 10px;border:none;background:none;cursor:pointer;color:rgba(255,255,255,.4);font-family:'Inter',inherit;font-size:10px;font-weight:600;transition:color .15s;letter-spacing:.3px;min-height:48px}
   .nav-btn.active{color:#fff}
   .nav-btn.active .nav-icon svg{stroke:var(--amber)}
-  .nav-icon{width:26px;height:26px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+  .nav-icon{width:26px;height:26px;display:flex;align-items:center;justify-content:center;transition:all .15s;position:relative}
+  /* v104.8 — how many trips are waiting, now that they no longer interrupt. */
+  .nav-count{position:absolute;top:-4px;right:-7px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;
+    background:var(--amber);color:#fff;font-size:10px;font-weight:800;line-height:16px;text-align:center;
+    box-shadow:0 0 0 2px var(--navy)}
   .nav-icon svg{width:22px;height:22px;stroke:rgba(255,255,255,.4);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:stroke .15s}
 
   .screen{display:none;padding:0 0 80px;min-height:100vh}
@@ -2245,6 +2249,13 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         </div>
         <div class="toggle-row">
           <div>
+            <div style="font-size:14px;font-weight:600">Confirm trips as they finish</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:2px">Off = trips just pile up in the Trips tab and the count on it tells you how many need sorting. On = the app asks which vehicle each one was as soon as it ends.</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="s-confirm-trips" onchange="saveConfirmTripsPref()"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div>
             <div style="font-size:14px;font-weight:600">Name places on the trip log</div>
             <div style="font-size:12px;color:var(--text2);margin-top:2px">Turns "Trip · 41 pts" into "Stanthorpe → Lucas Ranch". Your saved job sites are matched on the phone. For anywhere else, the start/end coordinate is sent to OpenStreetMap to look up the nearest town, then remembered so it's only ever looked up once. Off = names come only from your saved sites.</div>
           </div>
@@ -2422,7 +2433,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v104.7';
+const APP_VERSION = 'v104.8';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -2568,7 +2579,7 @@ function forceAppUpdate(){ return otaCheck(false); }
   <button class="nav-btn" onclick="showScreen('log',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></span>Log</button>
   <button class="nav-btn" id="nav-btn-invoice" onclick="showScreen('invoice',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/></svg></span><span id="nav-invoice-label">Invoice</span></button>
   <button class="nav-btn" onclick="showScreen('analytics',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>Stats</button>
-  <button class="nav-btn" onclick="showScreen('trips',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M5 17H3v-5l2-5h11l3 5h1a2 2 0 0 1 2 2v3h-2"/><circle cx="7.5" cy="17.5" r="1.6"/><circle cx="17.5" cy="17.5" r="1.6"/><line x1="9" y1="17" x2="16" y2="17"/></svg></span>Trips</button>
+  <button class="nav-btn" id="nav-btn-trips" onclick="showScreen('trips',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M5 17H3v-5l2-5h11l3 5h1a2 2 0 0 1 2 2v3h-2"/><circle cx="7.5" cy="17.5" r="1.6"/><circle cx="17.5" cy="17.5" r="1.6"/><line x1="9" y1="17" x2="16" y2="17"/></svg><span class="nav-count" id="nav-trips-count" style="display:none">0</span></span>Trips</button>
   <button class="nav-btn" onclick="showScreen('loads',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 16V9l4-4h6v11"/><path d="M13 10h4l3 4v2h-2"/><circle cx="8" cy="17.5" r="1.7"/><circle cx="17" cy="17.5" r="1.7"/><line x1="10" y1="17.5" x2="15" y2="17.5"/><line x1="3" y1="17.5" x2="6" y2="17.5"/></svg></span>Loads</button>
   <button class="nav-btn" onclick="showScreen('settings',this)"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings</button>
 </nav>
@@ -3076,6 +3087,9 @@ const DEFAULTS={
   earthmovingMode:true,
   // v104.0 — loose cubic metres per load. 0 = not told yet, which is why the
   // LCM³ figure reads "—" rather than a fabricated 0 until he sets it.
+  // v104.8 — the "which vehicle was this?" prompt at trip end. OFF: trips
+  // accumulate in the Trip Log and are reviewed there in a batch.
+  confirmTripsOnFinish:false,
   truckCapacityLcm:0,
   // Cycle times are commercially loaded to hand a client, so the production
   // block on the invoice is switchable. Default ON: he asked for it there.
@@ -3649,6 +3663,16 @@ function saveBuildingSuppliesPref(){
 // v104.0 — one number, one truck. Multi-truck capacity is deliberately NOT
 // built: he has one, and a per-vehicle picker on every lap would be a tax on
 // every load to serve a case that does not exist yet.
+// v104.8 — the escape hatch for the trip-end prompt. Default OFF.
+function saveConfirmTripsPref(){
+  const s=S();
+  const cb=document.getElementById('s-confirm-trips');
+  s.confirmTripsOnFinish=cb?cb.checked:false;
+  DB.set('settings',s);
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+  toast(s.confirmTripsOnFinish?'Trips will ask when they finish':'Trips go straight to the Trips tab');
+}
+window.saveConfirmTripsPref=saveConfirmTripsPref;
 function saveTruckCapacity(){
   const s=S();
   const el=document.getElementById('s-truck-capacity');
@@ -6336,6 +6360,8 @@ function loadSettings(){
   const r15=document.getElementById('s-round-15');
   if(r15) r15.checked=!!(s.roundTo15);
   // v100 Trip Log: auto-detect toggle + vehicles list
+  const ctf=document.getElementById('s-confirm-trips');
+  if(ctf) ctf.checked=(S().confirmTripsOnFinish===true);   // absence = OFF (v104.8)
   const tad=document.getElementById('s-trip-autodetect');
   if(tad) tad.checked=(s.tripAutoDetect!==false);
   const nps=document.getElementById('s-name-places');
@@ -8642,7 +8668,24 @@ var TRIP_CAT_META = {
 
 // ── Stores ──────────────────────────────────────────────────────────────────
 function trips(){return DB.def('trips',[])}
-function setTrips(a){DB.set('trips',Array.isArray(a)?a:[])}          // DB.set auto-syncs (SYNC_KEYS)
+function setTrips(a){
+  DB.set('trips',Array.isArray(a)?a:[]);                            // DB.set auto-syncs (SYNC_KEYS)
+  try{ refreshTripsBadge(); }catch(_){}                             // v104.8
+}
+// v104.8 — the count that replaced the popup. Rendered on every trip write and
+// on every Trip Log render, so it can never drift from what the tab would show.
+function refreshTripsBadge(){
+  var el=document.getElementById('nav-trips-count');
+  if(!el) return 0;
+  var n=0;
+  try{ n=unreviewedTripCount(trips()); }catch(_){ n=0; }
+  el.textContent=n>99?'99+':String(n);
+  el.style.display=n>0?'block':'none';
+  var btn=document.getElementById('nav-btn-trips');
+  if(btn) btn.setAttribute('aria-label', n>0 ? ('Trips — '+n+' to review') : 'Trips');
+  return n;
+}
+window.refreshTripsBadge=refreshTripsBadge;
 function vehicles(){return DB.def('vehicles',[])}
 function setVehicles(a){DB.set('vehicles',Array.isArray(a)?a:[])}
 function activeTrip(){return DB.get('activeTrip')}                    // live buffer — NOT synced
@@ -8937,6 +8980,16 @@ function applyIntraSiteFlags(list, siteList, cfg){
     return n;
   });
   return {trips:out,changed:changed};
+}
+
+// v104.8 — how many trips are still waiting on a decision. Drives the count on
+// the Trips tab, which is what replaces the trip-end popup: the work does not
+// disappear, it just stops interrupting. On-site movement and disregarded trips
+// are NOT counted — neither is waiting on him.
+function unreviewedTripCount(list){
+  return (list||[]).filter(function(t){
+    return t && !isIntraSite(t) && !isDisregarded(t) && isPendingTrip(t);
+  }).length;
 }
 
 // ── Disregard zones (v104.6) ─────────────────────────────────────────────────
@@ -11215,6 +11268,7 @@ function renderTrips(){
   if(!tlMonth) tlMonth=tlDefaultMonth();
   tlSyncIntraSite();                    // settle on-site flags before any maths reads them
   tlSyncDisregard();                    // …and the v104.6 disregard flags
+  try{ refreshTripsBadge(); }catch(_){}  // v104.8
   var isActive=document.getElementById('screen-trips').classList.contains('active');
   var vs=vehicles(), all=trips();
   // First-run: nothing to review and nowhere to attribute km.
@@ -12043,6 +12097,9 @@ function initTripLog(){
   // which vehicle it belongs to now the user is looking. Delayed so the tab
   // finishes rendering first. Idempotent (guarded by the seen-set + open check).
   setTimeout(function(){ try{ maybePromptTripVehicle(); }catch(_){} }, 1500);
+  // v104.8 — with no popup, the tab count IS the notification. Show it as soon
+  // as the app opens, not only after the Trips tab has been visited.
+  try{ refreshTripsBadge(); }catch(_){}
 }
 window.initTripLog=initTripLog;
 
@@ -12071,6 +12128,13 @@ function _pendingTripVehPrompt(){
 }
 function maybePromptTripVehicle(){
   try{
+    // v104.8 — Steven: "Can we get rid of the confirm the trip pop up? I just
+    // find it annoying, and I'll just go into the trip tab when I wanna confirm."
+    // Default OFF. Trips now pile up quietly in the Trip Log with a count on the
+    // tab, and he sorts them when he chooses to. He also said the prompt "is good
+    // in some circumstances", so it stays behind a switch rather than being
+    // deleted — same treatment the multi-trade surface got in v101.9.
+    if(S().confirmTripsOnFinish!==true) return;
     if(S().tripAutoDetect===false) return;   // respect an explicit opt-out
     if(!vehicles().length) return;           // nothing to assign to
     var login=document.getElementById('screen-login');

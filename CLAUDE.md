@@ -22,11 +22,11 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v104.7 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v104.8 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.104.7 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
-| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.104.7 / versionCode 11 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.104.8 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.104.8 / versionCode 12 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -879,6 +879,48 @@ buttons against a stubbed bridge, and drives all three failure states plus
 reject / `opened:false` / no-bridge / throwing-run. No emulator needed. (This
 also fills the gap noted in v101.6: `test-health.js` was referenced but absent.)
 
+### v104.8 — no trip-end popup; a count on the tab instead
+Steven: *"Can we get rid of the confirm the trip pop up? I just find it annoying,
+and I'll just go into the trip tab when I wanna confirm and sort it all out …
+The pop up, I suppose, is good in some circumstances, but I find it more annoying
+than anything."*
+
+**What the popup actually was:** `maybePromptTripVehicle()` → `#trip-veh-prompt-modal`,
+a plain JS modal (no Android intent), added in v101.3. It asks **"Which vehicle
+was this?"** — it is NOT the business/private prompt. Fired 1.5 s after
+`initTripLog()` and chained after each answer.
+
+**That distinction matters:** `assignTripVehPrompt` only ever writes
+`vehicle_id`, never `category`. So switching it off removes **no categorisation
+path at all** — business/private was always done in the Trip Log. Pinned by a
+test that greps the function for a category write.
+
+- **`confirmTripsOnFinish`, default `false`.** The gate is the FIRST line of
+  `maybePromptTripVehicle`, before any other work. `!==true` so absence reads as
+  OFF — the same rule `earthmovingMode` uses in reverse.
+- **The modal is NOT deleted.** He said it is good in some circumstances, so it
+  keeps its switch (Settings → Vehicles card → "Confirm trips as they finish"),
+  exactly the treatment the multi-trade surface got in v101.9.
+- **`unreviewedTripCount()`** drives a count on the Trips nav tab. On-site and
+  disregarded trips are excluded — neither is waiting on a decision, so the
+  number only ever means "you have decisions to make". Refreshed on every trip
+  write (`setTrips`), every Trip Log render, and once at startup so a cold open
+  shows the backlog rather than waiting for a tab visit. Hidden at 0, capped at
+  `99+`, and mirrored into `aria-label`.
+
+**Don't reintroduce:** a trip-end prompt that fires without the setting;
+`===false` for the gate (absence must read OFF); counting on-site or disregarded
+trips in the badge; deleting the prompt outright.
+
+**Tests:** `test-trip-popup.js` (41 pure, pins
+`test_trip_finish_no_popup_when_setting_off`,
+`test_trip_finish_shows_popup_when_setting_on`,
+`test_unreviewed_trips_show_badge_count_on_trip_tab`) + 21 live in
+`test-triplog-screen-live.js` driving a real trip-end. **The live suite includes a
+CONTROL assertion** proving the fixture *does* raise the popup when the setting is
+on — without it, "no popup" passed for the wrong reason (the fixture lacked
+`auto`/`created_at`, so it was never prompt-eligible to begin with).
+
 ### v104.7 — edit a recorded lap, and a recorded trip
 Field case (2026-07-30): Steven ran dump-truck cycles, then got into the Hitachi
 for 40 minutes **without leaving the dump zone**. GPS saw one continuous
@@ -1129,7 +1171,7 @@ figure changes").
 ### localStorage Keys
 | Key | Type | Description |
 |---|---|---|
-| `mcn_settings` | Object | Business settings (rate, client, trade type, etc.) |
+| `mcn_settings` | Object | Business settings (rate, client, trade type, etc.). **v104.8** adds `confirmTripsOnFinish` (default `false` — the trip-end vehicle prompt); **v104.5** adds `truckCapacityLcm` + `showLoadsOnInvoice`. |
 | `mcn_sites` | Array | Job sites with name, lat, lng, radius, client |
 | `mcn_clients` | Array | Clients with company, ABN, address, email |
 | `mcn_activeDay` | Object | The ONE currently-RUNNING (live) session — start set, no finish (null when idle). Drives the live timer. |
@@ -1359,8 +1401,9 @@ node test-health-battery-fix.js   # 31 live   · the Motorola intent chain never
 node test-zone-radius.js          # 52 pure   · radius slider/manual entry + nested zones (firewood)
 node test-disregard.js            # 60 pure   · trip delete + "don't record here" zones
 node test-edit-rows.js            # 62 pure   · edit a lap's duration / a trip's times
+node test-trip-popup.js           # 41 pure   · no trip-end popup by default + tab count
 ```
-Full suite as of v104.7: **933 pure + 586 live**. Live suites bind fixed HTTP + CDP
+Full suite as of v104.8: **974 pure + 606 live**. Live suites bind fixed HTTP + CDP
 ports, so a killed run leaves the port held and the next one dies with
 `EADDRINUSE` — `lsof -ti tcp:<port> | xargs kill -9` clears it. Live fixtures that
 assert a **running** circuit must re-stamp `activeCircuit.start_ts` to `Date.now()` first —
@@ -1631,12 +1674,12 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
-- **v104.0 → v104.7 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
+- **v104.0 → v104.8 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
   Steven asked for, in the shape of the Trip Log he already likes: map breadcrumb, day strip,
   tap a lap to draw it, press and hold to retime or flag it. Daily rollup = loads · **median**
   cycle time · LCM³ (loads × truck capacity) · productive hours, and **only that rollup** reaches
   the invoice. Retires the v102.0 Circuits pane in the same commit. See "v104.0 — Loads" above.
-  **Verified:** 190 pure + 161 live (both pins); full suite 933 pure + 586 live green; money
+  **Verified:** 190 pure + 161 live (both pins); full suite 974 pure + 606 live green; money
   paths proven unmoved by a dollar-figure diff with the block on/off and with laps flagged.
   Screenshots in `plans/v104-shots/`. **v104.1** (same day) makes the four zone CTAs
   deep-link straight to the Zones card in Settings instead of the top of the screen —
@@ -1656,6 +1699,8 @@ look for `REJECTED` entries in the mirrored GeoLog.
   ("don't record trips here") so driving around home stays out of the log. See "v104.6".
   **v104.7** lets a recorded lap's duration be corrected outright (the 40-minutes-in-the-Hitachi
   case) and makes a trip's times editable. See "v104.7 — edit a recorded lap".
+  **v104.8** switches the trip-end "which vehicle?" popup OFF by default (kept behind a
+  setting) and puts an unreviewed count on the Trips tab instead. See "v104.8".
 - **v103.0 — one zone system: circuits + sub-activities** — SHIPPED 2026-07-29 (Opus 5).
   Generalises the v102.0 circuit timer into a single geofence primitive read three ways
   (worksite / circuit pair / nested sub-activity). Steven's charcoal case: a small zone inside

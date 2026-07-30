@@ -464,6 +464,130 @@ function serve() {
       return !trips().find(function(x){return x.id==='tHome';}).disregarded; })()`));
   await ev(`(function(){ localStorage.setItem('mcn_zones',JSON.stringify([])); tlFilter='all'; tlSel=null; })()`);
 
+  console.log("v104.8 — a trip finishes: no popup, silent add, badge counts up");
+  await ev(`(function(){
+    localStorage.setItem('mcn_zones',JSON.stringify([]));
+    localStorage.setItem('mcn_trips',JSON.stringify([]));
+    localStorage.setItem('mcn_vehicles',JSON.stringify([{id:'v1',name:'Hilux',registration:'123ABC',cents_per_km:0.88,is_default:true}]));
+    var s=S(); delete s.confirmTripsOnFinish; s.tripAutoDetect=true; DB.set('settings',s);
+    localStorage.removeItem('mcn_tripVehPrompted');
+    renderTrips();
+  })()`);
+  await sleep(400);
+  ok('the setting defaults to OFF', await ev(`S().confirmTripsOnFinish===true`) === false);
+  ok('no trips, so no count is shown',
+     await ev(`document.getElementById('nav-trips-count').style.display`) === 'none');
+
+  // A trip finishes exactly as the detector seals one — auto:true and a fresh
+  // created_at, which is what makes it ELIGIBLE for the prompt. Without those
+  // the "no popup" assertions below would pass for the wrong reason.
+  const finish = tid => ev(`(function(){
+    var lg=document.getElementById('screen-login'); if(lg) lg.style.display='none';
+    var T0=Date.parse('2026-07-22T09:00:00');
+    var all=trips();
+    all.push({id:'${tid}',date:'2026-07-22',category:'unknown',distance_km:14.2,duration_min:18,
+      auto:true,created_at:Date.now(),
+      start_time:T0,end_time:T0+18*60000,
+      polyline:[{lat:-28.70,lng:152.00,t:T0},{lat:-28.72,lng:152.03,t:T0+18*60000}]});
+    setTrips(all);
+    maybePromptTripVehicle();          // the trip-end hook, called exactly as initTripLog does
+    return true;
+  })()`);
+
+  // Prove the fixture really would prompt, so "no popup" means the SETTING
+  // suppressed it rather than the trip simply not qualifying.
+  await ev(`(function(){
+    var lg=document.getElementById('screen-login'); if(lg) lg.style.display='none';
+    var s=S(); s.confirmTripsOnFinish=true; DB.set('settings',s);
+    var T0=Date.parse('2026-07-22T09:00:00');
+    setTrips([{id:'probe',date:'2026-07-22',category:'unknown',distance_km:1,duration_min:2,
+      auto:true,created_at:Date.now(),start_time:T0,end_time:T0+120000,
+      polyline:[{lat:-28.7,lng:152,t:T0}]}]);
+    maybePromptTripVehicle();
+  })()`);
+  await sleep(500);
+  ok('CONTROL: this fixture DOES raise the popup when the setting is on',
+     await ev(`document.getElementById('trip-veh-prompt-modal').classList.contains('open')`) === true);
+  await ev(`(function(){
+    document.getElementById('trip-veh-prompt-modal').classList.remove('open');
+    var s=S(); s.confirmTripsOnFinish=false; DB.set('settings',s);
+    setTrips([]); localStorage.removeItem('mcn_tripVehPrompted');
+  })()`);
+  await sleep(300);
+
+  await finish('tf1');
+  await sleep(600);
+  ok('NO popup appears when the trip ends',
+     (await ev(`document.getElementById('trip-veh-prompt-modal').classList.contains('open')`)) === false);
+  ok('…the trip is silently in the log', await ev(`trips().length`) === 1);
+  ok('…and durably so', (await ev(`JSON.parse(localStorage.getItem('mcn_trips')).length`)) === 1);
+  ok('the Trips tab count appears',
+     await ev(`document.getElementById('nav-trips-count').style.display`) === 'block');
+  ok('…reading 1', await ev(`document.getElementById('nav-trips-count').textContent`) === '1');
+  ok('…and says so for screen readers',
+     /1 to review/.test(await ev(`document.getElementById('nav-btn-trips').getAttribute('aria-label')`)));
+
+  await finish('tf2');
+  await finish('tf3');
+  await sleep(600);
+  ok('a second and third trip still raise no popup',
+     (await ev(`document.getElementById('trip-veh-prompt-modal').classList.contains('open')`)) === false);
+  ok('…and the count follows to 3', await ev(`document.getElementById('nav-trips-count').textContent`) === '3');
+  if (process.env.SHOT) {
+    const OUT = path.join(__dirname, 'plans', 'v104-shots');
+    fs.mkdirSync(OUT, { recursive: true });
+    await ev(`(function(){
+      var lg=document.getElementById('screen-login'); if(lg) lg.style.display='none';
+      var ld=document.getElementById('screen-loading'); if(ld) ld.style.display='none';
+      var w=document.getElementById('main-app-wrapper'); if(w) w.style.display='block';
+      tlMonth='2026-07'; tlFilter='all'; tlSel=null; showScreen('trips'); renderTrips();
+    })()`);
+    await sleep(1200);
+    const sh = await cmd('Page.captureScreenshot', { format: 'png' });
+    fs.writeFileSync(path.join(OUT, '09-trips-badge.png'), Buffer.from(sh.result.data, 'base64'));
+    console.log('  (screenshot written to plans/v104-shots/09-trips-badge.png)');
+  }
+
+  // Sorting them out from the Trips tab — the flow he said he prefers.
+  await ev(`(function(){ tlMonth='2026-07'; tlFilter='all'; renderTrips(); tlSelectDay('2026-07-22'); })()`);
+  await sleep(600);
+  ok('all three are waiting in the Trip Log',
+     (await ev(`document.querySelectorAll('#tl-sheet-body [data-trip]').length`)) === 3);
+  ok('categorising one drops the count to 2', await ev(`(function(){
+      tlSetCat('tf1','business'); return document.getElementById('nav-trips-count').textContent; })()`) === '2');
+  ok('…and the trip really is business', await ev(`trips().find(function(t){return t.id==='tf1';}).category`) === 'business');
+  ok('clearing all three hides the count', await ev(`(function(){
+      tlSetCat('tf2','personal'); tlSetCat('tf3','business');
+      return document.getElementById('nav-trips-count').style.display; })()`) === 'none');
+  ok('…with nothing left pending', await ev(`unreviewedTripCount(trips())`) === 0);
+
+  console.log('\nv104.8 — the escape hatch: turn it back on and the popup returns');
+  await ev(`(function(){
+    var lg=document.getElementById('screen-login'); if(lg) lg.style.display='none';
+    var s=S(); s.confirmTripsOnFinish=true; DB.set('settings',s);
+    localStorage.removeItem('mcn_tripVehPrompted');
+  })()`);
+  await finish('tf4');
+  await sleep(700);
+  ok('with the setting ON the popup DOES appear',
+     await ev(`document.getElementById('trip-veh-prompt-modal').classList.contains('open')`) === true);
+  ok('…asking which vehicle',
+     /Which vehicle/.test(await ev(`document.getElementById('trip-veh-prompt-body').innerHTML`)));
+  ok('…and it only ever assigns a vehicle, never a category', await ev(`(function(){
+      var before=trips().find(function(t){return t.id==='tf4';}).category;
+      assignTripVehPrompt('tf4','v1',false);
+      var t=trips().find(function(x){return x.id==='tf4';});
+      return t.vehicle_id==='v1' && t.category===before; })()`));
+  await sleep(500);
+  ok('…so it never removed a categorisation path — the count still shows it',
+     await ev(`document.getElementById('nav-trips-count').textContent`) === '1');
+  await ev(`(function(){
+    var s=S(); s.confirmTripsOnFinish=false; DB.set('settings',s);
+    document.getElementById('trip-veh-prompt-modal').classList.remove('open');
+    localStorage.setItem('mcn_trips',JSON.stringify([])); tlSel=null; renderTrips();
+  })()`);
+  await sleep(300);
+
   console.log('Empty and offline states');
   await ev(`(function(){ setTrips([]); tlMonth=null; tlSel=null; renderTrips(); return 1; })()`);
   await sleep(500);
