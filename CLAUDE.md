@@ -22,11 +22,11 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v104.5 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v104.6 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.104.5 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
-| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.104.5 / versionCode 9 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.104.6 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.104.6 / versionCode 10 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -879,6 +879,64 @@ buttons against a stubbed bridge, and drives all three failure states plus
 reject / `opened:false` / no-bridge / throwing-run. No emulator needed. (This
 also fills the gap noted in v101.6: `test-health.js` was referenced but absent.)
 
+### v104.6 — delete a trip, and "don't record trips here" zones
+Steven: *"driving around at home … I've got no way to disregard it or delete it
+… unless I put a circle around home and you can disregard a lot as well."*
+
+**Correcting the premise:** the farm case never *deleted* anything. A trip wholly
+inside one work-site fence is `intraSite` — kept, drawn muted, excluded from km
+and the review queue, with a "Count this as travel" escape hatch (v101.7). It
+*reads* as deleted because it leaves the numbers. Both v104.6 features preserve
+that discipline: **nothing auto-deletes, ever.**
+
+**1. Long-press a trip → Delete.** Same gesture, 500 ms threshold and
+scroll-cancel as the Loads sheet (`tlWireRows` mirrors `ldWireRows`) — one
+interaction language across the two review screens. `deleteTripFrom()` is pure.
+The confirm copy names the distinction explicitly, because it is the whole point:
+**Skip keeps the trip** and returns it to the queue; **Delete removes the GPS
+record for good.**
+
+**2. `disregard` — a fifth zone mode.** Named `disregard`, not `ignore`, because
+`ignore` is already a GeoLog entry *type* and two meanings of one word in the
+only field-diagnostic tool this project has is a bad trade for a shorter word.
+
+- `classifyDisregard()` is **deliberately the same predicate as intra-site** —
+  every position inside ONE circle via `pointInFence`. Same question about a
+  different kind of place. Different store though: `mcn_zones`, not `mcn_sites`.
+- Classified against **each disregard zone directly**, NOT through
+  `zoneOfPoint()`, whose nearest-centre tie-break picks one zone — containment
+  is the question here, so an overlapping circuit zone can never un-hide a home
+  trip.
+- **Hidden by default, never unreachable.** `filterTripsBy` drops disregarded
+  from every view except a new `disregarded` filter. A circle drawn too big would
+  otherwise swallow a real trip with no way to notice — the exact trap the
+  intra-site rule was careful to avoid. The row explains itself and offers
+  **"Put this back in the log →"** (`undisregardTrip` stamps `disregard_manual`,
+  which the classifier then never overrules).
+- Precedence: **disregard beats on-site** — "don't record" is the stronger
+  instruction, and `filterTripsBy` drops it before anything else looks.
+- Its own slider range (`area_max` 1500 m, default 400 m, step 10): a home circle
+  is an area, not a point, and 5 m precision on it is meaningless.
+
+**Geometry cross-check vs v104.5 (the question that mattered):** a disregard zone
+is **not a detection mode**. `zoneVisitsFromFixes` now pre-filters to
+`isDetectionMode()` — pickup / dump / sub-activity — so a disregard zone **never
+enters the visit stream at all**. Without that, a home circle over a pickup zone
+would steal its fixes via nearest-centre-wins and silently break the cycle
+(asserted: identical circuits with and without a 800 m home circle sitting on the
+pit). Because it cannot interfere, it is also **exempt from the v104.5 overlap
+rules** — a "don't record here" circle may sit anywhere, over anything, while
+real activity zones stay policed.
+
+**Don't reintroduce:** auto-deleting any trip; a disregarded trip with no way
+back; classifying disregard through `zoneOfPoint`; letting a disregard zone into
+the visit stream; applying the overlap guard to it.
+
+**Tests:** `test-disregard.js` (60 pure, pins
+`test_disregard_zone_filters_trips_entirely_within_it` and
+`test_trip_row_long_press_delete_removes_from_log`) + 20 live in
+`test-triplog-screen-live.js`.
+
 ### v104.5 — zone radius, and the firewood shape
 Steven: *"three thousand meter radius is too big for the zones … some of the
 zones I want, say, fifty meters radius or thirty meter radius, it makes it very
@@ -1032,7 +1090,7 @@ figure changes").
 | `mcn_trips` | Array | **v100 trip log** — completed trips (WorkSession-independent). Synced via SYNC_KEYS. See "v100 — Trip Log" below. |
 | `mcn_vehicles` | Array | **v100** — user vehicles `{id,name,registration,make,model,year,cents_per_km,is_default}`. Synced. |
 | `mcn_activeTrip` | Object | **v100** — the ONE live trip in progress (polyline building). LOCAL-ONLY live buffer — NOT in SYNC_KEYS (avoids Firestore write-spam mid-trip). Sealed into `mcn_trips` on stop. |
-| `mcn_zones` | Array | **v102.0/v103.0** — activity zones `{id,name,mode:'circuit-pickup'\|'circuit-dump'\|'sub_activity',lat,lng,radius,cost?:{hourly_rate,output_unit}}`. `worksite` zones live in `mcn_sites`, not here. v102.0 `kind` records still resolve via `zoneMode()`. Synced. |
+| `mcn_zones` | Array | **v102.0/v103.0/v104.6** — activity zones `{id,name,mode:'circuit-pickup'\|'circuit-dump'\|'sub_activity'\|'disregard',lat,lng,radius,cost?:{hourly_rate,output_unit}}`. `disregard` (v104.6) is an exclusion filter over trips, NOT a detection zone — it never enters the visit stream. `worksite` zones live in `mcn_sites`, not here. v102.0 `kind` records still resolve via `zoneMode()`. Synced. |
 | `mcn_circuits` | Array | **v102.0** — completed circuits `{id,date,pickup_name,dump_name,start_ts,end_ts,duration_s,load_s,haul_s,dump_s,return_s,legs[]}`. Synced. **v104.0 adds** `polyline[{lat,lng,t}]` (≤40 pts, pruned after 30 days, then `trail_pruned:true`), `confirmed_at`, `invalid`, `invalid_reason`, `invalidated_at`, `edited_by_user` — all additive; every other reader ignores them. |
 | `mcn_subsessions` | Array | **v103.0** — sub-activity sessions `{id,zone_id,activity,date,start_ts,end_ts,duration_s,work_session_id}`. Synced. |
 | `mcn_batches` | Array | **v103.0** — batch costings `{id,zone_id,activity,date,hours,rate,labour,material,total,output_qty,output_unit,cost_per_unit,notes}`. Synced. |
@@ -1040,6 +1098,10 @@ figure changes").
 | `mcn_circuitFixes` | Array | **v102.0** — rolling GPS buffer feeding circuit detection (6h / 2000 cap). LOCAL-ONLY — not in SYNC_KEYS. |
 | `mcn_activeCircuit` | Object | **v102.0** — the cycle in progress. LOCAL-ONLY live cursor; goes stale after 2h. |
 | `mcn_placeCache` | Object | **v101.7** — `{ "lat,lng"(4dp): "Place name" }` resolved place labels, so a coordinate is reverse-geocoded once. LOCAL-ONLY — deliberately NOT in SYNC_KEYS. Capped at 500 entries. |
+
+**Trip record fields added by v104.6:** `disregarded` (bool, **only ever written
+when true**) · `disregard_zone` (the containing zone's id) · `disregard_manual`
+(bool — the user overrode it; the classifier must never overrule that).
 
 **Trip record fields added by v101.7** (all additive; every other reader ignores them):
 `approved_at` (ms — review audit stamp, not a lock) · `intraSite` (bool, **only ever written
@@ -1243,8 +1305,9 @@ node test-loads-live.js           # 161 live  · Loads tab, long-press, invoice 
 node test-health-live.js          # 33 live   · Setup Health buttons + the 3 dead-card states
 node test-health-battery-fix.js   # 31 live   · the Motorola intent chain never dead-ends (SHOT=1 for shots)
 node test-zone-radius.js          # 52 pure   · radius slider/manual entry + nested zones (firewood)
+node test-disregard.js            # 60 pure   · trip delete + "don't record here" zones
 ```
-Full suite as of v104.5: **811 pure + 537 live**. Live fixtures that assert a
+Full suite as of v104.6: **871 pure + 556 live**. Live fixtures that assert a
 **running** circuit must re-stamp `activeCircuit.start_ts` to `Date.now()` first —
 a fixture-dated open cycle goes stale once the wall clock passes it, which turned
 two green tests red overnight. Run the live ones ONE AT A TIME —
@@ -1513,12 +1576,12 @@ look for `REJECTED` entries in the mirrored GeoLog.
 ---
 
 ## Built & shipped (was "future")
-- **v104.0 → v104.5 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
+- **v104.0 → v104.6 — Loads review tab** — SHIPPED 2026-07-29 (Opus 5). The raw-cycle review screen
   Steven asked for, in the shape of the Trip Log he already likes: map breadcrumb, day strip,
   tap a lap to draw it, press and hold to retime or flag it. Daily rollup = loads · **median**
   cycle time · LCM³ (loads × truck capacity) · productive hours, and **only that rollup** reaches
   the invoice. Retires the v102.0 Circuits pane in the same commit. See "v104.0 — Loads" above.
-  **Verified:** 190 pure + 161 live (both pins); full suite 811 pure + 537 live green; money
+  **Verified:** 190 pure + 161 live (both pins); full suite 871 pure + 556 live green; money
   paths proven unmoved by a dollar-figure diff with the block on/off and with laps flagged.
   Screenshots in `plans/v104-shots/`. **v104.1** (same day) makes the four zone CTAs
   deep-link straight to the Zones card in Settings instead of the top of the screen —
@@ -1534,6 +1597,8 @@ look for `REJECTED` entries in the mirrored GeoLog.
   radius slider at 250m (50m was 1.4% along a 3000m slider), adds tap-to-type up to 3000m, and
   allows a small zone to sit INSIDE a big one — which is what makes the firewood workflow
   (farm-wide pickup → charcoal shed dump) work with no new mode. See "v104.5 — zone radius".
+  **v104.6** adds long-press-to-delete on a trip row and a fifth zone mode, `disregard`
+  ("don't record trips here") so driving around home stays out of the log. See "v104.6".
 - **v103.0 — one zone system: circuits + sub-activities** — SHIPPED 2026-07-29 (Opus 5).
   Generalises the v102.0 circuit timer into a single geofence primitive read three ways
   (worksite / circuit pair / nested sub-activity). Steven's charcoal case: a small zone inside

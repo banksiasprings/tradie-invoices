@@ -384,6 +384,86 @@ function serve() {
      await ev(`JSON.parse(localStorage.getItem('mcn_trips')).filter(function(t){return t.id==='l1';})[0].intraSite`) === false);
   ok('the other lap is still on-site', await ev(`tlDayRow('2026-07-08').onSiteCount`) === 1);
 
+  console.log('v104.6 — long-press a trip row to delete it');
+  await ev(`(function(){
+    localStorage.setItem('mcn_zones',JSON.stringify([]));
+    localStorage.setItem('mcn_trips',JSON.stringify([
+      {id:'tA',date:'2026-07-20',category:'business',distance_km:12.5,duration_min:20,
+       start_time:Date.parse('2026-07-20T08:00:00'),end_time:Date.parse('2026-07-20T08:20:00'),
+       polyline:[{lat:-28.70,lng:152.00,t:1},{lat:-28.71,lng:152.01,t:2}]},
+      {id:'tB',date:'2026-07-20',category:'unknown',distance_km:3.1,duration_min:8,
+       start_time:Date.parse('2026-07-20T09:00:00'),end_time:Date.parse('2026-07-20T09:08:00'),
+       polyline:[{lat:-28.72,lng:152.02,t:1},{lat:-28.73,lng:152.03,t:2}]}
+    ]));
+    tlMonth='2026-07'; tlFilter='all'; renderTrips(); tlSelectDay('2026-07-20');
+  })()`);
+  await sleep(600);
+  ok('both trips are in the sheet',
+     (await ev(`document.querySelectorAll('#tl-sheet-body [data-trip]').length`)) === 2);
+  ok('the sheet says how to remove one',
+     /Press and hold/.test(await ev(`document.getElementById('tl-sheet-body').innerHTML`)));
+  ok('a cancelled confirm deletes nothing', await ev(`(function(){
+      var oc=window.confirm; window.confirm=function(){return false;};
+      confirmDeleteTrip('tB'); window.confirm=oc;
+      return trips().length; })()`) === 2);
+  ok('confirming removes it from the log', await ev(`(function(){
+      var oc=window.confirm; window.confirm=function(){return true;};
+      var r=confirmDeleteTrip('tB'); window.confirm=oc;
+      return r===true && trips().length===1 && trips()[0].id==='tA'; })()`));
+  ok('…and from localStorage, durably',
+     (await ev(`JSON.parse(localStorage.getItem('mcn_trips')).length`)) === 1);
+  ok('…and the sheet redraws without it',
+     (await ev(`document.querySelectorAll('#tl-sheet-body [data-trip]').length`)) === 1);
+  ok('deleting an unknown id is handled', await ev(`(function(){
+      var oc=window.confirm; window.confirm=function(){return true;};
+      var r=confirmDeleteTrip('nope'); window.confirm=oc; return r===false; })()`));
+  ok('the confirm copy distinguishes delete from skip', await ev(`(function(){
+      var msg=''; var oc=window.confirm; window.confirm=function(m){msg=m;return false;};
+      confirmDeleteTrip('tA'); window.confirm=oc;
+      return /Skip instead/.test(msg) && /for good/.test(msg); })()`));
+
+  console.log('\nv104.6 — a "don\'t record here" zone hides trips around home');
+  await ev(`(function(){
+    localStorage.setItem('mcn_zones',JSON.stringify([
+      {id:'zh',name:'Home',mode:'disregard',lat:-28.400,lng:151.800,radius:400}
+    ]));
+    var M=111320;
+    localStorage.setItem('mcn_trips',JSON.stringify([
+      {id:'tHome',date:'2026-07-21',category:'unknown',distance_km:1.2,duration_min:6,
+       start_time:Date.parse('2026-07-21T08:00:00'),end_time:Date.parse('2026-07-21T08:06:00'),
+       polyline:[{lat:-28.400,lng:151.800,t:1},{lat:-28.400+120/M,lng:151.800,t:2}]},
+      {id:'tReal',date:'2026-07-21',category:'business',distance_km:22.0,duration_min:30,
+       start_time:Date.parse('2026-07-21T09:00:00'),end_time:Date.parse('2026-07-21T09:30:00'),
+       polyline:[{lat:-28.400,lng:151.800,t:1},{lat:-28.400+4000/M,lng:151.800,t:2}]}
+    ]));
+    tlMonth='2026-07'; tlFilter='all'; tlSel=null; renderTrips();
+  })()`);
+  await sleep(700);
+  ok('the home trip is flagged on render', await ev(`trips().find(function(t){return t.id==='tHome';}).disregarded`) === true);
+  ok('…and the real trip is not', await ev(`!trips().find(function(t){return t.id==='tReal';}).disregarded`));
+  ok('only the real trip is in the default view', await ev(`tlMonthTrips().length`) === 1);
+  ok('…and it is the right one', await ev(`tlMonthTrips()[0].id`) === 'tReal');
+  ok('the month km excludes the home pottering',
+     /22/.test(await ev(`document.getElementById('tl-metrics').innerHTML`)),
+     await ev(`document.getElementById('tl-metrics').innerHTML`));
+  ok('the hidden trip is reachable under its own filter', await ev(`(function(){
+      tlFilter='disregarded'; renderTrips();
+      return tlMonthTrips().length===1 && tlMonthTrips()[0].id==='tHome'; })()`));
+  await ev(`tlSelectDay('2026-07-21')`); await sleep(500);
+  ok('…the row explains why it is hidden',
+     /Not recorded/.test(await ev(`document.getElementById('tl-sheet-body').innerHTML`)),
+     (await ev(`document.getElementById('tl-sheet-body').innerHTML`)).slice(0, 300));
+  ok('…naming the zone', /inside Home/.test(await ev(`document.getElementById('tl-sheet-body').innerHTML`)));
+  ok('…and offers the way back', /tlUndisregard/.test(await ev(`document.getElementById('tl-sheet-body').innerHTML`)));
+  ok('putting it back works and sticks', await ev(`(function(){
+      tlUndisregard('tHome');
+      var t=trips().find(function(x){return x.id==='tHome';});
+      return t.disregarded===undefined && t.disregard_manual===true; })()`));
+  ok('…and a re-render does not re-hide it', await ev(`(function(){
+      tlFilter='all'; renderTrips();
+      return !trips().find(function(x){return x.id==='tHome';}).disregarded; })()`));
+  await ev(`(function(){ localStorage.setItem('mcn_zones',JSON.stringify([])); tlFilter='all'; tlSel=null; })()`);
+
   console.log('Empty and offline states');
   await ev(`(function(){ setTrips([]); tlMonth=null; tlSel=null; renderTrips(); return 1; })()`);
   await sleep(500);

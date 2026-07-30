@@ -2260,6 +2260,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
               <button class="btn btn-primary btn-sm" id="cz-mode-subactivity" onclick="czSetMode('sub_activity')">🔥 Sub-activity</button>
               <button class="btn btn-secondary btn-sm" id="cz-mode-circuitpickup" onclick="czSetMode('circuit-pickup')">⛏ Pickup</button>
               <button class="btn btn-secondary btn-sm" id="cz-mode-circuitdump" onclick="czSetMode('circuit-dump')">🪣 Dump</button>
+              <button class="btn btn-secondary btn-sm" id="cz-mode-disregard" onclick="czSetMode('disregard')" style="grid-column:1/-1">🏠 Don't record trips here</button>
             </div>
             <div id="cz-mode-hint" style="font-size:12px;color:var(--text2);margin-top:6px">A small area inside a work site — time here is tracked separately and can be costed per batch.</div>
           </div>
@@ -2413,7 +2414,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v104.5';
+const APP_VERSION = 'v104.6';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -8930,6 +8931,78 @@ function applyIntraSiteFlags(list, siteList, cfg){
   return {trips:out,changed:changed};
 }
 
+// ── Disregard zones (v104.6) ─────────────────────────────────────────────────
+// Steven: "when I'm driving around at home, it's also doing that, but I've got
+// no way to disregard it … unless I put a circle around home and you can
+// disregard a lot as well."
+//
+// So: a fourth zone mode. A trip whose ENTIRE path stays inside one `disregard`
+// zone is dropped from the Trip Log — pottering around the house is not a trip.
+//
+// Deliberately the SAME predicate as intra-site (every position inside ONE
+// circle, via pointInFence), because it answers the same question about a
+// different kind of place. It is NOT the same mechanism: on-site movement comes
+// from `mcn_sites` (money-path adjacent), disregard zones live in `mcn_zones`
+// beside the circuit and sub-activity zones. Two stores, one geometry rule.
+//
+// Note this classifies against EACH disregard zone directly rather than through
+// zoneOfPoint(), whose nearest-centre tie-break picks one zone. Containment is
+// the question here, not "which zone am I in", so an overlapping circuit zone
+// can never make a home trip un-disregarded.
+var TRIP_DISREGARD_CFG = { boundary_slack_m: 50 };   // same drift allowance as intra-site
+function classifyDisregard(trip, zoneList, cfg){
+  var slack=(cfg&&cfg.boundary_slack_m!=null)?cfg.boundary_slack_m:TRIP_DISREGARD_CFG.boundary_slack_m;
+  var pts=tripPoints(trip);
+  if(!pts.length) return {disregard:false,zone_id:null,zone_name:null,reason:'no positions to judge'};
+  var list=(zoneList||[]).filter(function(z){ return z && zoneMode(z)===ZONE_MODES.DISREGARD && z.lat!=null && z.lng!=null; });
+  if(!list.length) return {disregard:false,zone_id:null,zone_name:null,reason:'no disregard zones defined'};
+  for(var i=0;i<list.length;i++){
+    var z=list[i], all=true;
+    var probe={lat:z.lat,lng:z.lng,radius:(+z.radius||CIRCUIT_CFG.default_radius_m)};
+    for(var j=0;j<pts.length;j++){
+      if(!pointInFence(pts[j].lat,pts[j].lng,probe,slack)){ all=false; break; }
+    }
+    if(all) return {disregard:true,zone_id:(z.id||null),zone_name:(z.name||null),
+                    reason:'every position inside '+(z.name||'a disregard zone')};
+  }
+  return {disregard:false,zone_id:null,zone_name:null,reason:'not contained by a single disregard zone'};
+}
+// A hand-set decision outranks the zone, permanently — the same escape hatch
+// intra-site has, and for the same reason: a too-big circle would otherwise
+// swallow a real trip with no way to say so.
+function disregardLocked(t){ return !!(t&&t.disregard_manual); }
+function isDisregarded(t){ return !!(t&&t.disregarded); }
+function applyDisregardFlags(list, zoneList, cfg){
+  var changed=0;
+  var out=(list||[]).map(function(t){
+    if(disregardLocked(t)) return t;
+    var c=classifyDisregard(t,zoneList,cfg);
+    if(!!t.disregarded===c.disregard && (t.disregard_zone||null)===(c.zone_id||null)) return t;
+    changed++;
+    var n={};
+    for(var k in t) if(Object.prototype.hasOwnProperty.call(t,k)) n[k]=t[k];
+    // Only the positive case is stamped; a normal trip stays byte-identical.
+    if(c.disregard){ n.disregarded=true; n.disregard_zone=c.zone_id; }
+    else { delete n.disregarded; delete n.disregard_zone; }
+    return n;
+  });
+  return {trips:out,changed:changed};
+}
+// Put a wrongly-disregarded trip back in the log, and never re-classify it.
+function undisregardTrip(t){
+  var n={};
+  for(var k in t) if(Object.prototype.hasOwnProperty.call(t,k)) n[k]=t[k];
+  delete n.disregarded; delete n.disregard_zone;
+  n.disregard_manual=true;
+  return n;
+}
+// Remove a trip outright. PURE — returns a new array. `skip` sends a trip back
+// to the review queue but KEEPS it; this is the "that shouldn't be there at all"
+// action, which is why it is behind a long-press and a confirm.
+function deleteTripFrom(list,id){
+  return (list||[]).filter(function(t){ return !t || t.id!==id; });
+}
+
 // ── Period helpers ───────────────────────────────────────────────────────────
 function monthKeyOf(dateStr){ return typeof dateStr==='string'?dateStr.slice(0,7):''; }
 // Days in a 'YYYY-MM'. Explicit-arg Date = deterministic, reads no clock.
@@ -8948,8 +9021,15 @@ function tripMonthKeys(list){
 // Filter mode for the strip + map: all | business | private | pending | onsite.
 // business/private/pending are all TRAVEL concepts, so on-site movement is
 // excluded from each of them; 'onsite' isolates it for inspection.
+// v104.6 — a disregarded trip is out of EVERY view except the one that exists to
+// inspect it. Hidden by default is what Steven asked for ("driving around home …
+// no way to disregard it"), but never unreachable: a home circle drawn too big
+// would otherwise swallow a real trip with no way to notice, which is the same
+// trap the intra-site rule was careful to avoid.
 function filterTripsBy(list,mode){
   list=(list||[]).slice();
+  if(mode==='disregarded') return list.filter(isDisregarded);
+  list=list.filter(function(t){ return !isDisregarded(t); });
   if(mode==='business') return list.filter(function(t){ return !isIntraSite(t)&&t.category==='business'; });
   if(mode==='private')  return list.filter(function(t){ return !isIntraSite(t)&&isPrivateCat(t.category); });
   if(mode==='pending')  return list.filter(function(t){ return !isIntraSite(t)&&isPendingTrip(t); });
@@ -9076,7 +9156,8 @@ function daySegments(ts){
              category:(t.category&&t.category!=='unknown')?t.category:null,
              suggest:t.suggest_category||null,
              intraSite:isIntraSite(t), siteName:t.intraSite_site||null,
-             status:isIntraSite(t)?'onsite':tripReviewStatus(t) };
+             disregarded:isDisregarded(t), disregardZone:t.disregard_zone||null,
+             status:isDisregarded(t)?'disregarded':(isIntraSite(t)?'onsite':tripReviewStatus(t)) };
   });
 }
 // "A → B → C" from whatever labels the trips carry, collapsing repeats where
@@ -9125,10 +9206,15 @@ function routeLabelOf(ts,maxStops){
 //
 // NO DOM / NO DB / NO Date.now — deterministic and unit-testable.
 var ZONE_MODES = {
-  WORKSITE: 'worksite',
-  PICKUP:   'circuit-pickup',
-  DUMP:     'circuit-dump',
-  SUB:      'sub_activity'
+  WORKSITE:  'worksite',
+  PICKUP:    'circuit-pickup',
+  DUMP:      'circuit-dump',
+  SUB:       'sub_activity',
+  // v104.6 — a place whose trips are not worth logging (home, the yard). Named
+  // `disregard` rather than `ignore` because 'ignore' is already a GeoLog entry
+  // TYPE, and two meanings of one word in the only diagnostic tool this project
+  // has would be a bad trade for one saved syllable.
+  DISREGARD: 'disregard'
 };
 // v102.0 shipped circuit zones as kind:'pickup'|'dump'. Those records must keep
 // working untouched, so the mode is DERIVED rather than migrated in place.
@@ -9140,6 +9226,17 @@ function zoneMode(z){
   return null;                       // unrecognised — never guessed, just ignored
 }
 function isCircuitMode(m){ return m===ZONE_MODES.PICKUP || m===ZONE_MODES.DUMP; }
+// Which modes take part in the fix→visit stream at all. A `disregard` zone is an
+// EXCLUSION FILTER over finished trips, not a place the detector watches you
+// enter — so it is kept out of the stream entirely rather than being added and
+// then filtered by each reading. That matters because zoneOfPoint() resolves
+// overlaps by nearest centre: a home zone sitting over a pickup zone would
+// otherwise steal its fixes and silently break the cycle. Out of the stream, it
+// cannot interfere with anything, which is also why it is exempt from the
+// overlap rules — a "don't record here" circle may sit anywhere, over anything.
+function isDetectionMode(m){
+  return m===ZONE_MODES.PICKUP || m===ZONE_MODES.DUMP || m===ZONE_MODES.SUB;
+}
 function zonesOfMode(zones,mode){
   return (zones||[]).filter(function(z){ return zoneMode(z)===mode; });
 }
@@ -9191,9 +9288,11 @@ function zoneOfPoint(lat,lng,zones,cfg){
 }
 // Collapse a fix stream into ordered zone VISITS. A visit is a contiguous run of
 // fixes inside one zone; the gaps between visits are the travel legs.
-function zoneVisitsFromFixes(fixes,zones,cfg){
+function zoneVisitsFromFixes(fixes,allZones,cfg){
   var minDwellMs=_circCfg(cfg,'min_dwell_s')*1000;
   var mergeMs=_circCfg(cfg,'merge_gap_s')*1000;
+  // Only detection zones are in the stream — see isDetectionMode.
+  var zones=(allZones||[]).filter(function(z){ return z && isDetectionMode(zoneMode(z)); });
   var arr=(fixes||[])
     .filter(function(f){ return f && f.lat!=null && f.lng!=null; })
     .slice()
@@ -9468,6 +9567,8 @@ var ZONE_RADIUS = {
   slider_min: 10,
   slider_max: 250,     // activity zones — the 90% case, spread across the full slider
   worksite_max: 3000,  // the work-site fence is a different animal; unchanged
+  area_max: 1500,      // v104.6 "don't record here" — an area, not a point
+  area_default: 400,   // house + sheds + driveway, roughly
   manual_max: 3000     // typed by hand, for farm-scale pickup zones
 };
 function clampZoneRadius(v,max){
@@ -9490,12 +9591,17 @@ function clampZoneRadius(v,max){
 // point of the inner zone is safely nearer its own centre iff d > 2·rInner, so
 // that is the test — derived from the same nearest-centre rule the detector
 // actually uses, not a guess.
-function zoneOverlapVerdict(lat,lng,radius,existing){
+function zoneOverlapVerdict(lat,lng,radius,existing,mode){
   var out={ok:true,reason:null,zone:null};
   var rA=+radius||0;
+  // A disregard zone is not in the detection stream, so it can neither be
+  // confused with another zone nor steal its fixes — it may sit anywhere, and
+  // nothing needs protecting from it. (v104.6)
+  if(mode===ZONE_MODES.DISREGARD) return out;
   for(var i=0;i<(existing||[]).length;i++){
     var z=existing[i];
     if(!z||z.lat==null||z.lng==null) continue;
+    if(zoneMode(z)===ZONE_MODES.DISREGARD) continue;
     var rB=(+z.radius||CIRCUIT_CFG.default_radius_m);
     var d=_fenceHaversine(lat,lng,z.lat,z.lng);
     if(d>=rA+rB) continue;                       // separate circles — always fine
@@ -10072,7 +10178,8 @@ const ZONE_MODE_META={
   'worksite':      {icon:'🚜', label:'Work site',   hint:'Starts and stops your work day. The big fence.'},
   'circuit-pickup':{icon:'⛏',  label:'Pickup',      hint:'Where you load. Start of a circuit.'},
   'circuit-dump':  {icon:'🪣', label:'Dump',        hint:'Where you tip. Completes the haul leg.'},
-  'sub_activity':  {icon:'🔥', label:'Sub-activity',hint:'A small area inside a work site — time here is tracked separately and can be costed per batch.'}
+  'sub_activity':  {icon:'🔥', label:'Sub-activity',hint:'A small area inside a work site — time here is tracked separately and can be costed per batch.'},
+  'disregard':     {icon:'🏠', label:'Don\'t record',hint:'Home, or anywhere you don\'t want logged. Trips that stay entirely inside are kept out of the Trip Log.'}
 };
 let _czMode='sub_activity', _czLat=null, _czLng=null;
 function czSetMode(m){
@@ -10093,10 +10200,15 @@ function czSetMode(m){
   const rad=document.getElementById('cz-radius');
   if(rad){
     const isSite=(m===ZONE_MODES.WORKSITE);
-    rad.max=isSite?ZONE_RADIUS.worksite_max:ZONE_RADIUS.slider_max;
-    rad.step=isSite?10:5;
+    // v104.6 — a "don't record here" circle is an area, not a point: home plus
+    // the sheds and the driveway is hundreds of metres, and 5m precision on it
+    // is meaningless. It gets its own wider range rather than forcing him into
+    // the manual-entry escape hatch for the ordinary case.
+    const isArea=(m===ZONE_MODES.DISREGARD);
+    rad.max=isSite?ZONE_RADIUS.worksite_max:(isArea?ZONE_RADIUS.area_max:ZONE_RADIUS.slider_max);
+    rad.step=(isSite||isArea)?10:5;
     if(isSite && _czRadius<300) czSetRadius(500);
-    else if(!isSite && _czRadius>ZONE_RADIUS.slider_max) czSetRadius(_czRadius); // keep it, just pin the slider
+    else if(isArea && _czRadius<ZONE_RADIUS.area_default) czSetRadius(ZONE_RADIUS.area_default);
     else czSetRadius(_czRadius);
   }
 }
@@ -10183,7 +10295,7 @@ function czSave(){
   // deterministically — which is what makes Steven's firewood shape work: the
   // pickup zone is the whole farm and the charcoal shed sits inside it.
   // They may still freely overlap a work site; that was never the constraint.
-  const verdict=zoneOverlapVerdict(_czLat,_czLng,radius,zones());
+  const verdict=zoneOverlapVerdict(_czLat,_czLng,radius,zones(),_czMode);
   if(!verdict.ok){
     if(verdict.reason==='concentric'){
       toast('Too close to the middle of "'+verdict.zone.name+'" — move it further out, or shrink it');
@@ -10215,7 +10327,8 @@ function _czReset(){
   // v104.5 — a hand-typed farm-scale radius must not silently carry over to the
   // next zone, which is usually a 30 m shed.
   czCancelRadius();
-  czSetRadius(_czMode===ZONE_MODES.WORKSITE?500:CIRCUIT_CFG.default_radius_m);
+  czSetRadius(_czMode===ZONE_MODES.WORKSITE?500
+            :(_czMode===ZONE_MODES.DISREGARD?ZONE_RADIUS.area_default:CIRCUIT_CFG.default_radius_m));
 }
 window.czSetMode=czSetMode; window.czCaptureGPS=czCaptureGPS; window.czSave=czSave;
 
@@ -10243,6 +10356,9 @@ function renderZonesCard(){
   const subRows=subs.map(z=>row('🔥',z.name,
     (z.radius||100)+'m · $'+((z.cost&&z.cost.hourly_rate)||0)+'/hr · per '+((z.cost&&z.cost.output_unit)||'unit'),
     `deleteZone('${z.id}')`)).join('');
+  const dis=zonesOfMode(zs,ZONE_MODES.DISREGARD);
+  const disRows=dis.map(z=>row('🏠',z.name,(z.radius||100)+'m · trips inside stay out of the log',
+    `deleteZone('${z.id}')`)).join('');
 
   let warn='';
   if((pick.length&&!dump.length)||(dump.length&&!pick.length)){
@@ -10253,7 +10369,8 @@ function renderZonesCard(){
   if(dead.length){
     warn+=`<div style="font-size:12px;color:var(--red);margin-top:6px">⚠ ${dead.length} zone(s) can't be used — no type or no location: ${dead.map(z=>escHtml(z.name||'unnamed')).join(', ')}</div>`;
   }
-  const body=group('Work sites',siteRows)+group('Circuit zones',circRows)+group('Sub-activities',subRows);
+  const body=group('Work sites',siteRows)+group('Circuit zones',circRows)+group('Sub-activities',subRows)+
+             group("Don't record trips here",disRows);
   el.innerHTML=body||'<div style="font-size:13px;color:var(--text2)">No zones yet. Add a work site, a pickup/dump pair for circuits, or a sub-activity area.</div>';
   el.innerHTML+=warn;
 }
@@ -10965,7 +11082,8 @@ var tlMap=null, tlBaseTopo=null, tlBaseSat=null, tlBaseSatRef=null;
 var tlRouteLayer=null;     // LayerGroup holding the drawn trails
 var TL_FILTERS=[{k:'all',label:'All trips'},{k:'business',label:'Business only'},
                 {k:'private',label:'Private only'},{k:'pending',label:'Needs review'},
-                {k:'onsite',label:'On-site movement'}];
+                {k:'onsite',label:'On-site movement'},
+                {k:'disregarded',label:'Not recorded (home)'}];
 var TL_MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 function tlMonthLabel(mk){
@@ -11002,11 +11120,29 @@ function tlSyncIntraSite(){
   }
 }
 
+// v104.6 — same shape as tlSyncIntraSite: re-settle on every render so editing a
+// zone's radius fixes history, write only when something changed, and fail OPEN
+// (a classify error must leave every trip visible, never hide one).
+function tlSyncDisregard(){
+  try{
+    var res=applyDisregardFlags(trips(),zones(),TRIP_DISREGARD_CFG);
+    if(res.changed){
+      setTrips(res.trips);
+      try{ GeoLog.add('info','Disregard zones: '+res.changed+' trip(s) reclassified'); }catch(_){}
+    }
+    return res.changed;
+  }catch(e){
+    try{ GeoLog.add('error','Disregard classify failed: '+e.message); }catch(_){}
+    return 0;
+  }
+}
+
 // ── Main render ──────────────────────────────────────────────────────────────
 function renderTrips(){
   var wrap=document.querySelector('#screen-trips .tl-wrap'); if(!wrap) return;
   if(!tlMonth) tlMonth=tlDefaultMonth();
   tlSyncIntraSite();                    // settle on-site flags before any maths reads them
+  tlSyncDisregard();                    // …and the v104.6 disregard flags
   var isActive=document.getElementById('screen-trips').classList.contains('active');
   var vs=vehicles(), all=trips();
   // First-run: nothing to review and nowhere to attribute km.
@@ -11368,10 +11504,64 @@ function tlRenderSheet(row){
   }
   var segs=daySegments(row.trips);
   body.innerHTML=segs.map(function(s,i){ return tlSegHtml(s,i); }).join('')+
+    '<div class="tl-seg-note">Press and hold a trip to remove it.</div>'+
     (plan.skip.length?('<div class="tl-seg-note">'+plan.skip.length+' trip'+(plan.skip.length===1?'':'s')+
       ' can\'t be approved in bulk — no category and nothing to suggest one. Tag '+
       (plan.skip.length===1?'it':'them')+' above.</div>'):'');
+  tlWireRows();
 }
+
+// v104.6 — press and hold a trip to remove it. Deliberately the SAME gesture,
+// threshold and scroll-cancel as the Loads sheet (ldWireRows): one interaction
+// language across the two review screens, and a destructive action that takes
+// deliberate effort rather than sitting as a fourth button next to Skip.
+//
+// Skip and Delete are NOT the same thing and the copy says so: Skip returns a
+// trip to the review queue and KEEPS it; Delete removes the GPS record.
+function tlWireRows(){
+  var body=document.getElementById('tl-sheet-body'); if(!body) return;
+  Array.prototype.forEach.call(body.querySelectorAll('[data-trip]'),function(el){
+    var id=el.getAttribute('data-trip'), timer=null, fired=false, sx=0, sy=0;
+    var start=function(x,y){
+      fired=false; sx=x; sy=y;
+      timer=setTimeout(function(){
+        fired=true;
+        try{ if(navigator.vibrate) navigator.vibrate(25); }catch(_){}
+        confirmDeleteTrip(id);
+      },500);
+    };
+    var cancel=function(){ if(timer){ clearTimeout(timer); timer=null; } };
+    el.addEventListener('touchstart',function(e){ var t=e.touches[0]; start(t.clientX,t.clientY); },{passive:true});
+    el.addEventListener('touchmove',function(e){
+      var t=e.touches[0];
+      if(Math.abs(t.clientX-sx)>10||Math.abs(t.clientY-sy)>10) cancel();   // a scroll is not a press
+    },{passive:true});
+    el.addEventListener('touchend',cancel);
+    el.addEventListener('touchcancel',cancel);
+    el.addEventListener('mousedown',function(e){ start(e.clientX,e.clientY); });
+    el.addEventListener('mouseup',cancel);
+    el.addEventListener('mouseleave',cancel);
+    el.addEventListener('contextmenu',function(e){ e.preventDefault(); cancel(); fired=true; confirmDeleteTrip(id); });
+  });
+}
+function confirmDeleteTrip(id){
+  var t=trips().filter(function(x){ return x.id===id; })[0];
+  if(!t){ toast('Trip not found'); return false; }
+  var what=(t.from_label||t.to_label)
+    ? ((t.from_label||'Start')+' → '+(t.to_label||'End'))
+    : ((+t.distance_km||0).toFixed(1)+' km trip');
+  if(!confirm('Delete this trip?\n\n'+what+' · '+fmtDate(t.date)+
+              '\n\nThis removes it from the log for good. To keep it but leave it uncategorised, use Skip instead.')) return false;
+  setTrips(deleteTripFrom(trips(),id));            // → localStorage + Firestore (SYNC_KEYS)
+  try{ GeoLog.add('info','Trip '+id+' deleted by user'); }catch(_){}
+  try{ if(navigator.vibrate) navigator.vibrate(15); }catch(_){}
+  toast('Trip deleted');
+  renderTrips();
+  var row=tlSel?tlDayRow(tlSel):null;
+  if(row&&row.count) tlRenderSheet(row); else tlCloseSheet();
+  return true;
+}
+window.tlWireRows=tlWireRows; window.confirmDeleteTrip=confirmDeleteTrip;
 function tlSegHtml(s,i){
   var route=(s.from||s.to)?((s.from||'Start')+' → '+(s.to||'End')):('Trip '+(i+1));
   var when=fmtTime(s.start_time)+(s.end_time?('–'+fmtTime(s.end_time)):'')+' · '+s.min+' min';
@@ -11381,6 +11571,19 @@ function tlSegHtml(s,i){
       '<div class="tl-seg-when">'+when+(s.status==='approved'?' · ✓ approved':'')+'</div>'+
     '</div><div><div class="tl-seg-km">'+s.km.toFixed(1)+'<span style="font-size:11px;font-weight:600"> km</span></div>'+
       '<div class="tl-seg-kmh">'+(s.kmh>0?(s.kmh.toFixed(0)+' km/h avg'):'&nbsp;')+'</div></div></div>';
+  // v104.6 — a disregarded trip is only ever on screen under its own filter, so
+  // this is the "why is this hidden, and how do I get it back" row.
+  if(s.disregarded){
+    var zName='';
+    try{
+      var zm=zones().filter(function(x){ return x.id===s.disregardZone; })[0];
+      zName=zm?(zm.name||''):'';
+    }catch(_){}
+    return '<div class="tl-seg is-onsite" id="tlseg-'+s.id+'" data-trip="'+s.id+'">'+head+
+      '<div class="tl-seg-onsite">🏠 Not recorded'+(zName?(' · inside '+escHtml(zName)):'')+'</div>'+
+      '<div class="tl-seg-note"><a href="#" onclick="event.preventDefault();tlUndisregard(\''+s.id+'\')" style="color:var(--accent)">Put this back in the log →</a></div>'+
+    '</div>';
+  }
   // On-site movement: shown so it is never a mystery where the km went, but
   // greyed and given no category buttons — it is neither business nor private.
   // The one action offered is the escape hatch, because a fence that is too big
@@ -11393,13 +11596,13 @@ function tlSegHtml(s,i){
       var sm=sites().filter(function(x){ return (x.id||x.name)===s.siteName; })[0];
       siteLabel=sm?(sm.name||''):'';
     }catch(_){}
-    return '<div class="tl-seg is-onsite" id="tlseg-'+s.id+'">'+head+
+    return '<div class="tl-seg is-onsite" id="tlseg-'+s.id+'" data-trip="'+s.id+'">'+head+
       '<div class="tl-seg-onsite">🚜 On-site movement'+(siteLabel?(' · '+escHtml(siteLabel)):'')+
         ' — not counted as travel</div>'+
       '<div class="tl-seg-note"><a href="#" onclick="event.preventDefault();tlMarkAsTravel(\''+s.id+'\')" style="color:var(--accent)">Count this as travel →</a></div>'+
     '</div>';
   }
-  return '<div class="tl-seg'+(s.status==='approved'?' is-approved':'')+'" id="tlseg-'+s.id+'">'+head+
+  return '<div class="tl-seg'+(s.status==='approved'?' is-approved':'')+'" id="tlseg-'+s.id+'" data-trip="'+s.id+'">'+head+
     '<div class="tl-seg-btns">'+
       '<button class="tl-cat-btn'+(s.category==='business'?' on':'')+'" onclick="tlSetCat(\''+s.id+'\',\'business\')">Business</button>'+
       '<button class="tl-cat-btn'+(isPrivate?' on-private':'')+'" onclick="tlSetCat(\''+s.id+'\',\'personal\')">Private</button>'+
@@ -11425,6 +11628,21 @@ function tlMarkAsTravel(id){
   if(row&&row.count) tlRenderSheet(row);
 }
 window.tlMarkAsTravel=tlMarkAsTravel;
+// v104.6 — the same escape hatch tlMarkAsTravel gives on-site trips: a circle
+// drawn too big must be correctable, and the correction must stick.
+function tlUndisregard(id){
+  var all=trips();
+  var i=-1; all.forEach(function(t,n){ if(t.id===id) i=n; });
+  if(i<0) return;
+  all[i]=undisregardTrip(all[i]);
+  setTrips(all);
+  try{ GeoLog.add('info','Trip '+id+' put back in the log (disregard overridden)'); }catch(_){}
+  toast('Back in the log — now needs a category');
+  renderTrips();
+  var row=tlSel?tlDayRow(tlSel):null;
+  if(row&&row.count) tlRenderSheet(row); else tlCloseSheet();
+}
+window.tlUndisregard=tlUndisregard;
 // Commit a category decision. 'skip' sends the trip back to pending — the
 // deliberate escape hatch for "I don't want to decide this now" and for undoing
 // a mis-tap, which is why approval is a stamp and not a lock.
