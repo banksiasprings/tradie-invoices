@@ -64,6 +64,29 @@ console.log('── PIN: test_settings_sections_collapse_and_expand ────
      c.filter(x => x.defaultCollapsed).length >= 15, c.filter(x => x.defaultCollapsed).length);
 }
 
+console.log('\n── PIN: test_setup_health_card_collapses_via_shared_primitive ──');
+{
+  const c = cards();
+  const health = c.find(x => x.key === 'health');
+  ok('PIN: Setup Health is a normal Settings card, not a special widget', !!health, c.map(x => x.key));
+  ok('PIN: …using the same collapsible primitive as every other section', health.collapsible);
+  ok('PIN: …with a stable key', health.key === 'health');
+  // The actual v105.0 bug: its title sits in a flex row beside the status pill,
+  // so the auto-wrap took `title.nextSibling` — the PILL — as the whole body.
+  const card = SETTINGS.slice(SETTINGS.indexOf('id="health-card"'));
+  const head = card.slice(0, card.indexOf('id="health-check-list"'));
+  ok('PIN: its title really is nested next to the pill (the shape that broke it)',
+     /<div style="display:flex[^>]*>\s*<div class="card-title"/.test(head) && /health-pill/.test(head));
+  ok('PIN: the wrap now starts from the title\'s top-level ancestor, not the title',
+     /while\(anchor\.parentNode && anchor\.parentNode!==card\) anchor=anchor\.parentNode;/.test(html));
+  ok('PIN: …and walks siblings of THAT', /while\(anchor\.nextSibling\) body\.appendChild\(anchor\.nextSibling\);/.test(html));
+  ok('PIN: the old title-sibling wrap is gone',
+     !/while\(title\.nextSibling\) body\.appendChild\(title\.nextSibling\);/.test(html));
+  ok('PIN: Setup Health has no hand-written .card-body that would mask the bug',
+     !head.includes('card-body'));
+  ok('PIN: it opens by default — it is the card he needs to see', !health.defaultCollapsed);
+}
+
 console.log('\n── PIN: test_settings_last_expanded_state_persists_across_launches ──');
 {
   const c = cards();
@@ -88,6 +111,34 @@ console.log('\n── PIN: test_settings_last_expanded_state_persists_across_lau
   ok('PIN: …exactly once', /if\(s\._cardStateMigrated\) return;/.test(html));
   ok('PIN: …and migration never overwrites a newer choice', /if\(!k\|\|st\[k\]!=null\) return;/.test(html));
 }
+
+console.log('\n── PIN: test_setup_health_collapse_state_persists_across_launches ──');
+ok('PIN: Setup Health stores its state the same way as every other card',
+   /function setCardState[\s\S]{0,400}DB\.set\('settings',s\);/.test(html));
+ok('PIN: …in the synced settings blob, so it survives a reinstall',
+   /s\.cardState=st;/.test(html) && /const SYNC_KEYS = \[[^\]]*'settings'/.test(html));
+ok('PIN: …and nothing special-cases the health card out of the loop',
+   !/health-card[^\n]{0,80}collaps/i.test(html.replace(/data-collapse-key="health"/g, '')));
+
+console.log('\n── PIN: test_all_health_fix_buttons_have_a_working_final_fallback ──');
+ok('PIN: an old APK that answers without a route is DETECTED, not ignored',
+   /r\.value\.opened !== false/.test(html) && /APK predates v104\.4/.test(html));
+ok('PIN: …and says the app needs installing', /This needs the latest app installed/.test(html));
+ok('PIN: …shows the manual steps anyway', /toast\('This needs the latest app installed[\s\S]{0,120}showManualSteps\(target\)/.test(html));
+ok('PIN: …and records it for off-device diagnosis', /native returned no route for/.test(html));
+ok('PIN: a hard "nothing opened" still shows the steps', /found no page for/.test(html) && /this\.showManualSteps\(target\)/.test(html));
+ok('PIN: a rejected call still toasts', /Couldn.t open settings — open them manually/.test(html));
+ok('PIN: no bridge at all still points at phone Settings', /Open your phone Settings › Apps/.test(html));
+ok('PIN: a hung call still says something', /Opening phone settings…/.test(html));
+ok('PIN: every fix row carries a manual-steps link regardless',
+   /Not working\? See the steps/.test(html));
+ok('PIN: so there is no path where a tap does nothing at all', (() => {
+    const fn = html.slice(html.indexOf('  async fix(target){'), html.indexOf('  // v104.4 — "just show me how"'));
+    // Every branch that returns must have produced feedback first.
+    const returns = (fn.match(/return (?:true|false);/g) || []).length;
+    const feedback = (fn.match(/toast\(/g) || []).length;
+    return returns >= 4 && feedback >= 4;
+  })());
 
 console.log('\n── PIN: test_settings_duplication_removed_only_one_canonical_affordance_per_function ──');
 {

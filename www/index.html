@@ -2462,7 +2462,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v105.0';
+const APP_VERSION = 'v105.1';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -6854,11 +6854,20 @@ function initCollapsibleCards(){
   var st=cardStateStore();
   document.querySelectorAll('#screen-settings .card-collapsible').forEach(card=>{
     const title=card.querySelector('.card-title');if(!title)return;
-    // Wrap body content once
+    // Wrap body content once.
+    //
+    // v105.1 — wrap from the title's TOP-LEVEL ancestor within the card, not from
+    // the title element. Setup Health puts its title inside a flex row next to
+    // the status pill, so `title.nextSibling` was the PILL — the auto-wrap made a
+    // .card-body containing only that, and collapsing hid a badge while the rest
+    // of the card stayed put. It was the one card in Settings shaped that way,
+    // which is why only it "wasn't minimising".
     if(!card.querySelector('.card-body')){
+      let anchor=title;
+      while(anchor.parentNode && anchor.parentNode!==card) anchor=anchor.parentNode;
       const body=document.createElement('div');
       body.className='card-body';
-      while(title.nextSibling) body.appendChild(title.nextSibling);
+      while(anchor.nextSibling) body.appendChild(anchor.nextSibling);
       card.appendChild(body);
     }
     // A missing data-collapse-key is a bug, not a fallback: a title-derived key
@@ -8756,6 +8765,20 @@ const Health = {
       if(r.value.route === 'app-details' && (target === 'manufacturer' || target === 'battery')){
         toast('Opened this app\'s settings — now tap Battery, then Unrestricted');
       }
+    } else if(r.ok && r.value && r.value.opened !== false){
+      // v105.1 — the native side said "opened" but named no page. `route` is only
+      // returned by the v104.4+ Java, so this is an APK older than the intent fix
+      // running newer JS pulled over the air. On that build the Motorola branch
+      // fires the battery-exemption dialog, which Android closes instantly and
+      // silently when the app is already exempt — reports success, shows nothing.
+      // Steven's field log is exactly this: "Health fix requested" with neither
+      // outcome line behind it, twice, on v105.0.
+      //
+      // Same rule as the v92.1 health bridge: JS ahead of the APK must SAY SO.
+      try{ GeoLog.add('error','Health fix: native returned no route for '+target+' — APK predates v104.4'); }catch(_){}
+      toast('This needs the latest app installed — here are the steps meanwhile');
+      this.showManualSteps(target);
+      return false;
     }
     if(!r.ok && !r.timedOut){
       console.warn('[Health] openHealthFix failed:', r.error);

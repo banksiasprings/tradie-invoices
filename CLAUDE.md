@@ -22,11 +22,11 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v105.0 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v105.1 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.105.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
-| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.105.0 / versionCode 14 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.105.1 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.105.1 / versionCode 15 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -879,6 +879,69 @@ buttons against a stubbed bridge, and drives all three failure states plus
 reject / `opened:false` / no-bridge / throwing-run. No emulator needed. (This
 also fills the gap noted in v101.6: `test-health.js` was referenced but absent.)
 
+### v105.1 — Setup Health wouldn't collapse; tap-to-fix was silent on an old APK
+
+**Both diagnosed off-device.** Wireless debugging was reportedly on, but the
+phone could not be reached from here (see the note at the end) — so this was
+settled the way the hard ones on this project always have been: the mirrored
+Firestore GeoLog, plus reading the actual shape of the DOM.
+
+**Bug 1 — Setup Health didn't minimise.** It is a completely ordinary Settings
+card using the shared primitive; nothing special about its render path. But it is
+the **only** card in Settings whose `.card-title` sits *nested* inside a flex row
+next to its status pill. `initCollapsibleCards` wrapped `while(title.nextSibling)`
+— and the title's only sibling is the **pill**. So `.card-body` ended up holding
+a badge, and collapsing hid the badge while the checks, summary and Re-check
+button stayed exactly where they were.
+
+Fix: walk up to the title's **top-level ancestor within the card** and wrap that
+element's siblings. One line of intent, and it makes the primitive shape-agnostic
+so the next nested-title card can't repeat it.
+
+**Bug 2 — tap-to-fix still silent.** The field log settled it in one read:
+
+```
+20:30:45  App started (v105.0)
+20:31:23  Health fix requested: manufacturer
+20:31:24  Health fix requested: manufacturer
+```
+
+v104.4's JS logs an outcome on **every** path — `Health fix opened: … → <route>`
+or `found no page for`. **Neither appears.** That means native returned
+`opened:true` with **no `route` field** — and `route` only exists in the
+**v104.4+ Java**. His APK predates the intent fix: he has been taking JS over the
+air (v104.1 → .3 → .4 → .8 → v105.0 in the log) while the native side stayed put.
+On that build the Motorola branch fires the battery-exemption dialog, which
+Android closes instantly and silently because he is already exempt, and reports
+success — so the v104.4 JS correctly stayed quiet about a lie.
+
+**The v104.4 native fix is correct and already written. It has never been on his
+phone.** So v105.1 makes the JS notice: a response with `opened !== false` but
+**no `route`** is treated as *"this APK predates the fix"* → toast + the manual
+steps open automatically + a GeoLog line. That is the v92.1 rule again — **JS
+ahead of the APK must say so**, never fail silently. It means the button does
+something useful on his current phone the moment the OTA lands, APK or not.
+
+**Don't reintroduce:** wrapping a card body from the title's siblings; a native
+response treated as success without checking it named a page; any fix path that
+can return without feedback.
+
+**Tests:** `test-settings.js` (105 pure) · `test-settings-live.js` (70 live) —
+including the real card collapsing and *shrinking on screen*, the body containing
+the checks rather than the pill, survival across a relaunch, and a stubbed
+pre-v104.4 native response proving the tap is no longer silent while a v104.4+
+response is **not** nagged to update.
+
+⚠️ **Could not reach the phone.** Tailscale showed `steven-phone` offline (6 h);
+`adb mdns services` listed nothing (Android 11+ wireless debugging advertises
+`_adb-tls-connect._tcp` — absent); a full LAN sweep of 19 hosts found exactly one
+adb-like endpoint (`192.168.1.163:49152`) which refuses the handshake with no
+pairing service advertised. **Android 11+ wireless debugging needs a one-time
+pairing code read off the phone** (Developer options → Wireless debugging → Pair
+device with pairing code), and the port changes each time it is re-enabled.
+Until that is done, the Firestore mirror remains the diagnostic channel — and it
+was sufficient for both of these.
+
 ### v105.0 — Settings: collapsible, de-duplicated, auto-saving
 Satisfies **BACKLOG line 185** ("Collapsible Settings tabs", queued 2026-07-29
 for v105), plus two things Steven raised with it.
@@ -1527,10 +1590,10 @@ node test-disregard.js            # 60 pure   · trip delete + "don't record her
 node test-edit-rows.js            # 62 pure   · edit a lap's duration / a trip's times
 node test-trip-popup.js           # 41 pure   · no trip-end popup by default + tab count
 node test-tap-summary.js          # 71 pure   · tap/hold mutex + invoice auto-summary
-node test-settings.js             # 83 pure   · collapsible + dedupe + auto-save structure
-node test-settings-live.js        # 46 live   · auto-save, offline retry, collapse across relaunch
+node test-settings.js             # 105 pure  · collapsible + dedupe + auto-save + v105.1 pins
+node test-settings-live.js        # 70 live   · auto-save, offline retry, collapse across relaunch
 ```
-Full suite as of v105.0: **1128 pure + 683 live**. Live suites drive rows with **PointerEvent**, not TouchEvent — the
+Full suite as of v105.1: **1150 pure + 707 live**. Live suites drive rows with **PointerEvent**, not TouchEvent — the
 row gestures moved to Pointer Events in v104.9 and a TouchEvent press now reaches
 nothing. Live suites bind fixed HTTP + CDP ports, so a killed run leaves the port held and the next one dies with
 `EADDRINUSE` — `lsof -ti tcp:<port> | xargs kill -9` clears it. Live fixtures that
@@ -1807,7 +1870,7 @@ look for `REJECTED` entries in the mirrored GeoLog.
   tap a lap to draw it, press and hold to retime or flag it. Daily rollup = loads · **median**
   cycle time · LCM³ (loads × truck capacity) · productive hours, and **only that rollup** reaches
   the invoice. Retires the v102.0 Circuits pane in the same commit. See "v104.0 — Loads" above.
-  **Verified:** 190 pure + 161 live (both pins); full suite 1128 pure + 683 live green; money
+  **Verified:** 190 pure + 161 live (both pins); full suite 1150 pure + 707 live green; money
   paths proven unmoved by a dollar-figure diff with the block on/off and with laps flagged.
   Screenshots in `plans/v104-shots/`. **v104.1** (same day) makes the four zone CTAs
   deep-link straight to the Zones card in Settings instead of the top of the screen —
@@ -1835,6 +1898,9 @@ look for `REJECTED` entries in the mirrored GeoLog.
   **v105.0** makes every Settings section collapsible with state that actually persists
   (it was keyed off title text in unsynced localStorage), removes the duplicated app/data
   buttons, and replaces the Save Settings button with auto-save. Satisfies BACKLOG line 185.
+  **v105.1** fixes Setup Health not collapsing (its title is nested beside the status pill, so
+  the auto-wrap grabbed the pill as the body) and makes tap-to-fix speak up when the APK
+  predates the v104.4 native intent fix — which the field log proves Steven's does.
 - **v103.0 — one zone system: circuits + sub-activities** — SHIPPED 2026-07-29 (Opus 5).
   Generalises the v102.0 circuit timer into a single geofence primitive read three ways
   (worksite / circuit pair / nested sub-activity). Steven's charcoal case: a small zone inside

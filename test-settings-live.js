@@ -260,6 +260,95 @@ const BOOT = `(function(){
       return got ? got.text().then(function(t){ return /cardState/.test(t); }) : false;
     })()`));
 
+  console.log('\n── PIN: Setup Health actually minimises now ─────────────────────');
+  ok('PIN: the card is on screen', await ev(`!!document.getElementById('health-card')`));
+  ok('PIN: …and is collapsible', await ev(`document.getElementById('health-card').classList.contains('card-collapsible')`));
+  // The v105.0 bug in one assertion: the wrapped body must contain the CHECKS,
+  // not just the status pill that happens to sit beside the title.
+  const bodyHas = await ev(`(function(){
+    var b=document.querySelector('#health-card .card-body');
+    if(!b) return null;
+    return { pillOnly: b.children.length===1 && !!b.querySelector('#health-pill'),
+             hasList: !!b.querySelector('#health-check-list'),
+             hasSummary: !!b.querySelector('#health-summary'),
+             kids: b.children.length };
+  })()`);
+  ok('PIN: the body wrapped the real content, not just the pill', bodyHas && !bodyHas.pillOnly, bodyHas);
+  ok('PIN: …it contains the check list', bodyHas && bodyHas.hasList, bodyHas);
+  ok('PIN: …and the summary line', bodyHas && bodyHas.hasSummary, bodyHas);
+  const heightOpen = await ev(`document.getElementById('health-card').offsetHeight`);
+  await ev(`document.querySelector('#health-card .card-title').click()`);
+  await sleep(300);
+  ok('PIN: tapping the header collapses it',
+     await ev(`document.getElementById('health-card').classList.contains('collapsed')`));
+  const heightShut = await ev(`document.getElementById('health-card').offsetHeight`);
+  ok('PIN: …and it really shrinks on screen', heightShut < heightOpen / 2, { open: heightOpen, shut: heightShut });
+  ok('PIN: …the checks are actually hidden',
+     await ev(`document.getElementById('health-check-list').offsetParent === null`));
+  ok('PIN: …and the Re-check button too', await ev(`(function(){
+      var b=Array.prototype.find.call(document.querySelectorAll('#health-card button'),
+        function(x){return /Re-check/.test(x.textContent);});
+      return !b || b.offsetParent===null; })()`));
+  await ev(`document.querySelector('#health-card .card-title').click()`);
+  await sleep(300);
+  ok('PIN: tapping again expands it', await ev(`!document.getElementById('health-card').classList.contains('collapsed')`));
+  ok('PIN: …back to full height', (await ev(`document.getElementById('health-card').offsetHeight`)) > heightShut * 2);
+
+  console.log('\n── PIN: Setup Health collapse persists across a relaunch ────────');
+  await ev(`document.querySelector('#health-card .card-title').click()`);
+  await sleep(300);
+  ok('collapsed and stored', await ev(`(JSON.parse(localStorage.getItem('mcn_settings')).cardState||{}).health`) === 'collapsed');
+  ok('PIN: app relaunches', await boot() === 'ok');
+  ok('PIN: Setup Health is STILL collapsed after a relaunch',
+     await ev(`document.getElementById('health-card').classList.contains('collapsed')`));
+  ok('PIN: …and the body is still correctly wrapped after the rebuild',
+     await ev(`!!document.querySelector('#health-card .card-body #health-check-list')`));
+  await ev(`document.querySelector('#health-card .card-title').click()`);
+  await sleep(200);
+
+  console.log('\n── PIN: an APK older than v104.4 no longer fails silently ───────');
+  // Exactly what Steven's phone returns: opened:true, and NO route field —
+  // because `route` only exists in the v104.4+ Java.
+  await ev(`(function(){
+    window.__TOASTS=[]; var _t=window.toast; window.toast=function(m){window.__TOASTS.push(m); return _t(m);};
+    window.Capacitor={ isNativePlatform:function(){return true;},
+      Plugins:{NativeGeo:{
+        getHealthStatus:function(){ return Promise.resolve({fineLocation:'granted',backgroundLocation:'granted',
+          batteryExempt:true,playServices:'success',playServicesCode:0,standbyBucket:10,
+          manufacturer:'motorola',hasKnownKiller:true,bootReceiver:true,fgsLocationDeclared:true,
+          postNotifications:'granted',tripLogging:{enabled:true,running:true}}); },
+        openHealthFix:function(o){ return Promise.resolve({target:o&&o.target, opened:true}); }  // pre-v104.4: no route
+      }}};
+    Health.closeManualSteps();
+  })()`);
+  await ev(`Health.recheck()`); await sleep(600);
+  await ev(`window.__TOASTS=[]`);
+  await ev(`Health.fix('manufacturer')`); await sleep(500);
+  ok('PIN: the tap is no longer silent', (await ev(`window.__TOASTS.length`)) > 0, await ev(`JSON.stringify(window.__TOASTS)`));
+  ok('PIN: …it says the app needs installing',
+     /latest app installed/.test(await ev(`JSON.stringify(window.__TOASTS)`)), await ev(`JSON.stringify(window.__TOASTS)`));
+  ok('PIN: …and shows the manual steps meanwhile',
+     await ev(`document.getElementById('health-steps-modal').classList.contains('open')`));
+  ok('PIN: …which are Motorola-specific',
+     /Motorola/.test(await ev(`document.getElementById('health-steps-title').textContent`)));
+  ok('PIN: …naming the real path', (() => true)() &&
+     /Unrestricted/.test(await ev(`document.getElementById('health-steps-body').innerHTML`)));
+  ok('PIN: …and it is recorded for off-device diagnosis', await ev(`(function(){
+      return (DB.def('geoLog',[])||[]).some(function(e){ return /native returned no route/.test(e.detail||''); }); })()`));
+  // A v104.4+ APK reports a route and must NOT get the update nag.
+  await ev(`(function(){
+    window.Capacitor.Plugins.NativeGeo.openHealthFix=function(o){
+      return Promise.resolve({target:o&&o.target, opened:true, route:'app-details'}); };
+    window.__TOASTS=[]; Health.closeManualSteps();
+  })()`);
+  await ev(`Health.fix('manufacturer')`); await sleep(400);
+  ok('PIN: a current APK is not nagged to update',
+     !/latest app installed/.test(await ev(`JSON.stringify(window.__TOASTS)`)), await ev(`JSON.stringify(window.__TOASTS)`));
+  ok('PIN: …it is told where it landed instead',
+     /Battery/.test(await ev(`JSON.stringify(window.__TOASTS)`)));
+  ok('PIN: …and no steps modal is forced open',
+     (await ev(`document.getElementById('health-steps-modal').classList.contains('open')`)) === false);
+
   console.log('\nA fresh install still gets sensible defaults');
   await ev(`localStorage.removeItem('mcn_settings')`);
   ok('relaunch with no settings at all', await boot() === 'ok');
