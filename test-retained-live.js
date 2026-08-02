@@ -472,7 +472,7 @@ const BOOT = `(function(){
     ok('the review screen explains an empty state', /Nothing is being excluded/.test(emptyReview), emptyReview.slice(0, 80));
   }
 
-  console.log('\n── PIN: test_today_tab_goal_hero_with_honest_pace ─────────────────');
+  console.log('\n── PIN: test_today_tab_has_no_goal_hero_live ──────────────────────');
   {
     /* Steven's REAL FY2026-27 shape, read off the synced Firestore blob on
        2026-08-03: 11 days across 3 weeks (15.75h / 17.5h / 32.28h), 2 weeks with
@@ -493,74 +493,68 @@ const BOOT = `(function(){
       localStorage.setItem('mcn_days', JSON.stringify(D));
       var s=JSON.parse(localStorage.getItem('mcn_settings')||'{}');
       s.rate=60; s.annualEarningsGoal=140400; s.weeklyHrsGoal=45; delete s.retention;
-      delete s.showGoalOnToday; delete s.goalPaceCaveat;
       localStorage.setItem('mcn_settings', JSON.stringify(s));
       return D.length;})()`);
     await ev(`showScreen('checkin')`); await sleep(500);
 
-    const h = await ev(`(function(){var c=document.querySelector('#today-goal-slot .gh-card');
-      if(!c) return null;
-      return {now:c.querySelector('.gh-now').textContent.trim(),
-              of:c.querySelector('.gh-of').textContent.trim(),
-              pct:c.querySelector('.gh-pct').textContent.trim(),
-              fill:c.querySelector('.gh-fill').style.width,
-              pace:c.querySelector('.gh-pace').textContent.replace(/\\s+/g,' ').trim(),
-              notes:[].map.call(c.querySelectorAll('.gh-note div'),function(n){return n.textContent.replace(/\\s+/g,' ').trim();}),
-              more:!!c.querySelector('.gh-more'),
-              right:Math.round(c.getBoundingClientRect().right)};})()`);
-
-    ok('PIN: the hero renders on the Today tab', !!h);
-    ok('PIN: it shows the retained figure', h.now === '$3,932.00', h.now);
-    ok('…against his real target', h.of === 'of $140,400.00', h.of);
-    ok('…as a percentage', h.pct === '2.8%', h.pct);
-    ok('the bar matches', h.fill === '2.8%', h.fill);   // CSS normalises 2.80% → 2.8%
-    // The gap grows with the wall clock (the straight-line target advances every
-    // hour), so this is pinned to the band, not to a cent. Steven's screenshot
-    // read $8,804.17; an offline replay at midnight gives $8,796.57.
-    ok('PIN: the behind-target number STANDS, unsoftened',
-       /Behind by \$8,[78]\d\d\.\d\d on a straight-line target\./.test(h.pace), h.pace);
-    ok('PIN: the note says how many weeks he actually worked',
-       /5 weeks into the year, 3 of them with hours logged/.test(h.notes[0] || ''), h.notes[0]);
-    ok('PIN: …and what those weeks looked like',
-       /21\.8h\/wk and \$1,31\d/.test(h.notes[0] || ''), h.notes[0]);
-    ok('…plus the early-FY explanation', /still early in the financial year/.test((h.notes[1] || '')), h.notes[1]);
-    ok('PIN: the note never claims he is on track',
-       !h.notes.some(n => /on track|on pace|caught up/i.test(n)), h.notes);
-    ok('it offers the full breakdown', h.more);
-    ok('the hero fits 375px', h.right <= 375, h.right);
+    /* v107.0 — the hero shipped in v106.1 is gone. Steven asked for it removed
+       outright, not hidden behind a setting, so this asserts the DOM is clean
+       rather than that a toggle is off: a hero that renders when some key is
+       missing would satisfy the second and fail the actual request. */
+    const gone = await ev(`(function(){return {
+      slot:!!document.getElementById('today-goal-slot'),
+      card:!!document.querySelector('.gh-card'),
+      anyGh:!!document.querySelector('[class*="gh-"]'),
+      fn:typeof window.renderTodayGoalHero,
+      idle:!!document.getElementById('checkin-idle')};})()`);
+    ok('PIN: no hero slot in the Today DOM', !gone.slot);
+    ok('PIN: no hero card anywhere on the page', !gone.card && !gone.anyGh);
+    ok('PIN: renderTodayGoalHero is not defined', gone.fn === 'undefined');
+    ok('Today still renders its own content', gone.idle);
     ok('the page does not scroll sideways', await ev(`document.documentElement.scrollWidth`) <= 375);
-    await shot('04-today-hero-375', '#today-goal-slot .gh-card');
-    await shotViewport('05-today-tab-375');
+    await shotViewport('05-today-tab-no-hero-375');
 
-    // The Stats widget must agree — same tally, same target, one source.
+    // The Stats widget is untouched and still the one place the goal lives.
     await ev(`showScreen('analytics')`); await sleep(400);
-    ok('the Stats widget shows the same number',
+    ok('the Stats goal widget still shows his real number',
        await ev(`document.querySelector('#goal-widget .gw-now').textContent.trim()`) === '$3,932.00');
     ok('PIN: nothing is excluded this FY — the tally has no passthrough',
        await ev(`retainedYtd(fyForDate(new Date('2026-08-03'))).tally.passthrough`) === 0);
     ok('PIN: …so the review CTA is correctly absent',
        !(await ev(`!!document.querySelector('#goal-widget .gw-review')`)));
 
-    // The caveat is a toggle, not a permanent fixture.
-    await ev(`var s=S(); s.goalPaceCaveat=false; DB.set('settings',s);`);
-    await ev(`showScreen('checkin')`); await sleep(400);
-    const off = await ev(`(function(){var c=document.querySelector('#today-goal-slot .gh-card');
-      return {note:!!c.querySelector('.gh-note'), pace:c.querySelector('.gh-pace').textContent.trim()};})()`);
-    ok('PIN: turning the caveat off removes the note', !off.note);
-    ok('PIN: …and the behind-target figure is still there', /Behind by/.test(off.pace), off.pace);
-
-    // The whole hero is switchable too.
-    await ev(`var s=S(); s.showGoalOnToday=false; DB.set('settings',s);`);
-    await ev(`showScreen('checkin')`); await sleep(400);
-    ok('turning the hero off empties the slot',
-       await ev(`document.getElementById('today-goal-slot').innerHTML.trim()`) === '');
-    ok('…and Today still renders its own content',
-       await ev(`!!document.getElementById('checkin-idle')`));
-
-    await ev(`var s=S(); delete s.showGoalOnToday; delete s.goalPaceCaveat; DB.set('settings',s);`);
-    await ev(`showScreen('checkin')`); await sleep(300);
-    ok('absence of the keys reads as ON',
-       await ev(`!!document.querySelector('#today-goal-slot .gh-card')`));
+    /* The pace reasoning the hero used is KEPT, and now feeds the home-screen
+       widget. Driven here through the real collectWidgetSnapshot() against his
+       real FY, so the widget's figures are proven to be the app's figures. */
+    const snap = await ev(`JSON.stringify(collectWidgetSnapshot(new Date('2026-08-03T09:00:00')))`);
+    const S107 = JSON.parse(snap);
+    ok('PIN: the snapshot carries the same retained total', S107.retained === 3932, S107.retained);
+    ok('…and the same target', S107.target === 140400, S107.target);
+    // En-dash, as fyLabelYr writes it. Carried verbatim into the widget: an
+    // Android TextView is UTF-8, so unlike the v101 PDF exporter (WinAnsi) there
+    // is no character to sanitise on the way out.
+    ok('…and his FY label', S107.fyLabel === 'FY2026–27', S107.fyLabel);
+    ok('PIN: the widget verdict STANDS, unsoftened',
+       /^Behind by \$8,\d\d\d on a straight-line target\.$/.test(S107.gapText), S107.gapText);
+    ok('PIN: the widget never claims he is on track',
+       !/on track|on pace|caught up/i.test(S107.gapText + ' ' + (S107.paceNote || '')),
+       S107.gapText + ' | ' + S107.paceNote);
+    ok('PIN: the pace note says how many weeks actually had hours',
+       /3 of 5 weeks had hours/.test(S107.paceNote || ''), S107.paceNote);
+    ok('…and what those weeks looked like', /21\.8h\/wk, \$1,31\d each/.test(S107.paceNote || ''), S107.paceNote);
+    ok('the week buckets are the real ones', S107.weeks.length === 3, S107.weeks.length);
+    ok('…keyed by Monday, ascending',
+       S107.weeks.map(w => w.k).join(',') === '2026-06-29,2026-07-06,2026-07-27',
+       S107.weeks.map(w => w.k).join(','));
+    ok('…carrying his real hours', S107.weeks.map(w => w.h).join(',') === '15.75,17.5,32.28',
+       S107.weeks.map(w => w.h).join(','));
+    ok('worked weeks vs elapsed weeks are separated',
+       S107.workedWeeks === 3 && S107.elapsedWeeks === 5,
+       S107.workedWeeks + '/' + S107.elapsedWeeks);
+    ok('PIN: effective rate is HIS rate, not the passthrough', S107.effectiveRate === 60, S107.effectiveRate);
+    ok('the weekly hours goal rides along', S107.weekGoalHours === 45, S107.weekGoalHours);
+    ok('milestones are derived, three of them', S107.milestones.length === 3);
+    ok('state is the honest one', S107.state === 'behind', S107.state);
   }
 
   console.log('\n── PIN: test_effective_rate_excludes_passthrough_live ─────────────');

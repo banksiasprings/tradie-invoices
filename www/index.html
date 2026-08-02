@@ -616,24 +616,6 @@
   .gw-empty{font-size:12.5px;line-height:1.55;color:#fff;opacity:.75;margin-top:4px}
   @media(max-width:360px){ .gw-now{font-size:32px} .gw-card{padding:16px 13px 14px} }
 
-  /* v106.1 — compact goal hero on the Today tab. Same language as the Stats
-     widget (it IS the same goal), squeezed to a glance: the home screen has a
-     job to do and a full attribution table is not it. */
-  .gh-card{background:var(--navy);color:#fff;border-radius:var(--radius);padding:15px 15px 13px;cursor:pointer;box-shadow:0 2px 10px rgba(28,42,68,.16)}
-  .gh-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:9px}
-  .gh-label{font-family:'Montserrat',system-ui,sans-serif;font-size:10.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;opacity:.66}
-  .gh-pct{font-size:12px;font-weight:800;color:var(--amber-on-navy,#F0A58A)}
-  .gh-nums{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
-  .gh-now{font-family:'Montserrat',system-ui,sans-serif;font-size:27px;font-weight:800;line-height:1;color:var(--amber-on-navy,#F0A58A);letter-spacing:-.6px}
-  .gh-of{font-size:12px;opacity:.6}
-  .gh-bar{height:7px;background:rgba(255,255,255,.14);border-radius:99px;margin:11px 0 0;overflow:hidden}
-  .gh-fill{height:100%;background:linear-gradient(90deg,var(--amber),#E8A48C);border-radius:99px;transition:width .5s cubic-bezier(.4,0,.2,1)}
-  .gh-pace{font-size:12px;line-height:1.5;margin-top:10px;opacity:.9}
-  .gh-note{margin-top:9px;background:rgba(255,255,255,.07);border-radius:var(--radius-sm);padding:10px 11px;font-size:11.5px;line-height:1.5;opacity:.78}
-  .gh-note div+div{margin-top:6px}
-  .gh-more{text-align:right;font-size:11px;font-weight:700;opacity:.6;margin-top:9px}
-  @media(max-width:360px){ .gh-now{font-size:24px} }
-
   /* Review screen — raw rows behind the exclusion. Plain list, app palette. */
   .rv-tot{display:flex;gap:10px;margin-bottom:14px}
   .rv-tot>div{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 12px;min-width:0}
@@ -1479,9 +1461,6 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
     <p id="checkin-date"></p>
   </div>
 
-  <!-- v106.1 — goal at a glance on the home tab. Filled by renderTodayGoalHero(). -->
-  <div class="section" id="today-goal-slot" style="padding-bottom:0"></div>
-
   <!-- AUTO-TIMER INFO -->
   <div class="section">
     <div style="background:var(--blue-light);border-radius:var(--radius-sm);padding:14px;border-left:4px solid var(--blue);display:flex;gap:12px;align-items:flex-start">
@@ -2321,20 +2300,6 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
           <div class="field"><label>Annual earnings ($)</label><input type="number" id="s-annualEarningsGoal" step="100" min="0" oninput="onGoalInput('annual')"></div>
         </div>
         <div style="font-size:11px;color:var(--text2);margin-top:-6px" id="s-goal-link">↔ linked via $0/hr</div>
-        <div class="toggle-row" style="padding:12px 0 0">
-          <div>
-            <div style="font-size:14px;font-weight:600">Show goal on Today screen</div>
-            <div style="font-size:11px;color:var(--text2);margin-top:2px">A one-glance progress card at the top of Today.</div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="s-show-goal-today" onchange="saveGoalTodayPref()"><span class="toggle-slider"></span></label>
-        </div>
-        <div class="toggle-row" style="padding:10px 0 0">
-          <div>
-            <div style="font-size:14px;font-weight:600">Explain the pace figure</div>
-            <div style="font-size:11px;color:var(--text2);margin-top:2px">Says how many weeks you actually worked, so a run of holidays doesn't read as falling behind. Turn off once your hours are steady.</div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="s-goal-pace-caveat" onchange="saveGoalCaveatPref()"><span class="toggle-slider"></span></label>
-        </div>
       </div>
       <div class="toggle-row" style="padding:10px 0;border-top:1px solid var(--border)">
         <div>
@@ -2596,7 +2561,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v106.1';
+const APP_VERSION = 'v107.0';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -3172,9 +3137,18 @@ function forceAppUpdate(){ return otaCheck(false); }
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // var (not const/let) so window.DB exists and the module-script sync patch can find it
+// v107.0 — writes to these keys can move a figure on the home-screen widget.
+var WIDGET_KEYS={days:1,settings:1};
 var DB={
   get(k){try{return JSON.parse(localStorage.getItem('mcn_'+k))}catch{return null}},
-  set(k,v){localStorage.setItem('mcn_'+k,JSON.stringify(v))},
+  set(k,v){
+    localStorage.setItem('mcn_'+k,JSON.stringify(v));
+    // The widget is a MIRROR. Refreshed after the local write and fully wrapped,
+    // so a mirror failure can never cost a save — the v65 ArchivedSync rule.
+    // Hooked here rather than at each save site on purpose: a save path added
+    // later updates the widget for free, instead of silently not updating it.
+    if(WIDGET_KEYS[k]){ try{ pushWidgetSnapshot(); }catch(e){} }
+  },
   def(k,d){const v=DB.get(k);return v!==null?v:d}
 };
 
@@ -3261,12 +3235,7 @@ const DEFAULTS={
   // call (2026-08-03): his labour only. Display-only: the invoice always bills
   // the full amount. A missing key reads as the component's own default, so a
   // pre-v106 settings blob classifies exactly as a fresh install does.
-  retention:{labour:true,extra:false,machine:false,travel:false,materials:false},
-  // v106.1 — the Today-tab goal hero, and whether it explains what the pace
-  // figure is built on. Both default ON; the caveat is a toggle because it stops
-  // being useful once the working weeks are steady.
-  showGoalOnToday:true,
-  goalPaceCaveat:true
+  retention:{labour:true,extra:false,machine:false,travel:false,materials:false}
 };
 
 function S(){return DB.def('settings',DEFAULTS)}
@@ -3949,7 +3918,6 @@ function showScreen(id,btn){
     if(isEmployeeMode()){renderTimesheet();}
     else{populateClientDropdown();renderInvoice();refreshTeamHours();}
   }
-  if(id==='checkin') refreshTodayTab();
   if(id==='analytics') renderAnalytics();
   if(id==='retained') renderRetainedReview();
   if(id==='trips') renderTrips();
@@ -4857,9 +4825,6 @@ function showCheckinIdle(){
 }
 // Today tab reflects one of three states: running timer / latest unconfirmed / idle.
 function refreshTodayTab(){
-  // Before the branch — the hero shows in every Today state (idle, running,
-  // review), so it must not sit behind one of the early returns below.
-  try{ renderTodayGoalHero(); }catch(e){ console.warn('goal hero',e); }
   const ad=activeDay();
   if(ad && !ad.finish){ showActiveTimer(ad); return; }
   const q=unconfirmedQueue();
@@ -6454,7 +6419,10 @@ function retainedTarget(){
 
 /* Week buckets (Monday-start) for the FY to date, retained + hours per week.
    Only weeks that HAVE days appear — `weekPace` derives the idle count from the
-   elapsed total, so a missing week is correctly an idle one rather than absent. */
+   elapsed total, so a missing week is correctly an idle one rather than absent.
+   These buckets are also what the home-screen widget ships (v107.0): native
+   matches today's Monday against the keys to find "this week", which is why the
+   absent-means-idle convention has to hold on that side too. */
 function retainedWeeks(rows){
   const out={};
   rows.forEach(r=>{
@@ -6472,58 +6440,64 @@ function fyWeeksElapsed(fyStartYear,now){
   return Math.max(0,Math.min(52,(now-new Date(fyStartYear+'-07-01T00:00:00'))/(7*24*60*60*1000)));
 }
 
-/* The home-tab hero. Deliberately NOT a second implementation of the goal — it
-   reads the same tally and the same target as the Stats widget, so the two can
-   never disagree. What it adds is the pace BASIS: "behind by $X" alone cannot
-   distinguish a rate problem from two weeks off, and the difference is the only
-   thing a working operator can act on. */
-function renderTodayGoalHero(){
-  const slot=document.getElementById('today-goal-slot');
-  if(!slot) return;
-  const s=S();
-  if(s.showGoalOnToday===false){ slot.innerHTML=''; return; }
+/* ═══ v107.0 HOME-SCREEN WIDGET — the app side ═══
+   Gathers live state and hands the finished payload to native. Reads the SAME
+   retainedYtd()/retainedTarget()/effectiveRetainedRate() the Stats screen reads,
+   so the widget and the app cannot print different numbers — the v106.1 rule
+   that killed the two-different-YTDs bug, applied across the process boundary.
 
-  const now=new Date(), curFY=fyForDate(now);
-  const {rows,tally}=retainedYtd(curFY);
+   Confirmed days only, because that is what `days()` holds: a running shift is
+   not billable yet and must not appear on the home screen as money. */
+function collectWidgetSnapshot(now){
+  now = now || new Date();
+  const s=S(), curFY=fyForDate(now);
+  const {policy,rows,tally}=retainedYtd(curFY);
   const target=retainedTarget();
-  const prog=goalProgress(tally.retained,target,[]);
+  return buildWidgetSnapshot({
+    now:now.getTime(),
+    fyLabel:fyLabelYr(curFY),
+    retained:tally.retained,
+    target:target,
+    weeks:retainedWeeks(rows),
+    weeksElapsed:fyWeeksElapsed(curFY,now),
+    milestones:deriveMilestones(target,s.goalMilestones),
+    weekGoalHours:parseFloat(s.weeklyHrsGoal)||0,
+    // All time, exactly as the Analytics tile computes it (same shared helper).
+    effectiveRate:effectiveRetainedRate(days().map(d=>({totals:dayTotals(d)})),policy)
+  });
+}
 
-  if(!prog.hasTarget){
-    slot.innerHTML=`<div class="gh-card" onclick="showScreen('analytics',document.querySelectorAll('.nav-btn')[3])">
-      <div class="gh-top"><div class="gh-label">🎯 ${fyLabelYr(curFY)} retained</div></div>
-      <div class="gh-nums"><div class="gh-now">${fmtMoney(tally.retained)}</div></div>
-      <div class="gh-pace">No earnings goal set — add one in Settings to track against it.</div>
-      <div class="gh-more">Full breakdown ›</div></div>`;
-    return;
-  }
+let _widgetPushT=null;
+/* Debounced so a burst of saves is one native write, and best-effort throughout:
+   no bridge (browser, or an APK older than v107) is a silent no-op, not an error. */
+function pushWidgetSnapshot(){
+  clearTimeout(_widgetPushT);
+  _widgetPushT=setTimeout(function(){
+    try{
+      const P=window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.StatsWidget;
+      if(!P||!P.updateSnapshot) return;
+      P.updateSnapshot({json:JSON.stringify(collectWidgetSnapshot())})
+       .catch(function(e){ try{GeoLog.add('error','Widget snapshot push failed: '+((e&&e.message)||e));}catch(_){} });
+    }catch(e){ /* a mirror must never break the thing it mirrors */ }
+  },400);
+}
 
-  const weeksElapsed=fyWeeksElapsed(curFY,now);
-  const basis=weekPace(retainedWeeks(rows),weeksElapsed);
-  const expected=target*Math.min(52,weeksElapsed)/52;
-  const gap=expected-tally.retained;
-
-  // The headline verdict stands unsoftened; the note explains what it is made of.
-  const verdict = tally.retained>=target ? 'Goal reached 🎉'
-    : gap<=1 ? 'On pace ✓'
-    : 'Behind by '+fmtMoney(gap)+' on a straight-line target.';
-  const verdictColor = tally.retained>=target||gap<=1 ? '#8FE3B0' : '#F5B7A0';
-
-  const caveats = s.goalPaceCaveat===false ? [] : paceCaveats(basis,{});
-
-  slot.innerHTML=`<div class="gh-card" onclick="showScreen('analytics',document.querySelectorAll('.nav-btn')[3])">
-    <div class="gh-top">
-      <div class="gh-label">🎯 ${fyLabelYr(curFY)} retained</div>
-      <div class="gh-pct">${prog.pct.toFixed(1)}%</div>
-    </div>
-    <div class="gh-nums">
-      <div class="gh-now">${fmtMoney(tally.retained)}</div>
-      <div class="gh-of">of ${fmtMoney(prog.target)}</div>
-    </div>
-    <div class="gh-bar"><div class="gh-fill" style="width:${prog.pct.toFixed(2)}%"></div></div>
-    <div class="gh-pace" style="color:${verdictColor}">${verdict}</div>
-    ${caveats.length?`<div class="gh-note">${caveats.map(c=>`<div>${escHtml(c)}</div>`).join('')}</div>`:''}
-    <div class="gh-more">Full breakdown ›</div>
-  </div>`;
+/* A widget tap banks its destination natively rather than calling into the
+   WebView, because on a cold open the WebView does not exist when the intent
+   lands — the same native-banks / JS-reads shape the geofence queue uses.
+   Read-and-clear, so a resume never replays a navigation he has moved on from. */
+function drainWidgetTap(){
+  try{
+    const P=window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.StatsWidget;
+    if(!P||!P.consumePendingScreen) return;
+    P.consumePendingScreen().then(function(r){
+      if(!r||!r.screen) return;
+      const btns=document.querySelectorAll('.nav-btn');
+      const idx={checkin:0,log:1,invoice:2,analytics:3,trips:4,loads:5,settings:6}[r.screen];
+      showScreen(r.screen, idx!=null?btns[idx]:null);
+      try{ GeoLog.add('info','Opened from home-screen widget → '+r.screen); }catch(_){}
+    }).catch(function(){});
+  }catch(e){}
 }
 
 function renderGoalWidget(){
@@ -6651,18 +6625,6 @@ function renderRetainedReview(){
 
 // Flipping a component re-derives everything from the same stored days — there
 // is nothing to migrate, which is the point of deriving rather than stamping.
-// One handler per toggle, matching saveExtraWorkerPref/saveMachineHirePref —
-// the v105.0 "one canonical affordance per function" rule is asserted by a test.
-function _saveGoalPref(key,elId){
-  const s=S(), el=document.getElementById(elId);
-  if(el) s[key]=el.checked;
-  DB.set('settings',s);
-  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
-  renderTodayGoalHero();
-}
-function saveGoalTodayPref(){ _saveGoalPref('showGoalOnToday','s-show-goal-today'); }
-function saveGoalCaveatPref(){ _saveGoalPref('goalPaceCaveat','s-goal-pace-caveat'); }
-
 function setRetention(key,on){
   const s=S();
   if(!s.retention) s.retention={};
@@ -6838,9 +6800,10 @@ function renderAnalytics(){
   // labourer's earnings by Steven's own hours: on his real data that reported
   // $67/hr against a configured rate of $60, the $7 gap being entirely the
   // passthrough. Retained-based it comes out at exactly $60.
-  const _effPol=retentionPolicy(s);
-  let te=0,th=0;ad.forEach(d=>{const t=dayTotals(d);th+=t.h;te+=splitDayRevenue(t,_effPol).retained;});
-  document.getElementById('ana-eff-rate').textContent='$'+(th>0?te/th:0).toFixed(0);
+  // v107.0 — shared with the home-screen widget snapshot via effectiveRetainedRate,
+  // so the tile and the widget cannot print different $/hr figures.
+  const _effRate=effectiveRetainedRate(ad.map(d=>({totals:dayTotals(d)})),retentionPolicy(s));
+  document.getElementById('ana-eff-rate').textContent='$'+(_effRate==null?0:_effRate).toFixed(0);
   const ti=ai.reduce((s,i)=>s+i.total,0);document.getElementById('ana-total').textContent=ti>=10000?'$'+Math.round(ti/100)/10+'k':fmtMoney(ti);
   // C6: invoice summaries store the ex-GST total. Label it honestly when GST is on
   // so the figure isn't mistaken for the GST-inclusive amount billed to clients.
@@ -6898,9 +6861,6 @@ function loadSettings(){
   });
   const _whg=document.getElementById('s-weeklyHrsGoal'); if(_whg) _whg.value = s.weeklyHrsGoal>0 ? s.weeklyHrsGoal : '';
   const _aeg=document.getElementById('s-annualEarningsGoal'); if(_aeg) _aeg.value = s.annualEarningsGoal>0 ? s.annualEarningsGoal : '';
-  // v106.1 — absence reads as ON (the shipped default), never as unchecked.
-  const _sgt=document.getElementById('s-show-goal-today'); if(_sgt) _sgt.checked = s.showGoalOnToday!==false;
-  const _gpc=document.getElementById('s-goal-pace-caveat'); if(_gpc) _gpc.checked = s.goalPaceCaveat!==false;
   onGoalInput('init');
   const _emCb=document.getElementById('s-earthmoving-mode');
   if(_emCb) _emCb.checked=isEarthmovingModeOn(s);
@@ -14171,10 +14131,13 @@ function paceCaveats(basis, o){
     return el > 0 ? ['No hours logged yet this financial year, so there is no rate to compare against.'] : [];
 
   // The load-bearing one: what the weeks he actually worked look like.
+  // v107.0 tightened the wording. This is now read on a home-screen widget, where
+  // the previous 100-character version ran past two lines and was cut mid-phrase —
+  // losing the second half, which is the half carrying the numbers. Same two facts
+  // (how many weeks had hours, and what those weeks looked like), 47 characters.
   if (idle > 0 && b.perWorkedWeek != null)
-    out.push(Math.round(el) + ' weeks into the year, ' + worked + ' of them with hours logged. ' +
-             'On those weeks you averaged ' + fmtHrsWk(b.hoursPerWorkedWeek) +
-             ' and ' + fmtUsd(b.perWorkedWeek) + '.');
+    out.push(worked + ' of ' + Math.round(el) + ' weeks had hours — ' +
+             fmtHrsWk(b.hoursPerWorkedWeek) + ', ' + fmtUsd(b.perWorkedWeek) + ' each.');
 
   // Early in the year the straight-line assumption dominates everything else.
   if (el > 0 && el < (+o.earlyWeeks || 13))
@@ -14184,6 +14147,24 @@ function paceCaveats(basis, o){
 }
 
 function fmtHrsWk(h){ return (+h || 0).toFixed(1) + 'h/wk'; }
+
+/* v107.0 — effective rate = retained revenue over HIS hours. Extracted so the
+   Analytics tile and the home-screen widget share ONE implementation: two
+   places printing "$/hr" from separately-written arithmetic is exactly how the
+   v106.0 goal card came to disagree with its own tap-through.
+   `rows` is [{totals}] (or bare totals objects) as retainedRows/dayTotals give.
+   Returns null, not 0, when there are no hours — no hours means unknown, and a
+   confident $0/hr is the opposite of that (the v104.0 median rule). */
+function effectiveRetainedRate(rows, policy){
+  var list = rows || [], te = 0, th = 0;
+  for (var i = 0; i < list.length; i++){
+    var t = list[i] && list[i].totals ? list[i].totals : list[i];
+    if (!t) continue;
+    th += (+t.h || 0);
+    te += splitDayRevenue(t, policy).retained;
+  }
+  return th > 0 ? te / th : null;
+}
 
 function fmtUsd(n){
   var v = +n || 0;
@@ -14197,6 +14178,101 @@ function fmtWeeks(w){
   return (v / 52).toFixed(1) + ' years';
 }
 //__V106_RETAINED_PURE_END__
+
+//__V107_WIDGET_PURE_START__  (extracted verbatim by test-widget.js — keep pure: no DOM/DB/argless Date)
+/* ═══ v107.0 HOME-SCREEN WIDGET SNAPSHOT ═══
+   The payload the Android widget renders. The widget process never sees
+   Firestore, auth, localStorage or a money function — the app computes every
+   figure here and hands over a finished JSON blob. That is the whole point:
+   a second implementation of the money math, in Java, that nobody runs the
+   money tests against, is how a home screen comes to disagree with the app.
+
+   The ONE thing the widget derives for itself is which bucket is "this week",
+   by matching today's Monday against `weeks[].k`. That is calendar lookup, not
+   arithmetic over dollars — and it is what lets a 30-minute refresh roll the
+   week over on Monday morning without the app having been opened.
+
+   Every unknown is null, never 0. A widget that prints "$0.00" against a goal
+   reads as "you earned nothing", which is the opposite of "nobody has told me
+   yet" — the v104.0 median rule, on a surface with no room to explain itself. */
+
+/* The verdict line. Deliberately carries NO reassurance vocabulary: "on track",
+   "on pace" and "caught up" are banned outright (asserted by a test), because a
+   glanceable surface is exactly where a soft word gets read as a fact. Ahead,
+   level and behind are all stated as the signed distance from a straight line. */
+function widgetGapText(retained, target, weeksElapsed){
+  var r = +retained || 0, tg = +target || 0;
+  var el = Math.max(0, Math.min(52, +weeksElapsed || 0));
+  if (!(tg > 0)) return { state:'no-target', gap:null, text:'No earnings goal set.' };
+  if (r >= tg)   return { state:'reached',   gap:0,    text:'Goal reached.' };
+  var expected = tg * el / 52, gap = expected - r;
+  if (Math.abs(gap) < 1) return { state:'level', gap:0, text:'Level with a straight-line target.' };
+  return gap > 0
+    ? { state:'behind', gap:gap,  text:'Behind by ' + fmtUsd(gap)  + ' on a straight-line target.' }
+    : { state:'ahead',  gap:gap,  text:'Ahead by '  + fmtUsd(-gap) + ' on a straight-line target.' };
+}
+
+/* `weeks` is [{key,retained,hours}] ascending, as retainedWeeks() produces.
+   `now` is passed in (never `new Date()`) so this stays pure and testable. */
+function buildWidgetSnapshot(inp){
+  inp = inp || {};
+  var weeks    = inp.weeks || [];
+  var retained = +inp.retained || 0;
+  var target   = +inp.target   || 0;
+  var elapsed  = Math.max(0, Math.min(52, +inp.weeksElapsed || 0));
+  var prog     = goalProgress(retained, target, inp.milestones || []);
+  var basis    = weekPace(weeks, elapsed);
+  var verdict  = widgetGapText(retained, target, elapsed);
+
+  // "No data" is a real state, not an empty one. It is NOT the same as "no goal
+  // set": one means nothing has been confirmed yet, the other means nothing to
+  // measure against, and the widget says which.
+  var hasDays  = weeks.length > 0;
+  var state    = !hasDays ? 'no-data' : (target > 0 ? verdict.state : 'no-target');
+
+  // Trailing buckets only — a widget shows a trend, not a ledger, and the blob
+  // rides the SharedPreferences write on every save.
+  var tail = weeks.slice(-(+inp.maxWeeks || 6)).map(function(w){
+    return { k:w.key, h:Math.round((+w.hours || 0) * 100) / 100,
+                      r:Math.round((+w.retained || 0) * 100) / 100 };
+  });
+
+  return {
+    v:1,
+    generatedAt: +inp.now || 0,
+    fyLabel:     inp.fyLabel || '',
+    state:       state,
+    hasData:     hasDays,
+    retained:    retained,
+    target:      target > 0 ? target : null,
+    pct:         prog.pct,
+    remaining:   prog.remaining,
+    gap:         verdict.gap,
+    gapText:     hasDays ? verdict.text : 'No days confirmed yet this financial year.',
+    // Earned, never unconditional — same rule as the Stats card. First line only:
+    // a widget has one line of room, and the leading caveat is the load-bearing one.
+    paceNote:    hasDays ? (paceCaveats(basis, {})[0] || null) : null,
+    weekGoalHours:  (+inp.weekGoalHours || 0) > 0 ? +inp.weekGoalHours : null,
+    effectiveRate:  inp.effectiveRate == null ? null : +inp.effectiveRate,
+    workedWeeks:    basis.workedWeeks,
+    elapsedWeeks:   Math.round(elapsed),
+    hoursPerWorkedWeek: basis.hoursPerWorkedWeek,
+    milestones:  prog.milestones.map(function(m){
+      return { usd:m.usd, label:m.label, reached:m.reached, at:m.at };
+    }),
+    weeks: tail
+  };
+}
+
+/* The Monday key for a date, matching retainedWeeks()'s bucket keys. Native
+   computes the same string to pick "this week" out of `weeks`. */
+function widgetWeekKey(d){
+  var mon = new Date(d.getTime());
+  mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return mon.getFullYear() + '-' + String(mon.getMonth() + 1).padStart(2, '0')
+         + '-' + String(mon.getDate()).padStart(2, '0');
+}
+//__V107_WIDGET_PURE_END__
 
 // ── Tax prefs (persisted in the settings blob → synced) ─────────────────────
 function taxPrefs(){
@@ -14643,6 +14719,11 @@ window.initApp = function() {
   updateExtraLabels();
   initCheckinScreen();
   initTheme();
+  // v107.0: fill the home-screen widget on cold open. Needed on top of the
+  // DB.set hook because a widget ADDED while the app was closed has no snapshot
+  // at all, and nothing may be saved for days.
+  try{ pushWidgetSnapshot(); }catch(_){}
+  try{ setTimeout(drainWidgetTap, 600); }catch(_){}
   // Init native geo AFTER the app is visible — delay so the permission dialog
   // appears to the user as a deliberate prompt, not a startup-blocking freeze.
   if (window.initNativeGeo) setTimeout(window.initNativeGeo, 1500);
@@ -15208,6 +15289,10 @@ window.initApp = function() {
     // is back up before we ask it for its queue.
     try { if (window.ensureTripLogging) window.ensureTripLogging(); } catch(_){}
     try { if (window.drainTripFixes) window.drainTripFixes(); } catch(_){}
+    // v107.0: the widget may have been added, or the week rolled over, while
+    // the app was backgrounded — and this resume may BE a widget tap.
+    try { if (window.pushWidgetSnapshot) window.pushWidgetSnapshot(); } catch(_){}
+    try { if (window.drainWidgetTap) window.drainWidgetTap(); } catch(_){}
   });
 
   // Expose so app can call it directly (e.g. after permission grant)

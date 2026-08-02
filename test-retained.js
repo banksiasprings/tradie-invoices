@@ -384,13 +384,13 @@ console.log('\n── PIN: test_goal_card_and_detail_agree ───────
 
 console.log('\n── version ────────────────────────────────────────────────────────');
 {
-  ok('APP_VERSION bumped to v106.1', /const APP_VERSION = 'v106\.1';/.test(html));
+  ok('APP_VERSION bumped to v107.0', /const APP_VERSION = 'v107\.0';/.test(html));
   ok('DEFAULTS carries the retention policy', /retention:\{labour:true,extra:false,machine:false,travel:false,materials:false\}/.test(html));
 }
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// v106.1 — pace basis + the Today hero
+// v106.1 — pace basis (the Today hero it also shipped was removed in v107.0)
 // ═══════════════════════════════════════════════════════════════════════════
 const { weekPace, paceCaveats, fmtHrsWk } = ctx;
 
@@ -415,8 +415,11 @@ console.log('\n── PIN: test_pace_basis_separates_worked_weeks_from_holidays 
   ok('hours per worked week', near(b.hoursPerWorkedWeek, 21.84, 0.01), b.hoursPerWorkedWeek);
 
   const c = paceCaveats(b, {});
-  ok('PIN: the caveat names how many weeks were worked', /5 weeks into the year, 3 of them with hours logged/.test(c[0]), c[0]);
-  ok('PIN: …and what those weeks looked like', /21\.8h\/wk and \$1,311/.test(c[0]), c[0]);
+  // v107.0 tightened the wording (same two facts, 47 chars instead of 100) so it
+  // fits two lines on the home-screen widget, which is now its only consumer.
+  ok('PIN: the caveat names how many weeks were worked', /^3 of 5 weeks had hours/.test(c[0]), c[0]);
+  ok('PIN: …and what those weeks looked like', /21\.8h\/wk, \$1,311 each/.test(c[0]), c[0]);
+  ok('PIN: …and it fits a widget — under 60 characters', c[0].length < 60, c[0].length);
   ok('early-FY caveat is present at 4.7 weeks', c.some(x => /straight-line target spreads the goal evenly/.test(x)));
   ok('PIN: the caveat NEVER claims he is on track', !c.some(x => /on track|on pace|catch up|fine/i.test(x)), c);
   ok('PIN: …and never restates a softened dollar figure', !c.some(x => /behind/i.test(x)));
@@ -459,35 +462,51 @@ console.log('\n── paceCaveats are earned, not decorative ──────�
   ok('fmtHrsWk', fmtHrsWk(21.8433) === '21.8h/wk' && fmtHrsWk(null) === '0.0h/wk');
 }
 
-console.log('\n── PIN: test_today_tab_surfaces_the_goal ─────────────────────────');
+/* v107.0 — the INVERSE of v106.1's pin. Steven asked for the Today-tab hero to be
+   removed outright, not deferred behind a toggle, so this asserts every trace of
+   it is gone and stays gone. An inverted pin rather than a deleted one: a removal
+   with no test reads exactly like a removal nobody has got round to re-doing. */
+console.log('\n── PIN: test_today_tab_has_no_goal_hero ──────────────────────────');
 {
-  ok('PIN: the Today screen has a hero slot', /<div class="section" id="today-goal-slot"/.test(html));
-  ok('PIN: …rendered before refreshTodayTab branches',
-     /function refreshTodayTab\(\)\{[\s\S]{0,220}renderTodayGoalHero\(\);[\s\S]{0,120}const ad=activeDay\(\);/.test(html));
-  ok('PIN: …so it shows in the idle, running AND review states', /try\{ renderTodayGoalHero\(\); \}catch/.test(html));
-  ok('showScreen refreshes Today', /if\(id==='checkin'\) refreshTodayTab\(\);/.test(html));
-  ok('the hero reads the SAME tally as the Stats widget', /function renderTodayGoalHero\(\)\{[\s\S]{0,600}retainedYtd\(curFY\)/.test(html));
-  ok('…and the same target', /function renderTodayGoalHero\(\)\{[\s\S]{0,700}retainedTarget\(\)/.test(html));
-  ok('it taps through to the full breakdown', /renderTodayGoalHero[\s\S]{0,3000}showScreen\('analytics'/.test(html));
-  ok('the hero is behind a setting', /if\(s\.showGoalOnToday===false\)\{ slot\.innerHTML=''; return; \}/.test(html));
-  ok('PIN: the caveat is a toggle, not hard-coded', /s\.goalPaceCaveat===false \? \[\] : paceCaveats\(basis,\{\}\)/.test(html));
-  ok('both default ON in DEFAULTS', /showGoalOnToday:true,\s*\n\s*goalPaceCaveat:true/.test(html));
-  ok('absence reads as ON when loading settings',
-     /s\.showGoalOnToday!==false/.test(html) && /s\.goalPaceCaveat!==false/.test(html));
-  ok('both toggles exist in Settings',
-     /id="s-show-goal-today"/.test(html) && /id="s-goal-pace-caveat"/.test(html));
-  ok('PIN: the behind-target verdict is NOT softened by the caveat',
-     /'Behind by '\+fmtMoney\(gap\)\+' on a straight-line target\.'/.test(html));
+  ok('PIN: no hero slot on the Today screen', !/id="today-goal-slot"/.test(html));
+  ok('PIN: no renderTodayGoalHero anywhere', !/renderTodayGoalHero/.test(html));
+  ok('PIN: refreshTodayTab branches straight to the day',
+     /function refreshTodayTab\(\)\{\s*const ad=activeDay\(\);/.test(html));
+  ok('no .gh-* hero styles left behind', !/\.gh-card\{/.test(html) && !/\.gh-now\{/.test(html));
+  ok('neither settings toggle survives',
+     !/showGoalOnToday/.test(html) && !/goalPaceCaveat/.test(html));
+  ok('…nor their DOM ids', !/s-show-goal-today/.test(html) && !/s-goal-pace-caveat/.test(html));
+  ok('…nor their save handlers',
+     !/saveGoalTodayPref/.test(html) && !/saveGoalCaveatPref/.test(html) && !/_saveGoalPref/.test(html));
+
+  // The pure pace helpers are KEPT — the home-screen widget consumes them, which
+  // is the whole reason the removal is of the UI and not of the reasoning.
+  ok('weekPace survives the removal', /function weekPace\(weeks, elapsedWeeks\)\{/.test(html));
+  ok('paceCaveats survives the removal', /function paceCaveats\(basis, o\)\{/.test(html));
+  ok('retainedWeeks survives (the widget ships its buckets)', /function retainedWeeks\(rows\)\{/.test(html));
+  ok('fyWeeksElapsed survives', /function fyWeeksElapsed\(fyStartYear,now\)\{/.test(html));
+  ok('…and none of them is orphaned — the snapshot is the caller',
+     /function collectWidgetSnapshot\(now\)\{[\s\S]{0,900}retainedWeeks\(rows\)/.test(html)
+     && /buildWidgetSnapshot\([\s\S]{0,400}weeksElapsed:fyWeeksElapsed/.test(html));
 }
 
 console.log('\n── PIN: test_effective_rate_is_his_rate_not_the_passthrough ───────');
 {
   // His real all-time figures: $26,003 gross / 387.02h = $67.19; retained
   // $23,221 / 387.02h = $60.00, which is exactly his configured rate.
-  ok('PIN: effective rate now divides RETAINED by hours',
-     /let te=0,th=0;ad\.forEach\(d=>\{const t=dayTotals\(d\);th\+=t\.h;te\+=splitDayRevenue\(t,_effPol\)\.retained;\}\);/.test(html));
-  ok('PIN: …not dayTotals\(\).total',
+  // v107.0 moved the arithmetic into effectiveRetainedRate() so the Analytics
+  // tile and the home-screen widget cannot print different $/hr — the pin now
+  // tracks the shared helper rather than the inlined loop it replaced.
+  ok('PIN: effective rate divides RETAINED by hours',
+     /te \+= splitDayRevenue\(t, policy\)\.retained;/.test(html)
+     && /function effectiveRetainedRate\(rows, policy\)\{/.test(html));
+  ok('PIN: …not dayTotals().total',
      !/let te=0,th=0;ad\.forEach\(d=>\{const\{h,total\}=dayTotals\(d\);th\+=h;te\+=total;\}\);/.test(html));
+  ok('PIN: the Analytics tile uses that one helper',
+     /ana-eff-rate'\)\.textContent='\$'\+\(_effRate==null\?0:_effRate\)\.toFixed\(0\)/.test(html)
+     && /const _effRate=effectiveRetainedRate\(/.test(html));
+  ok('PIN: …and so does the widget snapshot',
+     /effectiveRate:effectiveRetainedRate\(days\(\)\.map/.test(html));
   const HOURS = 387.02, GROSS = 26003, RETAINED = 23221;
   ok('the old figure was $67/hr', Math.round(GROSS / HOURS) === 67);
   ok('PIN: the new one is $60/hr — exactly his configured rate', Math.round(RETAINED / HOURS) === 60);
