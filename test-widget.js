@@ -268,7 +268,13 @@ console.log('\n── native side (source assertions) ────────�
      /hoursForWeekOf[\s\S]{0,260}return null;/.test(store));
   ok('PendingIntent is IMMUTABLE (a hard crash on API 31+ otherwise)',
      /FLAG_IMMUTABLE/.test(rend));
-  ok('tap opens Stats', /EXTRA_OPEN_SCREEN, "analytics"/.test(rend));
+  // v108.0 routed both taps through one activity() builder so the bar intents
+  // could not drift from the card intent. Assert the DESTINATION, not the call
+  // shape — the previous spelling was a refactor tripwire, not a behaviour test.
+  ok('the whole-card tap still opens Stats',
+     /openStatsIntent\(Context ctx\) \{\s*return activity\(ctx, ROOT_RC, "analytics", null\);/.test(rend));
+  ok('…and the screen still travels as EXTRA_OPEN_SCREEN',
+     /putExtra\(MainActivity\.EXTRA_OPEN_SCREEN, screen\)/.test(rend));
   ok('PIN: colours are never resolved in our process for text',
      !/setTextColor/.test(rend));
   ok('API 31+ gets a responsive size map', /new RemoteViews\(m\)/.test(work));
@@ -291,6 +297,205 @@ console.log('\n── native side (source assertions) ────────�
      /registerPlugin\(StatsWidgetPlugin\.class\)/.test(j('MainActivity.java')));
   ok('PIN: native carries no money arithmetic — no rate, no multiply-by-hours',
      !/\* *rate|rate *\*|hours *\* |dayTotals/.test(store + rend));
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v108.0 — the widget follows the system theme
+// ═══════════════════════════════════════════════════════════════════════════
+const res = f => fs.readFileSync(path.join(__dirname, 'android/app/src/main/res', f), 'utf8');
+const colours = xml => {
+  const out = {};
+  const re = /<color name="([^"]+)">\s*([^<]+?)\s*<\/color>/g;
+  let m; while ((m = re.exec(xml))) out[m[1]] = m[2];
+  return out;
+};
+/* WCAG 2.1 relative luminance + contrast ratio. Written out rather than pulled
+   from a package because a devDependency that silently changes its rounding
+   would move a shipped colour decision. */
+const lum = hex => {
+  const c = hex.replace('#', '').match(/../g).map(h => parseInt(h, 16) / 255)
+    .map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+};
+const ratio = (a, b) => {
+  const l1 = lum(a), l2 = lum(b);
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+};
+
+console.log('\n── PIN: test_widget_palette_passes_wcag_aa_in_both_themes ────────');
+{
+  /* Steven asked for the widget to follow day/night. The trap in doing that is
+     that the brand amber was only ever validated against NAVY: on the new cream
+     card it scores 4.05:1 and FAILS AA. This block is why the shipped light
+     accent is a darkened amber instead — and it reads the real resource files,
+     so nobody can quietly put the brand value back. */
+  for (const [mode, file, bg] of [['light', 'values/widget_colors.xml', null],
+                                  ['dark',  'values-night/widget_colors.xml', null]]) {
+    const c = colours(res(file));
+    const card = c.widget_bg;
+    ok(mode + ': every colour is a literal hex (v31 overrides handle Material You)',
+       Object.values(c).every(v => /^#[0-9A-Fa-f]{6}$/.test(v)));
+    for (const key of ['widget_ink', 'widget_ink_dim', 'widget_accent', 'widget_good']) {
+      const r = ratio(c[key], card);
+      ok(mode + ': ' + key + ' passes AA on the card (' + r.toFixed(2) + ':1)', r >= 4.5, r);
+    }
+    // Non-text UI (WCAG 1.4.11): what carries the state is the bar FILL, so that
+    // is what must clear 3:1 — both against the card and against its own track.
+    const fillVsCard = ratio(c.widget_bar_fill, card);
+    const fillVsTrack = ratio(c.widget_bar_fill, c.widget_bar_track);
+    ok(mode + ': bar fill clears 3:1 on the card (' + fillVsCard.toFixed(2) + ':1)', fillVsCard >= 3, fillVsCard);
+    ok(mode + ': bar fill clears 3:1 on its own track (' + fillVsTrack.toFixed(2) + ':1)', fillVsTrack >= 3, fillVsTrack);
+    ok(mode + ': the current week is a different colour from the rest',
+       c.widget_bar_fill !== c.widget_bar_current);
+    ok(mode + ': the track is not the same colour as the fill',
+       c.widget_bar_track !== c.widget_bar_fill);
+  }
+  // The CONTROL. Without it the loop above proves only that SOME numbers pass —
+  // not that the check would catch the specific mistake it exists to prevent.
+  const cream = colours(res('values/widget_colors.xml')).widget_bg;
+  ok('CONTROL: raw brand amber would FAIL on the light card — which is why it is not used',
+     ratio('#C1583A', cream) < 4.5, +ratio('#C1583A', cream).toFixed(2));
+  ok('CONTROL: the shipped light accent is NOT the raw brand amber',
+     colours(res('values/widget_colors.xml')).widget_accent.toUpperCase() !== '#C1583A');
+}
+
+console.log('\n── the two themes are genuinely different ────────────────────────');
+{
+  const day = colours(res('values/widget_colors.xml'));
+  const night = colours(res('values-night/widget_colors.xml'));
+  ok('v107.0 kept one navy card in both themes; v108.0 does not',
+     day.widget_bg !== night.widget_bg);
+  ok('…and the day card really is the lighter of the two',
+     lum(day.widget_bg) > lum(night.widget_bg));
+  ok('…with the ink inverted to match', lum(day.widget_ink) < lum(night.widget_ink));
+  ok('every name defined in one theme exists in the other',
+     Object.keys(day).every(k => night[k] !== undefined) &&
+     Object.keys(night).every(k => day[k] !== undefined));
+}
+
+console.log('\n── Material You (API 31+) ────────────────────────────────────────');
+{
+  const v31 = colours(res('values-v31/widget_colors.xml'));
+  const v31n = colours(res('values-night-v31/widget_colors.xml'));
+  const tone = v => { const m = /_(\d+)$/.exec(v || ''); return m ? +m[1] : null; };
+  ok('light overlay uses the system tonal palette',
+     Object.values(v31).every(v => v.startsWith('@android:color/system_')));
+  ok('dark overlay uses the system tonal palette',
+     Object.values(v31n).every(v => v.startsWith('@android:color/system_')));
+  ok('the brief asked for system_accent1_* and it is used',
+     /system_accent1_/.test(JSON.stringify(v31)) && /system_accent1_/.test(JSON.stringify(v31n)));
+  /* Tones run 0 = white to 1000 = black, so a LIGHT surface takes a LOW tone and
+     its ink a HIGH one — inverted at night. Getting this backwards yields
+     white-on-white and is the single most likely mistake in this file. */
+  ok('light: surface tone is low, ink tone is high',
+     tone(v31.widget_bg) < 200 && tone(v31.widget_ink) > 700);
+  ok('dark: surface tone is high, ink tone is low',
+     tone(v31n.widget_bg) > 700 && tone(v31n.widget_ink) < 200);
+  ok('light: ink and surface are at least 500 tones apart (past AA for any hue)',
+     tone(v31.widget_ink) - tone(v31.widget_bg) >= 500);
+  ok('dark: ink and surface are at least 500 tones apart',
+     tone(v31n.widget_bg) - tone(v31n.widget_ink) >= 500);
+  ok('the accent moves darker on light and lighter on dark',
+     tone(v31.widget_accent) > tone(v31n.widget_accent));
+  ok('the pre-31 brand pair still exists as the fallback',
+     /#F8F4ED/.test(res('values/widget_colors.xml')) && /#121B2C/.test(res('values-night/widget_colors.xml')));
+}
+
+console.log('\n── PIN: test_widget_bar_bitmap_follows_the_theme ─────────────────');
+{
+  const rend = fs.readFileSync(path.join(__dirname,
+    'android/app/src/main/java/com/banksiasprings/invoices/WidgetRenderer.java'), 'utf8');
+  const r = code(rend);
+  /* The bitmap is the one thing drawn in OUR process, so it was the one thing
+     that could stay in day colours on a night home screen. v107.0 hard-coded
+     0xFFC1583A / 0x33FFFFFF, which was defensible only while the card was navy
+     in both themes. */
+  ok('PIN: no hard-coded ARGB literals left in the renderer',
+     !/0x[0-9A-Fa-f]{8}/.test(r), (r.match(/0x[0-9A-Fa-f]{8}/g) || []));
+  ok('bar colours are resolved from resources', /getColor\(R\.color\.widget_bar_/.test(r));
+  ok('…all three of them', ['fill', 'current', 'track']
+     .every(n => new RegExp('R\\.color\\.widget_bar_' + n).test(r)));
+  ok('…and the stripper is real here too', r.length < rend.length && /class WidgetRenderer/.test(r));
+  ok('text colour is still never set from our process', !/setTextColor/.test(r));
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v108.0 — the graph, and tapping a week bar
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\n── PIN: test_week_bar_tap_opens_that_weeks_log ───────────────────');
+{
+  const rend = fs.readFileSync(path.join(__dirname,
+    'android/app/src/main/java/com/banksiasprings/invoices/WidgetRenderer.java'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname,
+    'android/app/src/main/java/com/banksiasprings/invoices/MainActivity.java'), 'utf8');
+  const plug = fs.readFileSync(path.join(__dirname,
+    'android/app/src/main/java/com/banksiasprings/invoices/StatsWidgetPlugin.java'), 'utf8');
+  const med = res('layout/widget_goal_medium.xml');
+  const lrg = res('layout/widget_goal_large.xml');
+
+  ok('a bar tap opens the Log, not Stats', /activity\(ctx, BAR_RC \+ index, "log", weekKey\)/.test(code(rend)));
+  /* The request code is the ONLY thing keeping six bars apart: PendingIntent
+     identity uses Intent.filterEquals, which ignores extras. Sharing one code
+     makes every bar open the last week written, silently. */
+  ok('PIN: each bar gets its own request code', /BAR_RC \+ index/.test(code(rend)));
+  ok('…distinct from the whole-card tap', /ROOT_RC/.test(code(rend)) && /BAR_RC = /.test(code(rend)));
+  ok('…and FLAG_UPDATE_CURRENT so the week a bar points at can change',
+     /FLAG_UPDATE_CURRENT/.test(code(rend)));
+
+  ok('the week key rides the intent', /EXTRA_OPEN_WEEK/.test(code(rend)) && /EXTRA_OPEN_WEEK/.test(code(main)));
+  ok('native banks it rather than calling into the WebView',
+     /putString\("pending_week", week\)/.test(code(main)));
+  ok('screen and week are cleared together', /remove\("pending_screen"\)\.remove\("pending_week"\)/.test(code(plug)));
+
+  // Both sizes carry the chart and its six cells; 2x1 deliberately does not.
+  for (const [name, xml] of [['2x2', med], ['4x2', lrg]]) {
+    ok(name + ': the chart is a container, so it can hold tap targets', /@\+id\/w_chart/.test(xml));
+    ok(name + ': six hit cells, one per bucket',
+       [0,1,2,3,4,5].every(i => new RegExp('@\\+id/w_hit' + i).test(xml)));
+    ok(name + ': cells are FrameLayout — RemoteViews will not inflate Space or View',
+       !/<Space|<View\s/.test(xml));
+  }
+  ok('2x1 stays unchanged — no chart at 110x40dp',
+     !/w_chart|w_hit0/.test(res('layout/widget_goal_small.xml')));
+  ok('the empty state hides the CONTAINER, not just the bitmap',
+     /hide\(v, R\.id\.w_chart\)/.test(code(rend)));
+  ok('cells past the drawn bars are hidden, not left live with stale intents',
+     /hide\(v, HIT_IDS\[i\]\)/.test(code(rend)));
+
+  // JS half — the Log actually scopes to the week.
+  ok('the Log accepts a week filter', /function setLogWeekFilter\(k\)/.test(html));
+  ok('…derived by the SAME rule that bucketed the bars', /widgetWeekKey\(new Date\(dateStr\+'T00:00:00'\)\)===weekKey/.test(html));
+  ok('…and always offers a way out', /function clearLogWeekFilter\(\)/.test(html) && /Show all<\/button>/.test(html));
+  ok('a plain card tap clears a week left over from a bar tap',
+     /setLogWeekFilter\(r\.screen==='log'\?\(r\.week\|\|null\):null\)/.test(html));
+  /* Transient on purpose: a filter persisted to settings would still be
+     narrowing the Log next week, long after the tap that asked for it. */
+  ok('the filter is a variable, never persisted', /^let _logWeekFilter=null;$/m.test(html) &&
+     !/mcn_logWeek|logWeekFilter'\s*[,:]/.test(html));
+}
+
+console.log('\n── the graph still refuses to fabricate ──────────────────────────');
+{
+  const rend = code(fs.readFileSync(path.join(__dirname,
+    'android/app/src/main/java/com/banksiasprings/invoices/WidgetRenderer.java'), 'utf8'));
+  ok('a lone bucket is still not drawn as a full-height bar',
+     /weeks\.size\(\) < 2/.test(rend));
+  ok('a zero-hour week still draws as a track, not an absent bar',
+     /Math\.max\(0\.06/.test(rend));
+  ok('the bar loop and the cell loop share one n, so they cannot drift',
+     /int n = Math\.min\(weeks\.size\(\), HIT_IDS\.length\)/.test(rend) &&
+     /bindBarTaps\(ctx, v, weeks, n\)/.test(rend));
+}
+
+console.log('\n── version ───────────────────────────────────────────────────────');
+{
+  ok('APP_VERSION bumped to v108.0', /const APP_VERSION = 'v108\.0';/.test(html));
+  ok('Capgo builtin tracks it (the v82 cache-trap rule)',
+     /"version": "1\.108\.0"/.test(fs.readFileSync(path.join(__dirname, 'capacitor.config.json'), 'utf8')));
+  ok('versionCode bumped — new layouts and resource folders need an APK',
+     /versionCode 18/.test(fs.readFileSync(path.join(__dirname, 'android/app/build.gradle'), 'utf8')));
 }
 
 console.log('\n' + '─'.repeat(66));

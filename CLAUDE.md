@@ -22,11 +22,11 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v107.0 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2576) | v108.0 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.107.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
-| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.107.0 / versionCode 17 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.108.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.108.0 / versionCode 18 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -1225,6 +1225,125 @@ process"* is itself a match for `/Firestore/`. `test-widget.js` strips comments
 before scanning, and asserts the stripper is real so the five purity checks cannot
 pass vacuously.
 
+### v108.0 — the widget follows the system theme, and its chart became tappable
+
+#### The travel exclusion Steven asked for was already shipped
+
+Brief: *"the goal tally currently includes travel time … only loads and charcoal
+should count."* **Travel has been excluded from the goal tally since v106.0** —
+`RETAINED_COMPONENTS` carries `travel: retained:false` by default, alongside extra
+labour, machine hire and materials. Nothing was built, because the thing asked for
+already exists and its review screen (`#screen-retained`) already lists every
+excluded line.
+
+**Three findings that make the rest of the ask unbuildable as written**, recorded
+so the next session does not re-litigate them:
+
+1. **There is no job-type taxonomy.** No `type`, `job_type` or `TripType` field
+   exists anywhere in the app. Trips carry `category`
+   (business/personal/commute/mixed/unknown); day records carry no type at all.
+2. **Loads and charcoal carry no money.** Circuits and sub-activity batches
+   compute **not one cent** — deliberately, since v103.0/v104.0. The goal tally is
+   dollars from `mcn_days` (hours × rate). "Count only loads and charcoal" has no
+   dollar figure to sum: scoping the tally to days that *have* circuits would zero
+   out most of his income, because he bills hours on site whether or not a lap was
+   detected.
+3. **On his real data the change is $0.00 anyway.** FY2026-27 retained is exactly
+   `hours × $60` — zero passthrough of any kind (pinned in `test-retained.js`).
+   All passthrough is historical: 15 days / $2,782, entirely FY2025-26.
+
+The one place travel genuinely sits *beside* loads and charcoal is the v104.9
+**"Work carried out"** invoice description, which prints a `N km travel` line
+under the load and sub-activity lines. That is descriptive text on the invoice,
+feeds no tally, and Steven's v106.0 gate was explicitly *"still on the invoice"* —
+so removing it was **not** assumed. Open question for him, not a guess to make.
+
+#### Job 1 — the card follows day/night
+
+v107.0 kept the card navy in both themes on purpose. It now inverts properly:
+cream + navy ink by day, charcoal + light ink by night. On **API 31+ a Material
+You overlay wins** (`values-v31` / `values-night-v31`), so the card sits in the
+launcher's own palette; the brand pair remains the **API 24-30 fallback**, and
+deleting the two overlay files reverts to brand at every level.
+
+**The brand accent could not come along, and that is the finding.** Amber
+`#C1583A` was only ever validated against navy; on the new cream it scores
+**4.05:1 — a WCAG AA fail**. The light accent is a darkened `#A8432A` (5.47:1).
+Every ratio is pinned by a test that **reads the real resource files**, with a
+**control asserting the raw brand value would fail**, so the check cannot pass
+vacuously. Material You tones come from the wallpaper and cannot be measured
+statically, so those are pinned on tonal **direction** (surface and ink ≥500 tones
+apart, inverted between overlays) — getting that backwards yields white-on-white.
+
+**The bar bitmap had to change with it.** It is the one thing drawn in our own
+process, so v107.0 hard-coded a single amber that read on navy in both themes.
+On a cream card the old translucent-white track is invisible. Colours now resolve
+from resources (`widget_bar_fill` / `_current` / `_track`), which **assumes our
+configuration's night mode equals the launcher's** — the only way Android exposes
+dark mode to a user. It is the single inferred colour in the class.
+
+#### Job 2 — tap a week bar, get that week's log
+
+The chart already existed (v107.0 six-week bars); what it lacked was a way in.
+**RemoteViews cannot hit-test a bitmap**, so the targets are six invisible
+weighted cells laid over it. Each week owns an equal **slot**; the bar is centred
+in it at a **capped 9dp width**, and the cell covers the whole slot — so the cell
+is *wider* than the bar it selects, and both loops take the same `n` so they
+cannot drift.
+
+**Request codes must be distinct.** `PendingIntent` identity uses
+`Intent.filterEquals`, which **ignores extras** — six bars sharing a request code
+collapse into one and every bar opens whichever week was written last. Nothing
+throws; the widget just lies. Asserted with its **control** (same index, different
+week ⇒ equal), so the assertion proves the request codes are doing the work.
+
+The Log scopes via the **same derivation that bucketed the bars**, always shows a
+banner naming the scope with a way out, and is a **plain variable, never
+persisted** — a stored filter would still be narrowing the Log next week. A
+whole-card tap **clears** a week left from a bar tap (`pending_week` is written
+unconditionally, and cleared with `pending_screen`).
+
+**Bars capped at 9dp because the first render was wrong.** Filling the slot at
+three weeks in an 18dp strip produced three tiles that read as buttons, not a
+chart. Six weeks is unaffected; three weeks is the case he is in this early in
+the FY. Found by looking at the rendered PNG — the layout arithmetic was fine.
+
+**2x1 is untouched.** 110×40dp has no room for a chart.
+
+**Don't reintroduce:** a hard-coded ARGB in the renderer (asserted absent); brand
+`#C1583A` on the light card; bars that divide the full width between themselves
+rather than by slot; shared request codes across bar intents; a persisted week
+filter; a filter with no visible way out; hiding `w_bars` without hiding
+`w_chart` (the cells stay live over blank space); a chart on 2x1.
+
+⚠️ **Requires an APK install** — new layouts, new resource-qualifier folders and a
+manifest-backed receiver. Capgo ships `www/` only. `versionCode` 17 → **18**.
+
+**Tests:** `test-widget.js` (**168 pure**, +66 — adds the WCAG block reading the
+real XML, the Material You tone-direction checks, and the tap-target wiring) ·
+`test-widget-week-live.js` (**22 live**, headless Chrome — stubs the bridge and
+runs the REAL `drainWidgetTap`, with a control asserting the unfiltered Log lists
+all 8 before anything is filtered) · `WidgetRenderTest.java` (**6 instrumented**,
+was 3).
+
+⚠️ **Two false greens closed in the render harness, both worth knowing:**
+- It rendered light **and** dark and asserted **nothing** about the difference —
+  a test that would pass with `values-night` deleted. `themesActuallyDiffer()`
+  now compares mean luminance per size.
+- Layout overflow was documented as *"re-run this and LOOK at the PNG"*. A test
+  whose failure mode is a human noticing is not a test. `assertNothingSqueezed()`
+  measures every visible child after layout and fails on a zero-height view or a
+  TextView shorter than its own glyphs.
+
+⚠️ **And a third: the PNGs were never actually retrievable.** The test wrote to
+`getExternalFilesDir()`, which on an API 30+ production image **the shell user
+cannot list at all** — so the assertions passed, and `adb pull` reported the
+directory did not exist. Output moved to internal storage; pull with
+`adb exec-out run-as com.banksiasprings.invoices cat files/widget-shots/<f>.png`.
+Note also that `gradlew connectedAndroidTest` **uninstalls the app afterwards**,
+taking the PNGs with it — install both APKs and drive `am instrument` manually
+when you want the images. Screenshots: `plans/v108-shots/` (18).
+
 ### v105.1 — Setup Health wouldn't collapse; tap-to-fix was silent on an old APK
 
 **Both diagnosed off-device.** Wireless debugging was reportedly on, but the
@@ -1938,18 +2057,29 @@ node test-trip-popup.js           # 41 pure   · no trip-end popup by default + 
 node test-tap-summary.js          # 71 pure   · tap/hold mutex + invoice auto-summary
 node test-settings.js             # 105 pure  · collapsible + dedupe + auto-save + v105.1 pins
 node test-settings-live.js        # 70 live   · auto-save, offline retry, collapse across relaunch
-node test-widget.js               # 102 pure  · home-screen widget snapshot (+ Java source scans)
+node test-widget.js               # 168 pure  · widget snapshot, WCAG palette, tap wiring (+ Java scans)
+node test-widget-week-live.js     # 22 live   · tap a week bar -> the Log scoped to that week
 node test-retained.js             # 189 pure  · retained tally, pace basis, hero-removal pin
 node test-retained-live.js        # 111 live  · goal widget + the real-FY snapshot round-trip
 ```
 
 The widget's native half has its own instrumented test (needs a booted emulator):
 ```bash
-cd android && ./gradlew :app:connectedDebugAndroidTest   # WidgetRenderTest:
-# renders 3 sizes x 3 states x 2 themes via the real RemoteViews.apply(),
-# writing each PNG to /sdcard/Android/data/com.banksiasprings.invoices/files/widget-shots/
+cd android && ./gradlew :app:connectedDebugAndroidTest   # WidgetRenderTest (6 tests):
+# renders 3 sizes x 3 states x 2 themes via the real RemoteViews.apply(), asserts the
+# themes actually differ, and fails on a squeezed/clipped child instead of leaving it
+# to someone noticing in a PNG.
+#
+# To KEEP the images: connectedAndroidTest uninstalls the app when it finishes, and the
+# PNGs go with it. Install both APKs and drive the runner yourself instead:
+#   adb install -r -t android/build/android/app/outputs/apk/debug/app-debug.apk
+#   adb install -r -t android/build/android/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+#   adb shell am instrument -w -e class com.banksiasprings.invoices.WidgetRenderTest \
+#       com.banksiasprings.invoices.test/androidx.test.runner.AndroidJUnitRunner
+#   adb exec-out run-as com.banksiasprings.invoices cat files/widget-shots/4x2-dark.png > out.png
+# (They are on INTERNAL storage: /sdcard/Android/data/<pkg> is not shell-listable on API 30+.)
 ```
-Full suite as of v107.0: **1469 pure + 848 live**, plus the instrumented
+Full suite as of v108.0: **1536 pure + 870 live**, plus the instrumented
 `WidgetRenderTest` (`./gradlew :app:connectedDebugAndroidTest`, needs an emulator). Live suites drive rows with **PointerEvent**, not TouchEvent — the
 row gestures moved to Pointer Events in v104.9 and a TouchEvent press now reaches
 nothing. Live suites bind fixed HTTP + CDP ports, so a killed run leaves the port held and the next one dies with
