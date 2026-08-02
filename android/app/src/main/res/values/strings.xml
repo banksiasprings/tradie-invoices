@@ -4,4 +4,7 @@
     <string name="title_activity_main">Invoice &amp; PDF</string>
     <string name="package_name">com.banksiasprings.invoices</string>
     <string name="custom_url_scheme">com.banksiasprings.invoices</string>
+    <!-- v107.0 — shown in the widget picker (Android 12+). -->
+    <string name="widget_label">Earnings goal</string>
+    <string name="widget_description">Retained earnings this financial year, hours worked this week, and how the year is tracking.</string>
 </resources>

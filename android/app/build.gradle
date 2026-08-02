@@ -14,8 +14,8 @@ android {
         applicationId "com.banksiasprings.invoices"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 16
-        versionName "1.106.1"
+        versionCode 17
+        versionName "1.107.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -60,6 +60,26 @@ dependencies {
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
     implementation 'com.google.android.gms:play-services-location:21.3.0'
+    // v107.0 — home-screen widget refresh. WorkManager rather than the widget
+    // framework's own updatePeriodMillis: the platform timer wakes the device,
+    // WorkManager respects Doze.
+    implementation 'androidx.work:work-runtime:2.9.1'
+    // Worker's supertype signature references Guava's ListenableFuture, but the
+    // COMPILE classpath only carries com.google.guava:listenablefuture in its
+    // 9999.0-empty-to-avoid-conflict-with-guava form — a deliberately empty jar
+    // that exists so full Guava can supply the class instead. Full Guava
+    // (33.5.0-android) IS on both the debug and release RUNTIME classpaths via
+    // play-services, so the class is only missing at compile time.
+    // compileOnly, therefore: it fixes javac and adds nothing to the APK.
+    //
+    // It has to be GUAVA rather than listenablefuture:1.0 — declaring the latter
+    // resolves to the same empty 9999 stub, since version resolution applies to
+    // the compile classpath too. And do NOT force listenablefuture:1.0 globally:
+    // that puts the real class alongside Guava's copy and dexing fails on the
+    // duplicate, which is the exact conflict the empty stub exists to prevent.
+    // Version matches what is already resolved at runtime, so nothing can be
+    // compiled against an API the device will not have.
+    compileOnly 'com.google.guava:guava:33.5.0-android'
 }
 
 apply from: 'capacitor.build.gradle'

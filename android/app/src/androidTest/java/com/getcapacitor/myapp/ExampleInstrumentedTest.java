@@ -21,6 +21,9 @@ public class ExampleInstrumentedTest {
         // Context of the app under test.
         Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
 
-        assertEquals("com.getcapacitor.app", appContext.getPackageName());
+        // v107.0: was still asserting the Capacitor template's placeholder id.
+        // Harmless while nothing ran instrumented tests; now that WidgetRenderTest
+        // does, a permanently-red neighbour would hide its result.
+        assertEquals("com.banksiasprings.invoices", appContext.getPackageName());
     }
 }

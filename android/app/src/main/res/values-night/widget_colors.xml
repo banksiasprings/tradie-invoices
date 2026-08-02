@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  v107.0 — home-screen widget palette (dark).
+
+  Deeper card so it does not glare against a dark wallpaper, and slightly softened
+  ink so white text is not the brightest thing on the screen at night. The accent
+  is unchanged: #F0A58A is legible on both card values, which is also why the week
+  bars (drawn to a bitmap in our own process, where the launcher's theme is not
+  visible) can safely use one amber for both modes.
+-->
+<resources>
+    <color name="widget_bg">#121B2C</color>
+    <color name="widget_ink">#ECF1F8</color>
+    <color name="widget_ink_dim">#8D9AB1</color>
+    <color name="widget_accent">#F0A58A</color>
+    <color name="widget_track">#24334C</color>
+    <color name="widget_good">#7FD3A0</color>
+</resources>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  v107.0 — home-screen widget palette (light).
+
+  These are the app's own CSS tokens: navy #1C2A44 as the card, and amber
+  rendered as #F0A58A (the amber-on-navy variant, which is what the in-app goal
+  card already uses because raw #C1583A is too dark to read on navy).
+
+  Note for future edits: XML forbids a double hyphen inside a comment, so the
+  CSS custom-property names cannot be written here in their real form.
+
+  The widget keeps the navy card in BOTH themes on purpose — the in-app goal card
+  is navy in light mode too, and inverting it on the home screen would make the
+  widget stop looking like the app it belongs to. Dark mode deepens the card and
+  softens the text instead of flipping it, which is the same thing the BSF solar
+  widget does with Color.dynamic().
+
+  Every one of these is referenced from layout XML, never from Java: RemoteViews
+  are inflated in the launcher's process, so a colour resolved in ours would
+  ignore the system theme entirely.
+-->
+<resources>
+    <color name="widget_bg">#1C2A44</color>
+    <color name="widget_ink">#FFFFFF</color>
+    <color name="widget_ink_dim">#A9B6CB</color>
+    <color name="widget_accent">#F0A58A</color>
+    <color name="widget_track">#2E3D59</color>
+    <color name="widget_good">#8FE3B0</color>
+</resources>

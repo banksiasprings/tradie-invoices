@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  v107.0 — home-screen widget declaration.
+
+  Sizing: Android's cell arithmetic is 70n - 30, so the 2x1 floor is 110x40dp and
+  the 4x2 target is 250x110dp. minResize* is set to the 2x1 floor so the widget can
+  be shrunk all the way back down after being enlarged.
+
+  updatePeriodMillis is deliberately 0. The platform's own update period is capped
+  at 30 minutes AND wakes the device to fire; WorkManager does the same job while
+  respecting Doze, which matters on a phone whose battery behaviour this project
+  has already had to fight (see the v104.4 Motorola findings).
+
+  targetCellWidth/Height and description are API 31+ only and are ignored below it,
+  where minWidth/minHeight still govern.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp"
+    android:minHeight="40dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="40dp"
+    android:maxResizeWidth="380dp"
+    android:maxResizeHeight="200dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="0"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/widget_description"
+    android:previewLayout="@layout/widget_goal_medium"
+    android:previewImage="@mipmap/ic_launcher"
+    android:initialLayout="@layout/widget_goal_medium" />

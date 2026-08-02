@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v107.0 — pre-Android-12 fallback radius. See values-v31 for the Material You
+     value, which follows the launcher's own corner shape rather than guessing. -->
+<resources>
+    <dimen name="widget_radius">16dp</dimen>
+    <dimen name="widget_pad">12dp</dimen>
+</resources>

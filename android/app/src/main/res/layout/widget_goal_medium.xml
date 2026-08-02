@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  v107.0 — 2x2. The headline, plus the two things that change day to day.
+
+  The extra height over 2x1 buys the week line ("This week 32.3h / 45h"), the
+  all-time effective rate, and the six-week bar shape. Those three answer "am I
+  working enough, at the right rate, and is this week normal" — the whole reason
+  to glance at a widget rather than open the app.
+
+  Deliberately NOT here: the gap figure and its explanation. Both are sentences,
+  and a sentence squeezed into 110dp is a sentence nobody reads. They arrive at
+  4x2, where there is room.
+
+  SIZING IS TIGHT AND DELIBERATE. A 2x2 cell is 110x110dp, and after padding
+  there are ~90dp of vertical room for six stacked elements. The first build of
+  this layout asked for ~120dp: LinearLayout silently squeezed the last children
+  to nothing, so the week bars rendered as hairlines and the week/rate row did
+  not render at all. Every size here is chosen to sum UNDER the budget — if you
+  add a row, take the height from somewhere, and re-run WidgetRenderTest and
+  LOOK at the PNG. It fails silently, not loudly.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_bg"
+    android:padding="10dp">
+
+    <TextView
+        android:id="@+id/w_label"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="8.5sp"
+        android:textStyle="bold"
+        android:singleLine="true"
+        android:ellipsize="end"
+        android:textColor="@color/widget_ink_dim"
+        android:text="🎯 Retained" />
+
+    <!-- Text size is set from Java per state (see WidgetRenderer.headlineSp). -->
+    <TextView
+        android:id="@+id/w_big"
+        android:layout_width="match_parent"
+        android:layout_height="25dp"
+        android:layout_marginTop="1dp"
+        android:textSize="20sp"
+        android:fontFamily="sans-serif-black"
+        android:gravity="center_vertical"
+        android:singleLine="true"
+        android:textColor="@color/widget_accent"
+        android:text="—" />
+
+    <TextView
+        android:id="@+id/w_of"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="9.5sp"
+        android:singleLine="true"
+        android:ellipsize="end"
+        android:textColor="@color/widget_ink_dim"
+        android:text="" />
+
+    <ProgressBar
+        android:id="@+id/w_bar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:layout_marginTop="5dp"
+        android:max="100"
+        android:progress="0"
+        android:progressDrawable="@drawable/widget_progress" />
+
+    <!-- Absorbs slack so the block below sits on the bottom edge.
+         FrameLayout, NOT Space: RemoteViews only inflates classes carrying the
+         @RemoteView annotation, and android.widget.Space does not. It fails at
+         apply() time in the launcher, so the widget just never draws and the
+         reason lands in the launcher's logcat rather than ours. Plain View is
+         not allowed either. -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <ImageView
+        android:id="@+id/w_bars"
+        android:layout_width="match_parent"
+        android:layout_height="12dp"
+        android:layout_marginTop="3dp"
+        android:scaleType="fitXY"
+        android:importantForAccessibility="no"
+        android:contentDescription="@null" />
+
+    <!-- The effective rate does NOT appear at this size. It is an all-time figure
+         that moves very slowly, and fitting it here pushed "This week 32.3h / 45h"
+         into an ellipsis — a truncated live number is worse than a missing slow
+         one. It appears at 4x2, where the footer has a slot for it. -->
+    <TextView
+        android:id="@+id/w_week"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:textSize="9sp"
+        android:singleLine="true"
+        android:ellipsize="end"
+        android:textColor="@color/widget_ink"
+        android:text="" />
+
+</LinearLayout>

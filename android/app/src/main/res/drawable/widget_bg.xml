@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v107.0 — the widget card. Colour and radius both come from resources so the
+     launcher's theme (night) and its corner shape (Material You, API 31+) apply. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/widget_bg" />
+    <corners android:radius="@dimen/widget_radius" />
+</shape>

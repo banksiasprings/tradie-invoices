@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  v107.0 — Android 12+ (API 31) Material You corners.
+
+  system_app_widget_background_radius is the radius the LAUNCHER is using, so the
+  card matches every other widget on the home screen instead of asserting its own
+  shape. Capped at 28dp by the platform; on older releases the values/ fallback
+  (16dp) applies, which is why this is an overlay rather than the only definition.
+-->
+<resources>
+    <dimen name="widget_radius">@android:dimen/system_app_widget_background_radius</dimen>
+    <dimen name="widget_pad">14dp</dimen>
+</resources>

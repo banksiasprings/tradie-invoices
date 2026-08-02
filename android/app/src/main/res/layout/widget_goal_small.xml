@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  v107.0 — 2x1. The headline and its one qualifier. Nothing else fits, honestly.
+
+  A 2x1 cell is 110x40dp. After padding there are ~28dp of vertical room — TWO
+  short lines, and that is the whole budget. The first build of this layout asked
+  for a label, the number, the of-line AND a progress bar; at 40dp they drew on
+  top of one another and the result was an unreadable smear. So this size drops:
+
+    · the FY label — the number is unmistakably money, and the app is one tap away
+    · the progress bar — "3%" is on the of-line, and says the same thing in less
+      than a third of the height
+
+  Both come back at 2x2, where there is room to read them. Keeping them here
+  would not have shown more information, it would have shown less of it legibly.
+
+  Fonts: sans-serif-black stands in for Montserrat 800 (the app's heading weight)
+  — RemoteViews cannot use a webfont, and the weight is what carries the app's
+  typographic identity here, not the exact face.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center_vertical"
+    android:background="@drawable/widget_bg"
+    android:padding="5dp">
+
+    <!-- Text size is set from Java per state (see WidgetRenderer.headlineSp) —
+         a six-character number and a twelve-character sentence cannot share one.
+         XML autosize was tried first and lost a silent fight with
+         setTextViewTextSize, leaving the empty state reading "Open the a…". -->
+    <TextView
+        android:id="@+id/w_big"
+        android:layout_width="match_parent"
+        android:layout_height="19dp"
+        android:textSize="15sp"
+        android:fontFamily="sans-serif-black"
+        android:gravity="center_vertical"
+        android:singleLine="true"
+        android:textColor="@color/widget_accent"
+        android:text="—" />
+
+    <TextView
+        android:id="@+id/w_of"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="8sp"
+        android:singleLine="true"
+        android:ellipsize="end"
+        android:textColor="@color/widget_ink_dim"
+        android:text="" />
+
+</LinearLayout>

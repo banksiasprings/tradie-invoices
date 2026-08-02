@@ -67,6 +67,21 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
+        <!-- v107.0 Home-screen earnings-goal widget. Reads ONLY the snapshot the
+             app writes to SharedPreferences — no Firestore, no auth, no network
+             in the widget process. Must be exported so the launcher can bind it. -->
+        <receiver
+            android:name=".GoalWidgetProvider"
+            android:label="@string/widget_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/goal_widget_info" />
+        </receiver>
+
     </application>
 
     <!-- Permissions -->
