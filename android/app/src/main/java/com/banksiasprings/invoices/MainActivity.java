@@ -9,6 +9,12 @@ public class MainActivity extends BridgeActivity {
     /** v107.0 — set by the home-screen widget's tap intent. */
     public static final String EXTRA_OPEN_SCREEN = "mcn_open_screen";
 
+    /**
+     * v108.0 — the Monday key of the week bar that was tapped, when one was.
+     * Absent for the whole-card tap, which carries a screen and nothing else.
+     */
+    public static final String EXTRA_OPEN_WEEK = "mcn_open_week";
+
     @Override
     public void onCreate(android.os.Bundle savedInstanceState) {
         registerPlugin(NativeGeoPlugin.class);
@@ -39,9 +45,18 @@ public class MainActivity extends BridgeActivity {
         if (intent == null) return;
         String screen = intent.getStringExtra(EXTRA_OPEN_SCREEN);
         if (screen == null || screen.isEmpty()) return;
-        WidgetStore.prefs(this).edit().putString("pending_screen", screen).apply();
+        String week = intent.getStringExtra(EXTRA_OPEN_WEEK);
+        // Written together, and the week is written UNCONDITIONALLY (as null when
+        // absent) so a whole-card tap clears a week banked by an earlier bar tap.
+        // Leaving a stale key behind would send the next plain tap to the Log
+        // filtered by a week the user never asked for.
+        WidgetStore.prefs(this).edit()
+                .putString("pending_screen", screen)
+                .putString("pending_week", week)
+                .apply();
         // Cleared from the intent so a configuration change or a relaunch from
         // recents does not replay a navigation the user has since moved on from.
         intent.removeExtra(EXTRA_OPEN_SCREEN);
+        intent.removeExtra(EXTRA_OPEN_WEEK);
     }
 }

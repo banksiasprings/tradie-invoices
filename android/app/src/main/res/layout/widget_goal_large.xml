@@ -21,7 +21,16 @@
   number ellipsised to "$3,9…". So the week bars moved to a full-width footer
   (where they also read better), the milestone chips ride beside them, and the
   headline autosizes. If you add a row here, take the height from somewhere and
-  re-run WidgetRenderTest — then LOOK at the PNG. Overflow is silent.
+  re-run WidgetRenderTest.
+
+  v108.0 note: overflow is no longer silent. The render test measures every
+  VISIBLE child after layout and fails on a zero-height one or a clipped
+  headline, which is what "LOOK at the PNG" was standing in for.
+
+  v108.0 grew the footer chart 14dp to 20dp so its bars can be tapped. The 6dp
+  came from padding (12 to 10) and the footer margin (6 to 4) — deliberately NOT
+  from the top row, because the headline lives there on a weight and would have
+  silently lost 6dp of glyph height rather than shrinking its text.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
@@ -29,7 +38,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/widget_bg"
-    android:padding="12dp">
+    android:padding="10dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -140,25 +149,63 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
+        android:layout_marginTop="4dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:baselineAligned="false">
 
-        <ImageView
-            android:id="@+id/w_bars"
+        <!-- ── v108.0 week chart, tappable — see widget_goal_medium.xml for why
+             the bars are one bitmap with six invisible cells laid over it.
+             Wider here (weight 26 to 38) as well as taller: 4x2 is the size with
+             the pixels to make six weeks read as a trend rather than a texture,
+             and a wider cell is also a more forgiving tap. -->
+        <FrameLayout
+            android:id="@+id/w_chart"
             android:layout_width="0dp"
-            android:layout_height="14dp"
-            android:layout_weight="26"
-            android:scaleType="fitXY"
-            android:importantForAccessibility="no"
-            android:contentDescription="@null" />
+            android:layout_height="20dp"
+            android:layout_weight="38">
+
+            <ImageView
+                android:id="@+id/w_bars"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="fitXY"
+                android:importantForAccessibility="no"
+                android:contentDescription="@null" />
+
+            <LinearLayout
+                android:id="@+id/w_hits"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:baselineAligned="false">
+
+                <FrameLayout android:id="@+id/w_hit0"
+                    android:layout_width="0dp" android:layout_height="match_parent"
+                    android:layout_weight="1" />
+                <FrameLayout android:id="@+id/w_hit1"
+                    android:layout_width="0dp" android:layout_height="match_parent"
+                    android:layout_weight="1" />
+                <FrameLayout android:id="@+id/w_hit2"
+                    android:layout_width="0dp" android:layout_height="match_parent"
+                    android:layout_weight="1" />
+                <FrameLayout android:id="@+id/w_hit3"
+                    android:layout_width="0dp" android:layout_height="match_parent"
+                    android:layout_weight="1" />
+                <FrameLayout android:id="@+id/w_hit4"
+                    android:layout_width="0dp" android:layout_height="match_parent"
+                    android:layout_weight="1" />
+                <FrameLayout android:id="@+id/w_hit5"
+                    android:layout_width="0dp" android:layout_height="match_parent"
+                    android:layout_weight="1" />
+            </LinearLayout>
+        </FrameLayout>
 
         <TextView
             android:id="@+id/w_milestones"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_weight="52"
+            android:layout_weight="40"
             android:layout_marginStart="8dp"
             android:textSize="8.5sp"
             android:singleLine="true"

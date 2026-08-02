@@ -25,9 +25,21 @@ import java.util.Locale;
  * LAYOUT XML, never set programmatically. RemoteViews are inflated in the
  * launcher's process with the LAUNCHER's configuration, so a colour baked in
  * from our process would ignore the system theme and strand the widget in the
- * wrong mode. The one exception is the bar bitmap, which must be drawn here —
- * so it is drawn in amber, the one brand colour that reads correctly on both a
- * light and a dark background, which makes the limitation invisible.
+ * wrong mode.
+ *
+ * The bar bitmap is the ONE exception, because it needs a Canvas. v107.0 handled
+ * that by drawing it in a single amber that read acceptably on the navy card it
+ * used in both themes. v108.0 made the card follow the system theme — cream by
+ * day, charcoal by night — and that trick died with it: the old translucent-white
+ * bar track is invisible on cream, and raw brand amber fails contrast on it. So
+ * the bar colours are now RESOLVED FROM RESOURCES (see {@link #barColors}), which
+ * means values-night applies to them exactly as it does to the layout.
+ *
+ * That resolution happens in OUR process, so it assumes our configuration's night
+ * mode matches the launcher's. For system-wide dark mode — the only way Android
+ * exposes this to a user — that holds. It is the single place in this class where
+ * the launcher's theme is inferred rather than deferred to, and it is confined to
+ * three colours inside one bitmap.
  *
  * Language rule: this surface never says "on track", "on pace" or "caught up".
  * A glanceable widget is exactly where a soft word gets read as a fact, so the
@@ -36,10 +48,23 @@ import java.util.Locale;
  */
 public class WidgetRenderer {
 
-    /** Brand amber (--amber). Legible on both the navy card and a light launcher. */
-    private static final int AMBER = 0xFFC1583A;
-    private static final int AMBER_LIGHT = 0xFFE8A48C;
-    private static final int BAR_TRACK = 0x33FFFFFF;
+    /** Base request code for the whole-card tap. Per-bar taps start at BAR_RC. */
+    private static final int ROOT_RC = 1071;
+    /**
+     * Per-bar PendingIntent request codes start here, one per bar.
+     *
+     * THEY MUST BE DISTINCT. PendingIntent identity uses Intent.filterEquals,
+     * which compares action/data/type/component/categories and IGNORES EXTRAS —
+     * so six bars sharing a request code collapse into ONE PendingIntent and every
+     * bar opens whichever week was written last. Nothing errors; the widget simply
+     * lies about which week you tapped.
+     */
+    private static final int BAR_RC = 1080;
+
+    /** Hit cells laid over the bar bitmap, in order. Six is `maxWeeks` in the JS. */
+    private static final int[] HIT_IDS = {
+        R.id.w_hit0, R.id.w_hit1, R.id.w_hit2, R.id.w_hit3, R.id.w_hit4, R.id.w_hit5
+    };
 
     public enum Size { SMALL, MEDIUM, LARGE }
 
@@ -88,7 +113,11 @@ public class WidgetRenderer {
 
         v.setTextViewText(R.id.w_label, "🎯 Retained");
         hide(v, R.id.w_bar);
-        hide(v, R.id.w_bars);
+        // The CONTAINER, not just the bitmap: v108.0 put the bar image inside a
+        // FrameLayout with six invisible tap cells over it. Hiding only the image
+        // would leave those cells live over blank space, so an empty widget would
+        // still fire "open week ___" for a week that does not exist.
+        hide(v, R.id.w_chart);
         hide(v, R.id.w_week);
         if (size == Size.LARGE) {
             hide(v, R.id.w_gap); hide(v, R.id.w_note);
@@ -248,8 +277,9 @@ public class WidgetRenderer {
         // normalised against itself and fills the whole strip — which on a dark
         // card reads exactly like a progress bar sitting at 100%. Showing nothing
         // is the honest rendering of "not enough weeks to compare yet".
-        if (weeks == null || weeks.size() < 2) { hide(v, R.id.w_bars); return; }
+        if (weeks == null || weeks.size() < 2) { hide(v, R.id.w_chart); return; }
 
+        int[] col = barColors(ctx);
         float d = ctx.getResources().getDisplayMetrics().density;
         int w = Math.max(1, (int) (wDp * d)), h = Math.max(1, (int) (hDp * d));
         Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
@@ -261,19 +291,80 @@ public class WidgetRenderer {
         for (WidgetStore.Week wk : weeks) max = Math.max(max, wk.hours);
         if (max <= 0) max = 1;
 
-        int n = weeks.size();
-        float gap = 3f * d, bw = (w - gap * (n - 1)) / n, r = Math.min(bw / 2f, 3f * d);
+        int n = Math.min(weeks.size(), HIT_IDS.length);
+        /*
+         * Each week owns an equal SLOT; the bar is centred inside it at a capped
+         * width. Dividing the full width between the bars themselves (what v107.0
+         * did) is fine at six weeks and awful at three — a 28dp-wide bar in an
+         * 18dp-tall strip stops reading as a bar and starts reading as a button,
+         * which is exactly how the first v108.0 render came out.
+         *
+         * Slots, not bars, are also what keeps this honest with the tap targets:
+         * cell i covers slot i and bar i is centred in slot i, so they stay
+         * aligned at any week count — and the cell is WIDER than the bar it
+         * selects, which makes it the more forgiving target rather than a
+         * pixel-hunt.
+         */
+        float slot = w / (float) n;
+        float gap = 3f * d;
+        // 9dp: the strip is only 18-20dp tall, so anything wider than about half
+        // that reads as a tile rather than a bar. At six weeks the slot is
+        // narrower than the cap anyway and this has no effect; it is there for
+        // the early-financial-year case, which is the one Steven is in.
+        float bw = Math.min(slot - gap, 9f * d);
+        float r = Math.min(bw / 2f, 2.5f * d);
         for (int i = 0; i < n; i++) {
             WidgetStore.Week wk = weeks.get(i);
-            float left = i * (bw + gap);
+            float left = i * slot + (slot - bw) / 2f;
             float bh = (float) Math.max(0.06, wk.hours / max) * h;
-            p.setColor(BAR_TRACK);
+            p.setColor(col[2]);
             c.drawRoundRect(new RectF(left, 0, left + bw, h), r, r, p);
-            p.setColor(wk.key.equals(thisKey) ? AMBER_LIGHT : AMBER);
+            p.setColor(wk.key.equals(thisKey) ? col[1] : col[0]);
             c.drawRoundRect(new RectF(left, h - bh, left + bw, h), r, r, p);
         }
         v.setImageViewBitmap(R.id.w_bars, bmp);
         v.setViewVisibility(R.id.w_bars, View.VISIBLE);
+        v.setViewVisibility(R.id.w_chart, View.VISIBLE);
+        bindBarTaps(ctx, v, weeks, n);
+    }
+
+    /**
+     * One tap target per drawn bar, opening the Log on that week.
+     *
+     * The cells are laid over the bitmap and divide the same width evenly, which
+     * is the only reason cell i lines up with bar i — the bitmap loop above uses
+     * the identical `n`, so the two cannot drift apart without both changing.
+     *
+     * Cells past `n` are hidden rather than left inert: a GONE view cannot be
+     * tapped, whereas a visible one with a stale intent from a previous update
+     * would happily open a week that has since fallen off the end of the chart.
+     */
+    private static void bindBarTaps(Context ctx, RemoteViews v, List<WidgetStore.Week> weeks, int n) {
+        v.setViewVisibility(R.id.w_hits, View.VISIBLE);
+        for (int i = 0; i < HIT_IDS.length; i++) {
+            if (i < n) {
+                v.setViewVisibility(HIT_IDS[i], View.VISIBLE);
+                v.setOnClickPendingIntent(HIT_IDS[i], openWeekIntent(ctx, weeks.get(i).key, i));
+            } else {
+                hide(v, HIT_IDS[i]);
+            }
+        }
+    }
+
+    /**
+     * The three bar colours for the current configuration: {fill, current, track}.
+     *
+     * Read from resources rather than held as constants so values-night (and the
+     * Material You overlay on API 31+) applies. This is the one place the widget
+     * resolves a colour in our process — see the class comment for why that is
+     * sound, and why v107.0's single hard-coded amber stopped being.
+     */
+    static int[] barColors(Context ctx) {
+        return new int[] {
+            ctx.getColor(R.color.widget_bar_fill),
+            ctx.getColor(R.color.widget_bar_current),
+            ctx.getColor(R.color.widget_bar_track)
+        };
     }
 
     private static void hide(RemoteViews v, int id) { v.setViewVisibility(id, View.GONE); }
@@ -283,13 +374,29 @@ public class WidgetRenderer {
      * harmless before it — an omitted mutability flag is a hard crash on 31+.
      */
     static PendingIntent openStatsIntent(Context ctx) {
+        return activity(ctx, ROOT_RC, "analytics", null);
+    }
+
+    /**
+     * Tap a bar, open the Log on that week. `index` only exists to keep the
+     * request codes distinct — see BAR_RC for what happens when they are not.
+     */
+    static PendingIntent openWeekIntent(Context ctx, String weekKey, int index) {
+        return activity(ctx, BAR_RC + index, "log", weekKey);
+    }
+
+    private static PendingIntent activity(Context ctx, int requestCode, String screen, String weekKey) {
         Intent i = new Intent(ctx, MainActivity.class);
         i.setAction(Intent.ACTION_MAIN);
         i.addCategory(Intent.CATEGORY_LAUNCHER);
-        i.putExtra(MainActivity.EXTRA_OPEN_SCREEN, "analytics");
+        i.putExtra(MainActivity.EXTRA_OPEN_SCREEN, screen);
+        if (weekKey != null) i.putExtra(MainActivity.EXTRA_OPEN_WEEK, weekKey);
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        // FLAG_UPDATE_CURRENT matters as much as the distinct request code: the
+        // week a given bar points at changes every time the chart scrolls forward,
+        // and without it the extras of the FIRST intent ever created would stick.
         int flags = PendingIntent.FLAG_UPDATE_CURRENT
                 | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
-        return PendingIntent.getActivity(ctx, 1071, i, flags);
+        return PendingIntent.getActivity(ctx, requestCode, i, flags);
     }
 }

@@ -16,8 +16,16 @@
   this layout asked for ~120dp: LinearLayout silently squeezed the last children
   to nothing, so the week bars rendered as hairlines and the week/rate row did
   not render at all. Every size here is chosen to sum UNDER the budget — if you
-  add a row, take the height from somewhere, and re-run WidgetRenderTest and
-  LOOK at the PNG. It fails silently, not loudly.
+  add a row, take the height from somewhere, and re-run WidgetRenderTest.
+
+  v108.0 note: that "LOOK at the PNG" instruction is no longer the only defence.
+  The render test now measures every VISIBLE child after layout and fails if one
+  came out zero-height or if the headline was clipped, so the squeeze is a red
+  test rather than a screenshot somebody has to notice. It was a false green.
+
+  v108.0 grew the chart 12dp to 18dp to make the bars tappable at all. The 6dp
+  was taken back from padding (10 to 8) and two margins (5 to 4, 3 to 2) so the
+  budget is unchanged — NOT from the headline, which was already at its floor.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
@@ -25,7 +33,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/widget_bg"
-    android:padding="10dp">
+    android:padding="8dp">
 
     <TextView
         android:id="@+id/w_label"
@@ -66,7 +74,7 @@
         style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
         android:layout_height="4dp"
-        android:layout_marginTop="5dp"
+        android:layout_marginTop="4dp"
         android:max="100"
         android:progress="0"
         android:progressDrawable="@drawable/widget_progress" />
@@ -82,14 +90,64 @@
         android:layout_height="0dp"
         android:layout_weight="1" />
 
-    <ImageView
-        android:id="@+id/w_bars"
+    <!-- ── v108.0 week chart, tappable ────────────────────────────────────────
+         The bars are still ONE bitmap: RemoteViews cannot size a child below API
+         31, so a real per-bar view would draw wrong on Steven's own phone class.
+         But a bitmap cannot be hit-tested either, so the tap targets are six
+         invisible weighted cells laid OVER it. Both the bitmap's bars and the
+         cells divide the same width evenly, so cell i sits exactly on bar i —
+         that correspondence is the whole trick, and it is asserted in the render
+         test rather than trusted.
+
+         The cells are FrameLayout, NOT Space or View: RemoteViews only inflates
+         classes carrying @RemoteView, and it fails at apply() time in the
+         LAUNCHER, so the widget just never draws and the reason lands in someone
+         else's logcat. Same trap as the spacer above.
+
+         18dp is short of the 48dp touch-target guidance and there is no honest
+         way around it — a 2x2 cell is 110dp tall in total. A miss lands on the
+         card, which opens Stats, so the fallback is useful rather than dead. -->
+    <FrameLayout
+        android:id="@+id/w_chart"
         android:layout_width="match_parent"
-        android:layout_height="12dp"
-        android:layout_marginTop="3dp"
-        android:scaleType="fitXY"
-        android:importantForAccessibility="no"
-        android:contentDescription="@null" />
+        android:layout_height="18dp"
+        android:layout_marginTop="2dp">
+
+        <ImageView
+            android:id="@+id/w_bars"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="fitXY"
+            android:importantForAccessibility="no"
+            android:contentDescription="@null" />
+
+        <LinearLayout
+            android:id="@+id/w_hits"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:baselineAligned="false">
+
+            <FrameLayout android:id="@+id/w_hit0"
+                android:layout_width="0dp" android:layout_height="match_parent"
+                android:layout_weight="1" />
+            <FrameLayout android:id="@+id/w_hit1"
+                android:layout_width="0dp" android:layout_height="match_parent"
+                android:layout_weight="1" />
+            <FrameLayout android:id="@+id/w_hit2"
+                android:layout_width="0dp" android:layout_height="match_parent"
+                android:layout_weight="1" />
+            <FrameLayout android:id="@+id/w_hit3"
+                android:layout_width="0dp" android:layout_height="match_parent"
+                android:layout_weight="1" />
+            <FrameLayout android:id="@+id/w_hit4"
+                android:layout_width="0dp" android:layout_height="match_parent"
+                android:layout_weight="1" />
+            <FrameLayout android:id="@+id/w_hit5"
+                android:layout_width="0dp" android:layout_height="match_parent"
+                android:layout_weight="1" />
+        </LinearLayout>
+    </FrameLayout>
 
     <!-- The effective rate does NOT appear at this size. It is an all-time figure
          that moves very slowly, and fitting it here pushed "This week 32.3h / 45h"

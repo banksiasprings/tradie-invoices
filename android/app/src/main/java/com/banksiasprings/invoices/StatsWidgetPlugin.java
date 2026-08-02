@@ -44,18 +44,27 @@ public class StatsWidgetPlugin extends Plugin {
     /**
      * Drains the screen a widget tap asked for, if any. Read-and-clear in one
      * call so a navigation can never be replayed on the next resume.
+     *
+     * v108.0 also returns `week`: the Monday key of the tapped bar, or null for
+     * the whole-card tap. Both keys are cleared together — clearing only the
+     * screen would leave a week banked, and the NEXT plain tap would silently
+     * inherit a filter from a bar press the user made minutes earlier.
      */
     @PluginMethod
     public void consumePendingScreen(PluginCall call) {
         JSObject ret = new JSObject();
         try {
             String screen = WidgetStore.prefs(getContext()).getString("pending_screen", null);
+            String week = WidgetStore.prefs(getContext()).getString("pending_week", null);
             if (screen != null) {
-                WidgetStore.prefs(getContext()).edit().remove("pending_screen").apply();
+                WidgetStore.prefs(getContext()).edit()
+                        .remove("pending_screen").remove("pending_week").apply();
             }
             ret.put("screen", screen);
+            ret.put("week", week);
         } catch (Exception e) {
             ret.put("screen", null);
+            ret.put("week", null);
         }
         call.resolve(ret);
     }
