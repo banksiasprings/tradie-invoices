@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  v108.0 — Android 12+ (API 31) Material You palette, DARK.
+
+  The tone direction is inverted from values-v31: a dark surface takes a HIGH
+  neutral tone and its ink a low one, and the accent moves to a light tone so it
+  reads on that surface. See the note in values-v31/widget_colors.xml.
+
+  system_neutral1_800 rather than _900: at _900 the card is very nearly black and
+  disappears into a dark wallpaper, which loses the card edge that tells you where
+  the widget is. _800 keeps it a distinct surface.
+-->
+<resources>
+    <!-- Card surface + text. -->
+    <color name="widget_bg">@android:color/system_neutral1_800</color>
+    <color name="widget_ink">@android:color/system_neutral1_50</color>
+    <color name="widget_ink_dim">@android:color/system_neutral2_200</color>
+    <color name="widget_accent">@android:color/system_accent1_200</color>
+    <color name="widget_track">@android:color/system_accent1_700</color>
+    <color name="widget_good">@android:color/system_accent3_200</color>
+
+    <!-- Week-bar chart, resolved in OUR process. See WidgetRenderer.barColors(). -->
+    <color name="widget_bar_fill">@android:color/system_accent1_300</color>
+    <!-- See the light overlay: one step brighter, not a white slab. -->
+    <color name="widget_bar_current">@android:color/system_accent1_200</color>
+    <color name="widget_bar_track">@android:color/system_accent1_700</color>
+</resources>

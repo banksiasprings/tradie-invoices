@@ -1,29 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  v107.0 — home-screen widget palette (light).
+  v108.0 — home-screen widget palette, LIGHT.
 
-  These are the app's own CSS tokens: navy #1C2A44 as the card, and amber
-  rendered as #F0A58A (the amber-on-navy variant, which is what the in-app goal
-  card already uses because raw #C1583A is too dark to read on navy).
+  v107.0 kept the card navy in BOTH themes on the grounds that the in-app goal
+  card is navy in light mode too. Steven asked for the widget to follow the
+  system theme instead, so it now does: cream card with navy ink in the day,
+  charcoal card with light ink at night (see values-night).
 
   Note for future edits: XML forbids a double hyphen inside a comment, so the
   CSS custom-property names cannot be written here in their real form.
 
-  The widget keeps the navy card in BOTH themes on purpose — the in-app goal card
-  is navy in light mode too, and inverting it on the home screen would make the
-  widget stop looking like the app it belongs to. Dark mode deepens the card and
-  softens the text instead of flipping it, which is the same thing the BSF solar
-  widget does with Color.dynamic().
+  THE ACCENT IS NOT THE RAW BRAND AMBER, AND THAT IS DELIBERATE. Brand amber on
+  this cream scores 4.05:1, which FAILS WCAG AA for normal text (needs 4.5:1) —
+  it was only ever used on navy, where it is fine. The darkened value below is
+  the same hue at 5.47:1. Reusing the brand value here would have shipped a
+  headline number that fails contrast on the exact surface it was moved onto.
+
+  Every value below is pinned by the contrast block in test-widget.js, which
+  READS THIS FILE — so an edit that breaks contrast fails the suite rather than
+  the user's eyes.
 
   Every one of these is referenced from layout XML, never from Java: RemoteViews
   are inflated in the launcher's process, so a colour resolved in ours would
-  ignore the system theme entirely.
+  ignore the system theme entirely. The bar bitmap is the one exception — it
+  needs a Canvas — and it reads widget_bar_* from OUR resources, which is why
+  those exist under separate names: see WidgetRenderer.barColors().
+
+  On API 31+ these are overridden by values-v31 (Material You). This file is the
+  fallback for API 24-30, and the definition of the brand-coloured look.
 -->
 <resources>
-    <color name="widget_bg">#1C2A44</color>
-    <color name="widget_ink">#FFFFFF</color>
-    <color name="widget_ink_dim">#A9B6CB</color>
-    <color name="widget_accent">#F0A58A</color>
-    <color name="widget_track">#2E3D59</color>
-    <color name="widget_good">#8FE3B0</color>
+    <!-- Card surface + text. -->
+    <color name="widget_bg">#F8F4ED</color>
+    <color name="widget_ink">#1C2A44</color>
+    <color name="widget_ink_dim">#5B6880</color>
+    <color name="widget_accent">#A8432A</color>
+    <color name="widget_track">#DFD7C8</color>
+    <color name="widget_good">#1E7A4B</color>
+
+    <!-- Week-bar chart. Resolved in OUR process (Canvas), so they are named
+         separately from the layout colours to keep that boundary visible.
+         `current` is the week in progress, deliberately darker rather than a
+         different hue so the chart still reads as one series. -->
+    <color name="widget_bar_fill">#A8432A</color>
+    <color name="widget_bar_current">#7A2E1B</color>
+    <color name="widget_bar_track">#DFD7C8</color>
 </resources>

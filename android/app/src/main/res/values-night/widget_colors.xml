@@ -1,18 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  v107.0 — home-screen widget palette (dark).
+  v108.0 — home-screen widget palette, DARK.
 
-  Deeper card so it does not glare against a dark wallpaper, and slightly softened
-  ink so white text is not the brightest thing on the screen at night. The accent
-  is unchanged: #F0A58A is legible on both card values, which is also why the week
-  bars (drawn to a bitmap in our own process, where the launcher's theme is not
-  visible) can safely use one amber for both modes.
+  v107.0's dark variant only deepened the navy card, because the card was navy in
+  both themes. Now that light mode is a cream card, this is a real inversion:
+  charcoal surface, light ink.
+
+  The charcoal is the app's own dark-mode navy rather than a neutral grey, so the
+  widget still reads as this app at night. The accent stays the light amber
+  v107.0 already used on navy — 8.58:1 here, and the value the in-app goal card
+  uses on the same background.
+
+  Pinned by the contrast block in test-widget.js, which reads this file.
+  On API 31+ this is overridden by values-night-v31 (Material You).
 -->
 <resources>
+    <!-- Card surface + text. -->
     <color name="widget_bg">#121B2C</color>
     <color name="widget_ink">#ECF1F8</color>
-    <color name="widget_ink_dim">#8D9AB1</color>
+    <color name="widget_ink_dim">#9AA7BE</color>
     <color name="widget_accent">#F0A58A</color>
     <color name="widget_track">#24334C</color>
     <color name="widget_good">#7FD3A0</color>
+
+    <!-- Week-bar chart — see the note in values/widget_colors.xml. -->
+    <color name="widget_bar_fill">#F0A58A</color>
+    <color name="widget_bar_current">#FFD2C0</color>
+    <color name="widget_bar_track">#24334C</color>
 </resources>
