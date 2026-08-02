@@ -1,6 +1,6 @@
 {
   "name": "tradie-invoices",
-  "version": "1.105.2",
+  "version": "1.106.0",
   "description": "A Progressive Web App (PWA) for tradespeople to manage timesheets, track work hours, and generate professional PDF invoices.",
   "main": "sw.js",
   "scripts": {

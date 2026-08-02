@@ -575,6 +575,64 @@
   .lb-active{border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px}
   .lb-pct{font-family:'Montserrat',system-ui,sans-serif;font-size:30px;font-weight:800;color:var(--green);line-height:1;margin-bottom:8px}
   .lb-meta{font-size:12.5px;color:var(--text2);margin-top:4px}
+
+  /* ═══════════════ v106.0 RETAINED GOAL WIDGET ═══════════════
+     Freyr's goal-widget SHAPE (big number, of-target line, milestone-ticked bar,
+     attribution split, earned pace commentary) in this app's OWN palette. Sized
+     for 375px first: the number wraps to its own line, the bar is full-bleed
+     within the card, and every row is a two-column flex that degrades to a stack
+     rather than overflowing. */
+  .gw-card{background:var(--navy);color:#fff;border-radius:var(--radius);padding:18px 16px 16px;margin-bottom:14px;box-shadow:0 2px 10px rgba(28,42,68,.16)}
+  .gw-hdr{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:14px}
+  .gw-title{font-family:'Montserrat',system-ui,sans-serif;font-size:13px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#fff;opacity:.92}
+  .gw-fy{font-size:11px;font-weight:700;color:#fff;opacity:.6;white-space:nowrap}
+  .gw-now{font-family:'Montserrat',system-ui,sans-serif;font-size:38px;font-weight:800;line-height:1;color:var(--amber-on-navy,#F0A58A);letter-spacing:-1px}
+  .gw-of{font-size:12.5px;line-height:1.55;color:#fff;opacity:.75;margin-top:7px}
+  .gw-of b{opacity:1;font-weight:700}
+  .gw-bar{position:relative;height:11px;background:rgba(255,255,255,.14);border-radius:99px;margin:14px 0 0;overflow:visible}
+  .gw-fill{height:100%;background:linear-gradient(90deg,var(--amber),#E8A48C);border-radius:99px;transition:width .5s cubic-bezier(.4,0,.2,1)}
+  .gw-tick{position:absolute;top:-3px;width:2px;height:17px;background:rgba(255,255,255,.45);border-radius:2px;transform:translateX(-1px)}
+  .gw-tick.hit{background:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.22)}
+  .gw-scale{display:flex;justify-content:space-between;font-size:10px;color:#fff;opacity:.5;margin-top:7px;font-weight:700}
+  .gw-ms{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
+  .gw-chip{font-size:10.5px;font-weight:700;padding:4px 9px;border-radius:99px;background:rgba(255,255,255,.1);color:#fff;opacity:.72;white-space:nowrap}
+  .gw-chip.hit{background:rgba(255,255,255,.2);opacity:1}
+  .gw-split{margin-top:16px;border-top:1px solid rgba(255,255,255,.16);padding-top:12px}
+  .gw-splithd{font-size:10px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;color:#fff;opacity:.5;margin-bottom:8px}
+  .gw-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:5px 0;font-size:12.5px;color:#fff}
+  .gw-row span{opacity:.78;flex:1;min-width:0}
+  .gw-row .gw-dim{opacity:.45;font-size:11px;font-weight:600}
+  .gw-row b{font-family:'DM Mono',ui-monospace,monospace;font-weight:700;white-space:nowrap;font-size:13px}
+  .gw-row b.pos{color:#8FE3B0}
+  .gw-row b.neg{color:#F5B7A0}
+  .gw-net{border-top:1px solid rgba(255,255,255,.16);margin-top:7px;padding-top:9px}
+  .gw-net span,.gw-net b{opacity:1;font-weight:800}
+  .gw-pace{margin-top:14px;background:rgba(255,255,255,.07);border-radius:var(--radius-sm);padding:12px 13px;font-size:12px;line-height:1.55;color:#fff;opacity:.88}
+  .gw-pace b{font-weight:800}
+  .gw-caveat{margin-top:7px;font-size:11px;line-height:1.5;opacity:.62;padding-left:11px;border-left:2px solid rgba(255,255,255,.2)}
+  .gw-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px;font-size:10.5px;color:#fff;opacity:.5}
+  .gw-review{background:none;border:1px solid rgba(255,255,255,.28);color:#fff;font:inherit;font-size:11px;font-weight:700;padding:6px 11px;border-radius:99px;cursor:pointer;opacity:.85;white-space:nowrap}
+  .gw-review:active{background:rgba(255,255,255,.12)}
+  .gw-empty{font-size:12.5px;line-height:1.55;color:#fff;opacity:.75;margin-top:4px}
+  @media(max-width:360px){ .gw-now{font-size:32px} .gw-card{padding:16px 13px 14px} }
+
+  /* Review screen — raw rows behind the exclusion. Plain list, app palette. */
+  .rv-tot{display:flex;gap:10px;margin-bottom:14px}
+  .rv-tot>div{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 12px;min-width:0}
+  .rv-tot .rv-k{font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text2)}
+  .rv-tot .rv-v{font-family:'Montserrat',system-ui,sans-serif;font-size:18px;font-weight:800;margin-top:4px;letter-spacing:-.4px}
+  .rv-day{border-bottom:1px solid var(--border);padding:11px 0}
+  .rv-day:last-child{border-bottom:none}
+  .rv-dhd{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:12.5px;font-weight:800;color:var(--text)}
+  .rv-dhd em{font-style:normal;font-weight:600;color:var(--text2);font-size:11px}
+  .rv-item{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:7px;padding-left:10px;border-left:2px solid var(--border)}
+  .rv-iname{font-size:12px;font-weight:700;color:var(--text);min-width:0}
+  .rv-idet{font-size:10.5px;color:var(--text2);margin-top:1px;word-break:break-word}
+  .rv-iamt{font-family:'DM Mono',ui-monospace,monospace;font-size:12.5px;font-weight:700;color:var(--text2);white-space:nowrap}
+  .rv-tog{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border)}
+  .rv-tog:last-child{border-bottom:none}
+  .rv-tname{font-size:13.5px;font-weight:700;color:var(--text)}
+  .rv-twhy{font-size:11px;color:var(--text2);line-height:1.45;margin-top:2px}
 </style>
 <script>
 // Apply theme immediately to prevent flash of wrong mode
@@ -1856,6 +1914,8 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
 <div id="screen-analytics" class="screen">
   <div class="header"><h1>Analytics</h1><p>Your earnings at a glance</p></div>
   <div class="section">
+    <!-- v106.0 — retained-revenue goal widget. Filled by renderGoalWidget(). -->
+    <div id="goal-widget"></div>
     <!-- This Year (tap to expand for full breakdown) -->
     <div class="card" onclick="openYearGoalDetail()" style="cursor:pointer">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px">
@@ -1879,7 +1939,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
       <!-- Annual earnings subsection -->
       <div>
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
-          <div style="font-size:13px;color:var(--text2);font-weight:600">Annual earnings</div>
+          <div style="font-size:13px;color:var(--text2);font-weight:600">Retained earnings</div>
           <div style="font-size:11px;color:var(--text2)" id="ty-ann-goal-sub">Goal: —</div>
         </div>
         <div style="display:flex;align-items:baseline;gap:8px">
@@ -2016,6 +2076,36 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
 <!-- SUB-ACTIVITY SCREEN (v103.0) — the second reading of the zone visit stream.
      The circuits pane that used to live here was replaced by the Loads review
      screen above, which does everything it did and adds the review layer. -->
+<!-- v106.0 — RETAINED REVIEW. The raw rows behind the goal number, per the
+     standing rule that an automatically-derived figure gets a screen you can
+     check it on before it is trusted. Nothing here reaches an invoice: this is
+     the money the client IS billed and Steven does NOT keep. -->
+<div id="screen-retained" class="screen">
+  <div class="header">
+    <h1>What's excluded</h1>
+    <p id="rv-subtitle">Billed to the client, not kept by you</p>
+  </div>
+  <div class="section">
+    <div class="rv-tot" id="rv-totals"></div>
+    <div class="card">
+      <div class="card-title">Counts toward your goal</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.5;margin:-4px 0 10px">
+        Flip a component on and it joins your goal number. The invoice never changes either way —
+        the client is always billed the full amount.
+      </div>
+      <div id="rv-toggles"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Excluded line items <span id="rv-count" style="font-size:12px;color:var(--text2);font-weight:600"></span></div>
+      <div id="rv-list"></div>
+    </div>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn-secondary" style="flex:1" onclick="showScreen('analytics',document.querySelector('.nav-btn:nth-child(4)'))">‹ Back to Stats</button>
+      <button class="btn btn-secondary" style="flex:1" onclick="exportExcludedCSV()">⤓ Export CSV</button>
+    </div>
+  </div>
+</div>
+
 <div id="screen-circuits" class="screen">
   <div class="header">
     <h1>Sub-activities</h1>
@@ -2471,7 +2561,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v105.2';
+const APP_VERSION = 'v106.0';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -3131,7 +3221,12 @@ const DEFAULTS={
   truckCapacityLcm:0,
   // Cycle times are commercially loaded to hand a client, so the production
   // block on the invoice is switchable. Default ON: he asked for it there.
-  showLoadsOnInvoice:true
+  showLoadsOnInvoice:true,
+  // v106.0 — which invoice components count toward the GOAL number. Steven's
+  // call (2026-08-03): his labour only. Display-only: the invoice always bills
+  // the full amount. A missing key reads as the component's own default, so a
+  // pre-v106 settings blob classifies exactly as a fresh install does.
+  retention:{labour:true,extra:false,machine:false,travel:false,materials:false}
 };
 
 function S(){return DB.def('settings',DEFAULTS)}
@@ -3815,6 +3910,7 @@ function showScreen(id,btn){
     else{populateClientDropdown();renderInvoice();refreshTeamHours();}
   }
   if(id==='analytics') renderAnalytics();
+  if(id==='retained') renderRetainedReview();
   if(id==='trips') renderTrips();
   if(id==='loads') renderLoads();
   // v102.0/v103.0/v104.0: the live timers only tick while a screen showing one
@@ -6208,9 +6304,12 @@ function renderThisYear(){
   wkBar.style.width=wkPct+'%';
   wkBar.style.background=wkPct>=100?'var(--success)':'var(--amber)';
 
-  // FY-to-date earnings
-  const fyDays=allDays.filter(d=>d.date>=fy.start&&d.date<=fy.end&&d.finish);
-  const ytdEarnings=fyDays.reduce((a,d)=>a+Math.max(0,timeDiffHours(d.start,d.finish)-(d.lunchMins||0)/60)*rate,0);
+  // FY-to-date earnings. v106.0: this is now RETAINED revenue, computed by the
+  // shared tally rather than re-derived here as hours × rate. Under the default
+  // policy (labour only) the figure is unchanged — but it now agrees with the
+  // widget and the tap-through detail, which it never did before, and it follows
+  // the policy if Steven counts machine hire or travel as his.
+  const ytdEarnings=retainedYtd(curFY).tally.retained;
   document.getElementById('ty-ann-actual').textContent=fmtMoney(ytdEarnings);
   document.getElementById('ty-ann-goal-sub').textContent=annualGoal>0?('Goal: '+fmtMoney(annualGoal)):'No goal set';
   const annPct=annualGoal>0?Math.min(100,ytdEarnings/annualGoal*100):0;
@@ -6247,25 +6346,219 @@ function renderThisYear(){
 function renderPastFYs(allDays,curFY,rate){
   const card=document.getElementById('ty-past-fy-card');
   const list=document.getElementById('ty-past-fy-list');
+  const policy=retentionPolicy(S());
   const byFY={};
   allDays.forEach(d=>{
     if(!d.finish||!d.date) return;
     const fy=fyForDate(d.date);
     if(fy>=curFY) return;
-    if(!byFY[fy]) byFY[fy]={hrs:0};
+    if(!byFY[fy]) byFY[fy]={hrs:0,earn:0};
     byFY[fy].hrs+=Math.max(0,timeDiffHours(d.start,d.finish)-(d.lunchMins||0)/60);
+    // v106.0: retained, and priced at the rate each day actually carried. The
+    // old `h × current rate` re-priced every past year whenever the rate rose.
+    byFY[fy].earn+=splitDayRevenue(dayTotals(d),policy).retained;
   });
   const sorted=Object.keys(byFY).map(Number).sort((a,b)=>b-a);
   if(!sorted.length){card.style.display='none';return;}
   card.style.display='';
   list.innerHTML=sorted.map((fy,i)=>{
-    const h=byFY[fy].hrs, earnings=h*rate;
+    const h=byFY[fy].hrs, earnings=byFY[fy].earn;
     const last=i===sorted.length-1;
     return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;${last?'':'border-bottom:1px solid var(--border)'}">
       <div style="font-size:14px;font-weight:700">${fyLabelYr(fy)}</div>
       <div style="font-size:13px;color:var(--text2)">${h.toFixed(1)}h · ${fmtMoney(earnings)}</div>
     </div>`;
   }).join('');
+}
+
+/* ═══════════════ v106.0 RETAINED REVENUE — glue + render ═══════════════
+   The pure block above owns every decision; everything here is DOM and reads of
+   the existing stores. Nothing in this section writes to `days`, touches
+   dayTotals(), or is reachable from any invoice code path. */
+
+// The one place the FY window is turned into [{day,totals}]. Every v106 caller
+// goes through this, so the widget, the review screen and the CSV can never
+// disagree about which days are in scope.
+function retainedRows(fyStartYear){
+  const fy=fyRange(fyStartYear);
+  return days()
+    .filter(d=>d.date>=fy.start&&d.date<=fy.end&&d.finish)
+    .sort((a,b)=>a.date<b.date?1:-1)
+    .map(d=>({day:d,totals:dayTotals(d)}));
+}
+
+// Retained YTD for the current FY, with the tally and the policy that produced
+// it. Callers that only want the dollar figure take `.tally.retained`.
+function retainedYtd(fyStartYear){
+  const policy=retentionPolicy(S());
+  const rows=retainedRows(fyStartYear);
+  return {policy,rows,tally:retainedTally(rows,policy)};
+}
+
+// The goal target. `annualEarningsGoal` is the explicit one; a weekly-hours goal
+// implies an annual figure via the effective rate, which is the link the Settings
+// card already draws. Returns 0 for "not set" — goalProgress() turns that into
+// nulls rather than a fake 0%.
+function retainedTarget(){
+  const s=S();
+  const explicit=parseFloat(s.annualEarningsGoal)||0;
+  if(explicit>0) return explicit;
+  const weekly=parseFloat(s.weeklyHrsGoal)||0;
+  const eff=effectiveAvgRate(parseFloat(s.rate)||0,parseFloat(s.incpct??0)||0);
+  return weekly>0&&eff>0?weekly*eff*52:0;
+}
+
+function renderGoalWidget(){
+  const el=document.getElementById('goal-widget');
+  if(!el) return;
+  const now=new Date(), curFY=fyForDate(now);
+  const {policy,rows,tally}=retainedYtd(curFY);
+  const target=retainedTarget();
+  const prog=goalProgress(tally.retained,target,deriveMilestones(target,S().goalMilestones));
+
+  // Weeks elapsed/remaining in the FY — the same 52-week frame renderThisYear uses.
+  const fyStart=new Date(curFY+'-07-01T00:00:00');
+  const msWeek=7*24*60*60*1000;
+  const weeksElapsed=Math.max(0,Math.min(52,(now-fyStart)/msWeek));
+  const weeksRemaining=Math.max(0,52-weeksElapsed);
+
+  // Recency window: the last 4 weeks, so the pace text can say when the recent
+  // rate has stopped resembling the year average.
+  const RECENT_WEEKS=4;
+  const cutoff=new Date(now.getTime()-RECENT_WEEKS*msWeek);
+  const cutoffStr=cutoff.getFullYear()+'-'+String(cutoff.getMonth()+1).padStart(2,'0')+'-'+String(cutoff.getDate()).padStart(2,'0');
+  const recentRetained=retainedTally(rows.filter(r=>r.day.date>=cutoffStr),policy).retained;
+
+  const pace=paceNarrative({
+    retained:tally.retained,target:target,
+    weeksElapsed:weeksElapsed,weeksRemaining:weeksRemaining,
+    dayCount:tally.dayCount,
+    recentWeeks:Math.min(RECENT_WEEKS,Math.floor(weeksElapsed)),recentRetained:recentRetained
+  });
+
+  const ticks=prog.milestones.map(m=>
+    `<div class="gw-tick${m.reached?' hit':''}" style="left:${m.at.toFixed(2)}%" title="${fmtMoney(m.usd)} — ${escHtml(m.label)}"></div>`).join('');
+  const chips=prog.milestones.map(m=>
+    `<span class="gw-chip${m.reached?' hit':''}">${m.reached?'✓':'○'} ${fmtMoney(m.usd)} ${escHtml(m.label)}</span>`).join('');
+
+  const ofLine=prog.hasTarget
+    ? `of <b>${fmtMoney(prog.target)}</b> · <b>${prog.pct.toFixed(1)}%</b> there · <b>${fmtMoney(prog.remaining)}</b> to go`
+    : `No target set — <b>${fmtMoney(tally.retained)}</b> retained so far this year.`;
+
+  const row=(label,dim,amt,cls)=>
+    `<div class="gw-row"><span>${escHtml(label)}${dim?` <span class="gw-dim">(${escHtml(dim)})</span>`:''}</span><b class="${cls||''}">${cls==='neg'?'−':'+'}${fmtMoney(Math.abs(amt))}</b></div>`;
+
+  const contributing=tally.contributing.map(c=>row(c.label,c.days+' day'+(c.days===1?'':'s'),c.amount,'pos')).join('');
+  const costing=tally.costing.map(c=>row(c.label,c.days+' day'+(c.days===1?'':'s'),c.amount,'neg')).join('');
+
+  el.innerHTML=`<div class="gw-card">
+    <div class="gw-hdr">
+      <div class="gw-title">🎯 Retained this year</div>
+      <div class="gw-fy">${fyLabelYr(curFY)}</div>
+    </div>
+    <div class="gw-now">${fmtMoney(tally.retained)}</div>
+    <div class="gw-of">${ofLine}</div>
+    ${prog.hasTarget?`<div class="gw-bar" title="${prog.pct.toFixed(1)}% of ${fmtMoney(prog.target)}">
+      <div class="gw-fill" style="width:${prog.pct.toFixed(2)}%"></div>${ticks}
+    </div>
+    <div class="gw-scale"><span>$0</span><span>${fmtMoney(prog.target)}</span></div>
+    <div class="gw-ms">${chips}</div>`:''}
+    <div class="gw-split">
+      <div class="gw-splithd">Where it comes from</div>
+      ${contributing||'<div class="gw-empty">Nothing retained yet this year.</div>'}
+      ${costing?`<div class="gw-splithd" style="margin-top:12px">Billed, but passed straight through</div>${costing}`:''}
+      <div class="gw-row gw-net"><span>Invoiced, all in <span class="gw-dim">(${tally.dayCount} day${tally.dayCount===1?'':'s'})</span></span><b>${fmtMoney(tally.gross)}</b></div>
+    </div>
+    <div class="gw-pace">${pace.text}
+      ${pace.caveats.map(c=>`<div class="gw-caveat">${c}</div>`).join('')}
+    </div>
+    <div class="gw-foot">
+      <span>Updated ${nowTime()} · ${fmtDate(todayStr())}</span>
+      ${tally.costing.length?`<button class="gw-review" onclick="showScreen('retained')">Review ${tally.costing.reduce((a,c)=>a+c.days,0)} excluded ›</button>`:''}
+    </div>
+  </div>`;
+}
+
+/* The review screen. Raw rows, no rollup — if the goal number is wrong, this is
+   where it becomes obvious which day and which line item made it wrong. */
+function renderRetainedReview(){
+  const now=new Date(), curFY=fyForDate(now);
+  const {policy,rows,tally}=retainedYtd(curFY);
+  const sub=document.getElementById('rv-subtitle');
+  if(sub) sub.textContent='Billed to the client, not kept by you · '+fyLabelYr(curFY);
+
+  const tot=document.getElementById('rv-totals');
+  if(tot) tot.innerHTML=`
+    <div><div class="rv-k">Retained</div><div class="rv-v" style="color:var(--success)">${fmtMoney(tally.retained)}</div></div>
+    <div><div class="rv-k">Excluded</div><div class="rv-v" style="color:var(--amber)">${fmtMoney(tally.passthrough)}</div></div>
+    <div><div class="rv-k">Invoiced</div><div class="rv-v" style="color:var(--text)">${fmtMoney(tally.gross)}</div></div>`;
+
+  const tg=document.getElementById('rv-toggles');
+  if(tg) tg.innerHTML=RETAINED_COMPONENTS.map(c=>{
+    const on=policy[c.key]===true, amt=tally.byComponent[c.key].amount;
+    return `<div class="rv-tog">
+      <div style="min-width:0">
+        <div class="rv-tname">${escHtml(c.label)}${amt>0?` <span style="font-weight:600;color:var(--text2)">· ${fmtMoney(amt)}</span>`:''}</div>
+        <div class="rv-twhy">${escHtml(c.why)}</div>
+      </div>
+      <label class="toggle"><input type="checkbox" ${on?'checked':''} onchange="setRetention('${c.key}',this.checked)"><span class="toggle-slider"></span></label>
+    </div>`;
+  }).join('');
+
+  // One block per day, newest first — the order he'd scan it in.
+  const byDay=rows.map(r=>({day:r.day,items:excludedItemsForDay(r.day,r.totals,policy)}))
+                  .filter(x=>x.items.length);
+  const count=byDay.reduce((a,x)=>a+x.items.length,0);
+  const cEl=document.getElementById('rv-count');
+  if(cEl) cEl.textContent=count?('· '+count+' item'+(count===1?'':'s')):'';
+
+  const list=document.getElementById('rv-list');
+  if(!list) return;
+  if(!byDay.length){
+    list.innerHTML=`<div style="font-size:13px;color:var(--text2);line-height:1.55;padding:6px 0">
+      Nothing is being excluded this financial year — every dollar you invoiced is counting toward your goal.</div>`;
+    return;
+  }
+  list.innerHTML=byDay.map(x=>{
+    const dayTotal=x.items.reduce((a,i)=>a+i.amount,0);
+    return `<div class="rv-day">
+      <div class="rv-dhd"><span>${fmtDate(x.day.date)} <em>${escHtml(x.day.site||'')}</em></span><span style="color:var(--amber)">${fmtMoney(dayTotal)}</span></div>
+      ${x.items.map(i=>`<div class="rv-item">
+        <div style="min-width:0"><div class="rv-iname">${escHtml(i.label)}</div>${i.detail?`<div class="rv-idet">${escHtml(i.detail)}</div>`:''}</div>
+        <div class="rv-iamt">${fmtMoney(i.amount)}</div>
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+// Flipping a component re-derives everything from the same stored days — there
+// is nothing to migrate, which is the point of deriving rather than stamping.
+function setRetention(key,on){
+  const s=S();
+  if(!s.retention) s.retention={};
+  s.retention[key]=!!on;
+  DB.set('settings',s);
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+  GeoLog.add('info','Retention: '+key+' → '+(on?'retained':'excluded'));
+  renderRetainedReview();
+  renderGoalWidget();
+  toast((RETAINED_COMPONENTS.find(c=>c.key===key)||{}).label+(on?' counts toward your goal':' excluded from your goal'));
+}
+
+// Deliberately its OWN export, separate from the accountant/Xero days CSV — that
+// one describes what was invoiced and must keep doing exactly that.
+function exportExcludedCSV(){
+  const now=new Date(), curFY=fyForDate(now);
+  const {policy,rows}=retainedYtd(curFY);
+  const lines=[['Date','Site','Component','Detail','Amount']];
+  rows.forEach(r=>excludedItemsForDay(r.day,r.totals,policy).forEach(i=>
+    lines.push([i.date,i.site,i.label,i.detail,i.amount.toFixed(2)])));
+  if(lines.length===1){toast('Nothing excluded to export');return;}
+  // UTF-8 BOM + CRLF, matching the v101 exporter so Excel opens it cleanly.
+  const csv='﻿'+lines.map(row=>row.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+  shareOrDownload(new Blob([csv],{type:'text/csv;charset=utf-8'}),
+    'excluded_from_goal_'+fyLabelYr(curFY).replace(/[^\w]/g,'')+'_'+todayStr()+'.csv');
+  toast('Exported '+(lines.length-1)+' excluded item'+(lines.length===2?'':'s'));
 }
 
 // --- This Year breakdown modal (tap-to-expand from goal card) ---
@@ -6280,10 +6573,16 @@ function openYearGoalDetail(){
   const projected=weeklyGoal>0?weeklyGoal*eff*52:0;
   const annualGoal=annualGoalRaw>0?annualGoalRaw:projected;
 
-  // YTD figures (current FY)
-  const fyDays=allDays.filter(d=>d.date>=fy.start&&d.date<=fy.end&&d.finish);
-  let totalH=0,totalEarn=0;
-  fyDays.forEach(d=>{const t=dayTotals(d);totalH+=t.h;totalEarn+=t.total;});
+  // YTD figures (current FY). v106.0: `totalEarn` was `dayTotals().total` — the
+  // FULL invoice value, extra labourer and materials included. That is what the
+  // client pays, not what Steven keeps, and it made this modal disagree with its
+  // own card's headline. It is now the retained figure, with the gross kept
+  // alongside so the modal can show both and name the difference.
+  const policy=retentionPolicy(S());
+  const rows=retainedRows(curFY);
+  const tally=retainedTally(rows,policy);
+  const fyDays=rows.map(r=>r.day);
+  const totalH=tally.hours, totalEarn=tally.retained, grossEarn=tally.gross;
   const fyStart=new Date(curFY+'-07-01T00:00:00');
   const msPerWeek=7*24*60*60*1000;
   const weeksElapsed=Math.max(0.001,Math.min(52,(now-fyStart)/msPerWeek));
@@ -6303,7 +6602,10 @@ function openYearGoalDetail(){
     if(!fyMap[f]) fyMap[f]={startYear:f,h:0,earn:0,days:0};
     const t=dayTotals(d);
     fyMap[f].h+=t.h;
-    fyMap[f].earn+=t.total;
+    // v106.0: retained, matching the current-year figure directly above it. A
+    // gross past year sitting under a retained current year would read as a
+    // collapse in earnings that never happened.
+    fyMap[f].earn+=splitDayRevenue(t,policy).retained;
     fyMap[f].days+=1;
   });
   const pastFys=Object.values(fyMap).sort((a,b)=>b.startYear-a.startYear);
@@ -6346,8 +6648,16 @@ function openYearGoalDetail(){
   html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Total days logged</span><span style="'+valStyle+'">'+fyDays.length+' day'+(fyDays.length===1?'':'s')+'</span></div>';
   html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Total hours worked</span><span style="'+valStyle+'">'+totalH.toFixed(1)+' hrs</span></div>';
   html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Avg hrs/week (weeks elapsed)</span><span style="'+valStyle+'">'+avgHrsPerWeek.toFixed(1)+' hrs/wk</span></div>';
-  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Total earned YTD</span><span style="'+valStyle+';color:var(--amber);font-size:15px">'+fmtMoney(totalEarn)+'</span></div>';
-  html+='<div style="'+subStyle+'">includes hours, machines, travel and materials from each day</div>';
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Invoiced YTD (client pays)</span><span style="'+valStyle+'">'+fmtMoney(grossEarn)+'</span></div>';
+  if(tally.costing.length){
+    tally.costing.forEach(function(c){
+      html+='<div style="'+rowStyle+'"><span style="'+labelStyle+';padding-left:10px">less '+escHtml(c.label)+'</span><span style="'+valStyle+';color:var(--text2)">−'+fmtMoney(c.amount)+'</span></div>';
+    });
+  }
+  html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Retained YTD (you keep)</span><span style="'+valStyle+';color:var(--amber);font-size:15px">'+fmtMoney(totalEarn)+'</span></div>';
+  html+='<div style="'+subStyle+'">'+(tally.costing.length
+    ? 'passthrough is billed to the client and paid straight back out — tap “What’s excluded” on the goal card to see every line'
+    : 'every dollar invoiced is counting toward your goal')+'</div>';
   html+='<div style="'+rowStyle+'"><span style="'+labelStyle+'">Average daily total</span><span style="'+valStyle+'">'+(fyDays.length?fmtMoney(avgDaily):'—')+'</span></div>';
   html+='</div>';
 
@@ -6385,6 +6695,7 @@ function closeYearGoalDetail(){
 
 // --- Analytics ---
 function renderAnalytics(){
+  renderGoalWidget();
   renderThisYear();
   const s=S(),ad=days(),ai=invoices(),now=new Date();
   const weeks=Array.from({length:8},(_,i)=>{const e=new Date(now);e.setDate(e.getDate()-i*7);const st=new Date(e);st.setDate(st.getDate()-6);return{start:st.toISOString().slice(0,10),end:e.toISOString().slice(0,10),label:'W'+(8-i)};}).reverse();
@@ -13434,6 +13745,263 @@ function fyList(list,currentFyStr){
   return Object.keys(set).sort().reverse();
 }
 //__V101_TAX_PURE_END__
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ═══ v106.0 RETAINED REVENUE ═══
+   ───────────────────────────────────────────────────────────────────────────
+   An invoice total and "what Steven keeps" are two different numbers, and the
+   goal card was quietly using whichever one was nearest to hand: the headline
+   summed hours × rate, while the tap-through detail summed dayTotals().total.
+   Two figures, one card, both labelled "YTD".
+
+   This block is the taxonomy that settles it. Every dollar on an invoice belongs
+   to exactly ONE of five components, and each is either RETAINED (his) or
+   PASSTHROUGH (billed to the client, paid straight back out). Only the retained
+   side reaches the goal number.
+
+   THE INVOICE IS NOT INVOLVED. `splitDayRevenue().gross` is the same figure
+   `dayTotals().total` already produced — that identity is pinned by a test, and
+   it is the whole guarantee that the client still sees the full amount. Nothing
+   here is subtracted from an invoice, a PDF, a GST line or the accountant CSV.
+
+   Steven's call (2026-08-03): retained = HIS LABOUR ONLY. Extra labourer,
+   machine hire, travel and materials are all passthrough. The policy is per
+   component and configurable, so flipping machine hire back in is a toggle
+   rather than a code change.
+
+   NO BACKFILL, NO MIGRATION, NO NEW FIELD. The split is DERIVED from record
+   structure every day already carries (`sonWorking`, `machines`, `travelMode`,
+   `materials`) — so history reclassifies itself the moment the policy changes,
+   and a wrong policy is never baked into stored data.
+   ═══════════════════════════════════════════════════════════════════════════ */
+//__V106_RETAINED_PURE_START__  (extracted verbatim by test-retained.js — keep pure: no DOM/DB/argless Date)
+
+/* The five components of an invoice, and who ends up with the money. `field`
+   names the key on a dayTotals() result — the ONLY coupling to the money code,
+   and a read-only one. `retained` is the default when the user has said nothing. */
+var RETAINED_COMPONENTS = [
+  { key:'labour',    field:'myE',            label:'My labour',      retained:true,
+    why:'Hours on site × your rate. This is the money you actually keep.' },
+  { key:'extra',     field:'sonE',           label:'Extra labourer', retained:false,
+    why:'Billed to the client, then paid straight back out to whoever worked. It passes through you.' },
+  { key:'machine',   field:'machineTotal',   label:'Machine hire',   retained:false,
+    why:'Plant hire and operator overage. Turn this on if the machine is yours and the hire is profit.' },
+  { key:'travel',    field:'travelTotal',    label:'Travel',         retained:false,
+    why:'Km or travel-time billing. Turn this on if it is margin rather than running costs.' },
+  { key:'materials', field:'materialsTotal', label:'Materials',      retained:false,
+    why:'Supplies bought in and billed on. Turn this on only if you mark them up.' }
+];
+
+/* Absence reads as the DEFAULT, never as false — the same rule earthmovingMode
+   follows. A settings blob written before v106 has no `retention` key at all,
+   and must classify exactly as a fresh install does. */
+function retentionPolicy(settings){
+  var saved = (settings && settings.retention) || {};
+  var out = {};
+  for (var i = 0; i < RETAINED_COMPONENTS.length; i++){
+    var c = RETAINED_COMPONENTS[i];
+    out[c.key] = (saved[c.key] === undefined || saved[c.key] === null)
+      ? c.retained : (saved[c.key] === true);
+  }
+  return out;
+}
+
+/* One day's invoice value, split. `gross` is dayTotals().total by construction —
+   the components are a partition, so nothing is dropped or double-counted. */
+function splitDayRevenue(totals, policy){
+  var t = totals || {}, p = policy || {};
+  var comps = [], retained = 0, passthrough = 0;
+  for (var i = 0; i < RETAINED_COMPONENTS.length; i++){
+    var c = RETAINED_COMPONENTS[i];
+    var amt = +t[c.field] || 0;
+    var keep = (p[c.key] === true);
+    if (keep) retained += amt; else passthrough += amt;
+    comps.push({ key:c.key, label:c.label, amount:amt, retained:keep });
+  }
+  return { retained:retained, passthrough:passthrough, gross:retained + passthrough, components:comps };
+}
+
+/* Aggregate across days. `rows` is [{day, totals}] — totals passed in rather
+   than computed, so this stays pure and the caller owns dayTotals(). */
+function retainedTally(rows, policy){
+  var p = policy || {}, list = rows || [];
+  var byComponent = {}, order = [];
+  for (var i = 0; i < RETAINED_COMPONENTS.length; i++){
+    var c = RETAINED_COMPONENTS[i];
+    byComponent[c.key] = { key:c.key, label:c.label, amount:0, days:0,
+                           retained:(p[c.key] === true), why:c.why };
+    order.push(c.key);
+  }
+  var retained = 0, passthrough = 0, hours = 0;
+  for (var j = 0; j < list.length; j++){
+    var t = (list[j] && list[j].totals) || {};
+    var sp = splitDayRevenue(t, p);
+    retained += sp.retained; passthrough += sp.passthrough;
+    hours += (+t.h || 0);
+    for (var k = 0; k < sp.components.length; k++){
+      var comp = sp.components[k];
+      if (comp.amount > 0){ byComponent[comp.key].amount += comp.amount; byComponent[comp.key].days++; }
+    }
+  }
+  return {
+    retained:retained, passthrough:passthrough, gross:retained + passthrough,
+    hours:hours, dayCount:list.length,
+    byComponent:byComponent,
+    contributing:order.map(function(k){ return byComponent[k]; }).filter(function(c){ return c.retained && c.amount > 0; }),
+    costing:     order.map(function(k){ return byComponent[k]; }).filter(function(c){ return !c.retained && c.amount > 0; })
+  };
+}
+
+/* The RAW rows behind the exclusion, one per component per day. This is what the
+   review screen lists — the whole point being that a number nobody can inspect
+   is a number nobody should trust. Detail strings are rebuilt from the line
+   arrays dayTotals() already returns; nothing is stored. */
+function excludedItemsForDay(day, totals, policy){
+  var t = totals || {}, p = policy || {}, d = day || {}, out = [];
+  for (var i = 0; i < RETAINED_COMPONENTS.length; i++){
+    var c = RETAINED_COMPONENTS[i];
+    if (p[c.key] === true) continue;               // retained — not an exclusion
+    var amt = +t[c.field] || 0;
+    if (!(amt > 0)) continue;                      // nothing billed under it that day
+    out.push({ date:d.date || '', site:d.site || '', key:c.key, label:c.label,
+               amount:amt, detail:excludedDetail(c.key, t) });
+  }
+  return out;
+}
+
+function excludedDetail(key, totals){
+  var t = totals || {};
+  if (key === 'extra')
+    return (+t.sonH || 0).toFixed(2) + 'h × $' + (+t.sonrate || 0).toFixed(2) + '/hr';
+  if (key === 'machine')
+    return (t.machineLines || []).map(function(m){
+      return m.hireType === 'day'
+        ? (m.name + ' — day rate')
+        : (m.name + ' — ' + (+m.machineHrs || 0).toFixed(2) + 'h × $' + (+m.rate || 0).toFixed(2) +
+           ((+m.laborOvertHrs || 0) > 0 ? (' + ' + (+m.laborOvertHrs).toFixed(2) + 'h operator') : ''));
+    }).join(' · ');
+  if (key === 'travel'){
+    var l = t.travelLine; if (!l) return '';
+    return l.mode === 'km'
+      ? ((+l.km || 0) + ' km × $' + (+l.rate || 0).toFixed(2) + '/km')
+      : ((+l.hrs || 0) + 'h × $' + (+l.rate || 0).toFixed(2) + '/hr');
+  }
+  if (key === 'materials')
+    return (t.materialLines || []).map(function(m){
+      return m.name + ' — ' + (+m.qty || 0) + ' × $' + (+m.unitPrice || 0).toFixed(2);
+    }).join(' · ');
+  return '';
+}
+
+/* Thirds by default, overridable from settings. A target of 0 yields NO
+   milestones rather than three $0 markers stacked on the origin. */
+function deriveMilestones(target, custom){
+  var tg = +target || 0;
+  if (!(tg > 0)) return [];
+  if (custom && custom.length){
+    return custom.map(function(m){
+      return { usd:+((typeof m === 'object') ? m.usd : m) || 0,
+               label:((typeof m === 'object') && m.label) ? m.label : '' };
+    }).filter(function(m){ return m.usd > 0; }).sort(function(a,b){ return a.usd - b.usd; });
+  }
+  var third = Math.round(tg / 3);
+  return [ { usd:third,     label:'first third' },
+           { usd:third * 2, label:'two thirds' },
+           { usd:tg,        label:'goal' } ];
+}
+
+/* NULL, not zero, when there is no target — the v104.0 median rule. A fabricated
+   0% reads as "no progress", which is the opposite of "nothing to measure against". */
+function goalProgress(retained, target, milestones){
+  var r = +retained || 0, tg = +target || 0, has = tg > 0;
+  return {
+    retained:r, target:tg, hasTarget:has,
+    pct:       has ? Math.max(0, Math.min(100, r / tg * 100)) : null,
+    pctRaw:    has ? (r / tg * 100) : null,
+    remaining: has ? Math.max(0, tg - r) : null,
+    milestones:(milestones || []).map(function(m){
+      var usd = +m.usd || 0;
+      return { usd:usd, label:m.label || '', reached:(r >= usd && usd > 0),
+               at:has ? Math.max(0, Math.min(100, usd / tg * 100)) : 0 };
+    })
+  };
+}
+
+/* Honest pace. Freyr's discipline, transplanted: refuse to extrapolate from a
+   base that cannot support it, and say WHY rather than printing a confident
+   fiction. Every branch returns a `state` so the UI can colour it without
+   re-deciding anything, and `caveats` are earned, not decorative. */
+function paceNarrative(o){
+  o = o || {};
+  var retained = +o.retained || 0, target = +o.target || 0;
+  var weeksElapsed = +o.weeksElapsed || 0, weeksRemaining = +o.weeksRemaining || 0;
+  var dayCount = +o.dayCount || 0;
+  var recentWeeks = +o.recentWeeks || 0, recentRetained = +o.recentRetained || 0;
+
+  if (!(target > 0))
+    return { state:'no-target', weeksToGoal:null, perWeek:null, caveats:[],
+      text:'No earnings goal set. Add one in Settings and this becomes a scoreboard instead of a running total.' };
+
+  if (retained >= target)
+    return { state:'reached', weeksToGoal:0, perWeek:(weeksElapsed > 0 ? retained / weeksElapsed : null), caveats:[],
+      text:'Goal reached — ' + fmtUsd(retained) + ' retained against a ' + fmtUsd(target) + ' target, with ' +
+           weeksRemaining.toFixed(0) + ' weeks of the year still to run.' };
+
+  if (!(dayCount > 0) || !(weeksElapsed > 0))
+    return { state:'no-data', weeksToGoal:null, perWeek:null, caveats:[],
+      text:'No confirmed days yet this financial year, so there is no rate to project from. ' +
+           'A pace built on nothing is a made-up number.' };
+
+  var perWeek = retained / weeksElapsed;
+  if (!(perWeek > 0))
+    return { state:'no-pace', weeksToGoal:null, perWeek:perWeek, caveats:[],
+      text:'Nothing retained yet this year, so there is no honest time-to-goal to quote.' };
+
+  var weeksToGoal = (target - retained) / perWeek;
+  var caveats = [];
+
+  if (dayCount < 10)
+    caveats.push('It is built on ' + dayCount + ' confirmed day' + (dayCount === 1 ? '' : 's') +
+                 ' — too few for the average to have settled.');
+
+  /* Recency: if the last few weeks have run at a materially different rate, the
+     all-year average is describing a period that is over. 25% is the threshold
+     at which the two numbers stop rounding to the same story. */
+  if (recentWeeks > 0 && recentRetained >= 0){
+    var recentPerWeek = recentRetained / recentWeeks;
+    if (perWeek > 0 && Math.abs(recentPerWeek - perWeek) / perWeek > 0.25){
+      caveats.push('The last ' + recentWeeks + ' weeks have run at ' + fmtUsd(recentPerWeek) +
+                   '/week against a year average of ' + fmtUsd(perWeek) + '/week, so the recent rate is ' +
+                   (recentPerWeek > perWeek ? 'better' : 'worse') + ' than this projection assumes.');
+    }
+  }
+
+  caveats.push('It also assumes the rest of the year looks like the part already worked — ' +
+               'wet weather, a Christmas shutdown or a quiet stretch between jobs will all move it.');
+
+  var willMake = weeksToGoal <= weeksRemaining;
+  var text = 'At ' + fmtUsd(perWeek) + '/week retained — the rate across ' + weeksElapsed.toFixed(1) +
+    ' weeks and ' + dayCount + ' confirmed day' + (dayCount === 1 ? '' : 's') + ' — the goal is about ' +
+    fmtWeeks(weeksToGoal) + ' away' +
+    (willMake ? ', which lands inside the financial year.'
+              : ', which is past the end of the financial year (' + fmtWeeks(weeksRemaining) + ' left).');
+
+  return { state:willMake ? 'on-track' : 'behind', weeksToGoal:weeksToGoal, perWeek:perWeek,
+           caveats:caveats, text:text };
+}
+
+function fmtUsd(n){
+  var v = +n || 0;
+  return '$' + v.toFixed(v < 100 ? 2 : 0).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+function fmtWeeks(w){
+  var v = +w || 0;
+  if (v < 1)  return 'under a week';
+  if (v < 9)  return v.toFixed(0) + ' week' + (v.toFixed(0) === '1' ? '' : 's');
+  if (v < 78) return (v / 4.345).toFixed(0) + ' months';
+  return (v / 52).toFixed(1) + ' years';
+}
+//__V106_RETAINED_PURE_END__
 
 // ── Tax prefs (persisted in the settings blob → synced) ─────────────────────
 function taxPrefs(){
