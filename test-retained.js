@@ -48,7 +48,7 @@ const ctx = {};
 new Function('ctx', PURE + '\n' +
   ['RETAINED_COMPONENTS','retentionPolicy','splitDayRevenue','retainedTally',
    'excludedItemsForDay','excludedDetail','deriveMilestones','goalProgress',
-   'paceNarrative','fmtUsd','fmtWeeks']
+   'paceNarrative','fmtUsd','fmtWeeks','weekPace','paceCaveats','fmtHrsWk']
     .map(n => `ctx.${n}=${n};`).join(''))(ctx);
 
 const { RETAINED_COMPONENTS, retentionPolicy, splitDayRevenue, retainedTally,
@@ -384,9 +384,115 @@ console.log('\n── PIN: test_goal_card_and_detail_agree ───────
 
 console.log('\n── version ────────────────────────────────────────────────────────');
 {
-  ok('APP_VERSION bumped to v106.0', /const APP_VERSION = 'v106\.0';/.test(html));
+  ok('APP_VERSION bumped to v106.1', /const APP_VERSION = 'v106\.1';/.test(html));
   ok('DEFAULTS carries the retention policy', /retention:\{labour:true,extra:false,machine:false,travel:false,materials:false\}/.test(html));
 }
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v106.1 — pace basis + the Today hero
+// ═══════════════════════════════════════════════════════════════════════════
+const { weekPace, paceCaveats, fmtHrsWk } = ctx;
+
+console.log('\n── PIN: test_pace_basis_separates_worked_weeks_from_holidays ──────');
+{
+  // Steven's REAL FY2026-27 shape as at 2026-08-03, read off the synced blob:
+  // 3 weeks with hours (15.75h, 17.5h, 32.28h), 2 with none, 4.7 weeks elapsed.
+  // He was gold fossicking and away with family for the idle ones.
+  const REAL = [
+    { key: '2026-06-28', hours: 15.75,             retained: 15.75 * 60 },
+    { key: '2026-07-05', hours: 17.5,              retained: 17.5 * 60 },
+    { key: '2026-07-26', hours: 32.28333333333333, retained: 32.28333333333333 * 60 }
+  ];
+  const b = weekPace(REAL, 4.7);
+
+  ok('PIN: 3 weeks actually worked', b.workedWeeks === 3, b.workedWeeks);
+  ok('PIN: 2 weeks idle, derived from elapsed', b.idleWeeks === 2, b.idleWeeks);
+  ok('PIN: his real retained total, to the cent', near(b.retained, 3932, 0.01), b.retained);
+  ok('PIN: the elapsed-week rate is the one that looks bad', near(b.perElapsedWeek, 836.6, 0.5), b.perElapsedWeek);
+  ok('PIN: the worked-week rate is the honest one', near(b.perWorkedWeek, 1310.67, 0.01), b.perWorkedWeek);
+  ok('PIN: …and it is materially higher', b.perWorkedWeek > b.perElapsedWeek * 1.5);
+  ok('hours per worked week', near(b.hoursPerWorkedWeek, 21.84, 0.01), b.hoursPerWorkedWeek);
+
+  const c = paceCaveats(b, {});
+  ok('PIN: the caveat names how many weeks were worked', /5 weeks into the year, 3 of them with hours logged/.test(c[0]), c[0]);
+  ok('PIN: …and what those weeks looked like', /21\.8h\/wk and \$1,311/.test(c[0]), c[0]);
+  ok('early-FY caveat is present at 4.7 weeks', c.some(x => /straight-line target spreads the goal evenly/.test(x)));
+  ok('PIN: the caveat NEVER claims he is on track', !c.some(x => /on track|on pace|catch up|fine/i.test(x)), c);
+  ok('PIN: …and never restates a softened dollar figure', !c.some(x => /behind/i.test(x)));
+}
+
+console.log('\n── weekPace edges ─────────────────────────────────────────────────');
+{
+  ok('no weeks → nulls, not zeros', (() => {
+    const b = weekPace([], 4);
+    return b.perWorkedWeek === null && b.perElapsedWeek === 0 && b.workedWeeks === 0;
+  })());
+  ok('a zero-hour week does NOT count as worked',
+     weekPace([{ key: 'a', hours: 0, retained: 0 }], 1).workedWeeks === 0);
+  ok('…so a $0 travel-only week cannot pose as a working week',
+     weekPace([{ key: 'a', hours: 0, retained: 250 }], 1).workedWeeks === 0);
+  ok('every week worked → no idle weeks',
+     weekPace([{ key: 'a', hours: 40, retained: 2400 }, { key: 'b', hours: 40, retained: 2400 }], 2).idleWeeks === 0);
+  ok('idle count never goes negative',
+     weekPace([{ key: 'a', hours: 40, retained: 2400 }, { key: 'b', hours: 40, retained: 2400 }], 1).idleWeeks === 0);
+  ok('zero elapsed → perElapsedWeek null', weekPace([], 0).perElapsedWeek === null);
+  ok('null args do not throw', weekPace(null, null).workedWeeks === 0);
+}
+
+console.log('\n── paceCaveats are earned, not decorative ────────────────────────');
+{
+  const steady = weekPace(
+    Array.from({ length: 20 }, (_, i) => ({ key: 'w' + i, hours: 45, retained: 2700 })), 20);
+  const c = paceCaveats(steady, {});
+  ok('no idle weeks → no worked-weeks caveat', !c.some(x => /with hours logged/.test(x)), c);
+  ok('20 weeks in → no early-FY caveat', !c.some(x => /still early/.test(x)), c);
+  ok('a steady operator gets NO caveats at all', c.length === 0, c);
+
+  ok('no hours at all → says there is no rate to compare',
+     paceCaveats(weekPace([], 3), {})[0] === 'No hours logged yet this financial year, so there is no rate to compare against.');
+  ok('no hours AND no time elapsed → nothing to say', paceCaveats(weekPace([], 0), {}).length === 0);
+  ok('the early-FY window is configurable',
+     paceCaveats(weekPace([{ key: 'a', hours: 40, retained: 2400 }], 5), { earlyWeeks: 2 })
+       .every(x => !/still early/.test(x)));
+  ok('null basis does not throw', paceCaveats(null, null).length === 0);
+  ok('fmtHrsWk', fmtHrsWk(21.8433) === '21.8h/wk' && fmtHrsWk(null) === '0.0h/wk');
+}
+
+console.log('\n── PIN: test_today_tab_surfaces_the_goal ─────────────────────────');
+{
+  ok('PIN: the Today screen has a hero slot', /<div class="section" id="today-goal-slot"/.test(html));
+  ok('PIN: …rendered before refreshTodayTab branches',
+     /function refreshTodayTab\(\)\{[\s\S]{0,220}renderTodayGoalHero\(\);[\s\S]{0,120}const ad=activeDay\(\);/.test(html));
+  ok('PIN: …so it shows in the idle, running AND review states', /try\{ renderTodayGoalHero\(\); \}catch/.test(html));
+  ok('showScreen refreshes Today', /if\(id==='checkin'\) refreshTodayTab\(\);/.test(html));
+  ok('the hero reads the SAME tally as the Stats widget', /function renderTodayGoalHero\(\)\{[\s\S]{0,600}retainedYtd\(curFY\)/.test(html));
+  ok('…and the same target', /function renderTodayGoalHero\(\)\{[\s\S]{0,700}retainedTarget\(\)/.test(html));
+  ok('it taps through to the full breakdown', /renderTodayGoalHero[\s\S]{0,3000}showScreen\('analytics'/.test(html));
+  ok('the hero is behind a setting', /if\(s\.showGoalOnToday===false\)\{ slot\.innerHTML=''; return; \}/.test(html));
+  ok('PIN: the caveat is a toggle, not hard-coded', /s\.goalPaceCaveat===false \? \[\] : paceCaveats\(basis,\{\}\)/.test(html));
+  ok('both default ON in DEFAULTS', /showGoalOnToday:true,\s*\n\s*goalPaceCaveat:true/.test(html));
+  ok('absence reads as ON when loading settings',
+     /s\.showGoalOnToday!==false/.test(html) && /s\.goalPaceCaveat!==false/.test(html));
+  ok('both toggles exist in Settings',
+     /id="s-show-goal-today"/.test(html) && /id="s-goal-pace-caveat"/.test(html));
+  ok('PIN: the behind-target verdict is NOT softened by the caveat',
+     /'Behind by '\+fmtMoney\(gap\)\+' on a straight-line target\.'/.test(html));
+}
+
+console.log('\n── PIN: test_effective_rate_is_his_rate_not_the_passthrough ───────');
+{
+  // His real all-time figures: $26,003 gross / 387.02h = $67.19; retained
+  // $23,221 / 387.02h = $60.00, which is exactly his configured rate.
+  ok('PIN: effective rate now divides RETAINED by hours',
+     /let te=0,th=0;ad\.forEach\(d=>\{const t=dayTotals\(d\);th\+=t\.h;te\+=splitDayRevenue\(t,_effPol\)\.retained;\}\);/.test(html));
+  ok('PIN: …not dayTotals\(\).total',
+     !/let te=0,th=0;ad\.forEach\(d=>\{const\{h,total\}=dayTotals\(d\);th\+=h;te\+=total;\}\);/.test(html));
+  const HOURS = 387.02, GROSS = 26003, RETAINED = 23221;
+  ok('the old figure was $67/hr', Math.round(GROSS / HOURS) === 67);
+  ok('PIN: the new one is $60/hr — exactly his configured rate', Math.round(RETAINED / HOURS) === 60);
+}
+
 
 console.log('\n' + '─'.repeat(66));
 console.log(fail === 0 ? `✓ ALL ${pass} PASSED` : `✗ ${fail} FAILED (${pass} passed)`);

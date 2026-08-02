@@ -22,11 +22,11 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v106.0 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v106.1 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.106.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
-| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.106.0 / versionCode 16 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.106.1 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.106.1 / versionCode 16 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -1000,6 +1000,66 @@ widget off the DOM, flips a component and watches every figure move together, an
 **diffs every dollar figure on a generated invoice across all three retention
 policies to prove not one changes**). Screenshots: `plans/v106-shots/`.
 
+### v106.1 — the goal on the home tab, and what "behind" is made of
+
+**The field data corrected the brief.** Steven's synced blob (read off Firestore,
+2026-08-02) says the v105.2 headline `$3,932` was **already clean**: it was
+`hours × rate`, and **FY2026-27 contains zero passthrough** — 0 of his 11 days
+carry extra labour, machines, travel or materials. The v106.0 exclusion moved the
+current YTD figure by **$0.00**. All the passthrough is historical: **15 days /
+$2,782, entirely in FY2025-26**, which the detail modal's past-FY row was
+reporting as $22,071 instead of $19,289.
+
+**A third polluted number, and the one actually on his screen.** Analytics'
+**Effective rate** divided `dayTotals().total` by HIS hours — an extra labourer's
+wage over Steven's own time. On his real data that reported **$67/hr against a
+configured rate of $60**; the $7.19 gap was entirely the passthrough. Now
+retained-based, it comes out at exactly $60.00.
+
+**Job 2 was never the Stats widget.** Stats already had a goal card. The gap was
+the **home tab**: `#screen-checkin` surfaced no goal at all. `renderTodayGoalHero()`
+is a compact hero at the top of Today, reading the **same** `retainedYtd()` and
+`retainedTarget()` as the Stats widget, so the two cannot disagree.
+
+**"Behind by $8,813" is true and useless on its own.** He spent the start of the
+FY gold fossicking and away with family: 2 of the first 5 weeks have no hours in
+them. Averaging over ELAPSED weeks charges those holidays to his rate and gives
+no way to tell an attendance problem from a rate problem.
+
+`weekPace()` splits the basis; `paceCaveats()` states it:
+
+```
+Behind by $8,813.95 on a straight-line target.
+  5 weeks into the year, 3 of them with hours logged.
+  On those weeks you averaged 21.8h/wk and $1,311.
+  It is still early in the financial year, and a straight-line target
+  spreads the goal evenly across 52 weeks — so a quiet start reads as a
+  big gap. This figure moves a lot until the weeks fill in.
+```
+
+**The verdict is never softened** — the dollar gap stands exactly as computed, and
+a test asserts the caveat never says "on track", "on pace" or "caught up". What
+the note adds is *what the number is made of*. A week counts as worked **iff it
+has hours**, so a $0 travel-only week cannot pose as one. **Caveats are earned:**
+a steady operator with no idle weeks, 13+ weeks in, gets **none**.
+
+Both the hero (`showGoalOnToday`) and the explanation (`goalPaceCaveat`) are
+settings toggles, default ON — the caveat stops being useful once his weeks are
+steady, which is exactly when he'll want it gone.
+
+**Don't reintroduce:** a pace figure with no stated basis; a caveat that softens
+the gap rather than explaining it; counting a zero-hour week as worked; a caveat
+that prints unconditionally; an "effective rate" whose numerator includes someone
+else's labour; a second implementation of the goal (the hero and the widget share
+one tally and one target).
+
+**Tests:** `test-retained.js` (188 pure — pins
+`test_pace_basis_separates_worked_weeks_from_holidays` against his real week
+shape to the cent, `test_today_tab_surfaces_the_goal`,
+`test_effective_rate_is_his_rate_not_the_passthrough`) ·
+`test-retained-live.js` (109 live — renders the hero from his real FY shape and
+proves the toggle removes the note while the gap figure stays).
+
 ### v105.1 — Setup Health wouldn't collapse; tap-to-fix was silent on an old APK
 
 **Both diagnosed off-device.** Wireless debugging was reportedly on, but the
@@ -1479,7 +1539,7 @@ figure changes").
 ### localStorage Keys
 | Key | Type | Description |
 |---|---|---|
-| `mcn_settings` | Object | Business settings (rate, client, trade type, etc.). **v104.8** adds `confirmTripsOnFinish` (default `false` — the trip-end vehicle prompt); **v104.5** adds `truckCapacityLcm` + `showLoadsOnInvoice`; **v106.0** adds `retention` (which invoice components count toward the GOAL number — display-only, never touches the invoice) and optional `goalMilestones`. |
+| `mcn_settings` | Object | Business settings (rate, client, trade type, etc.). **v104.8** adds `confirmTripsOnFinish` (default `false` — the trip-end vehicle prompt); **v104.5** adds `truckCapacityLcm` + `showLoadsOnInvoice`; **v106.0** adds `retention` (which invoice components count toward the GOAL number — display-only, never touches the invoice) and optional `goalMilestones`; **v106.1** adds `showGoalOnToday` + `goalPaceCaveat` (both default ON). |
 | `mcn_sites` | Array | Job sites with name, lat, lng, radius, client |
 | `mcn_clients` | Array | Clients with company, ABN, address, email |
 | `mcn_activeDay` | Object | The ONE currently-RUNNING (live) session — start set, no finish (null when idle). Drives the live timer. |
@@ -1714,7 +1774,7 @@ node test-tap-summary.js          # 71 pure   · tap/hold mutex + invoice auto-s
 node test-settings.js             # 105 pure  · collapsible + dedupe + auto-save + v105.1 pins
 node test-settings-live.js        # 70 live   · auto-save, offline retry, collapse across relaunch
 ```
-Full suite as of v106.0: **1322 pure + 823 live**. Live suites drive rows with **PointerEvent**, not TouchEvent — the
+Full suite as of v106.1: **1366 pure + 846 live**. Live suites drive rows with **PointerEvent**, not TouchEvent — the
 row gestures moved to Pointer Events in v104.9 and a TouchEvent press now reaches
 nothing. Live suites bind fixed HTTP + CDP ports, so a killed run leaves the port held and the next one dies with
 `EADDRINUSE` — `lsof -ti tcp:<port> | xargs kill -9` clears it. Live fixtures that

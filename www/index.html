@@ -616,6 +616,24 @@
   .gw-empty{font-size:12.5px;line-height:1.55;color:#fff;opacity:.75;margin-top:4px}
   @media(max-width:360px){ .gw-now{font-size:32px} .gw-card{padding:16px 13px 14px} }
 
+  /* v106.1 — compact goal hero on the Today tab. Same language as the Stats
+     widget (it IS the same goal), squeezed to a glance: the home screen has a
+     job to do and a full attribution table is not it. */
+  .gh-card{background:var(--navy);color:#fff;border-radius:var(--radius);padding:15px 15px 13px;cursor:pointer;box-shadow:0 2px 10px rgba(28,42,68,.16)}
+  .gh-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:9px}
+  .gh-label{font-family:'Montserrat',system-ui,sans-serif;font-size:10.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;opacity:.66}
+  .gh-pct{font-size:12px;font-weight:800;color:var(--amber-on-navy,#F0A58A)}
+  .gh-nums{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .gh-now{font-family:'Montserrat',system-ui,sans-serif;font-size:27px;font-weight:800;line-height:1;color:var(--amber-on-navy,#F0A58A);letter-spacing:-.6px}
+  .gh-of{font-size:12px;opacity:.6}
+  .gh-bar{height:7px;background:rgba(255,255,255,.14);border-radius:99px;margin:11px 0 0;overflow:hidden}
+  .gh-fill{height:100%;background:linear-gradient(90deg,var(--amber),#E8A48C);border-radius:99px;transition:width .5s cubic-bezier(.4,0,.2,1)}
+  .gh-pace{font-size:12px;line-height:1.5;margin-top:10px;opacity:.9}
+  .gh-note{margin-top:9px;background:rgba(255,255,255,.07);border-radius:var(--radius-sm);padding:10px 11px;font-size:11.5px;line-height:1.5;opacity:.78}
+  .gh-note div+div{margin-top:6px}
+  .gh-more{text-align:right;font-size:11px;font-weight:700;opacity:.6;margin-top:9px}
+  @media(max-width:360px){ .gh-now{font-size:24px} }
+
   /* Review screen — raw rows behind the exclusion. Plain list, app palette. */
   .rv-tot{display:flex;gap:10px;margin-bottom:14px}
   .rv-tot>div{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 12px;min-width:0}
@@ -1461,6 +1479,9 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
     <p id="checkin-date"></p>
   </div>
 
+  <!-- v106.1 — goal at a glance on the home tab. Filled by renderTodayGoalHero(). -->
+  <div class="section" id="today-goal-slot" style="padding-bottom:0"></div>
+
   <!-- AUTO-TIMER INFO -->
   <div class="section">
     <div style="background:var(--blue-light);border-radius:var(--radius-sm);padding:14px;border-left:4px solid var(--blue);display:flex;gap:12px;align-items:flex-start">
@@ -2300,6 +2321,20 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
           <div class="field"><label>Annual earnings ($)</label><input type="number" id="s-annualEarningsGoal" step="100" min="0" oninput="onGoalInput('annual')"></div>
         </div>
         <div style="font-size:11px;color:var(--text2);margin-top:-6px" id="s-goal-link">↔ linked via $0/hr</div>
+        <div class="toggle-row" style="padding:12px 0 0">
+          <div>
+            <div style="font-size:14px;font-weight:600">Show goal on Today screen</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:2px">A one-glance progress card at the top of Today.</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="s-show-goal-today" onchange="saveGoalTodayPref()"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="toggle-row" style="padding:10px 0 0">
+          <div>
+            <div style="font-size:14px;font-weight:600">Explain the pace figure</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:2px">Says how many weeks you actually worked, so a run of holidays doesn't read as falling behind. Turn off once your hours are steady.</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="s-goal-pace-caveat" onchange="saveGoalCaveatPref()"><span class="toggle-slider"></span></label>
+        </div>
       </div>
       <div class="toggle-row" style="padding:10px 0;border-top:1px solid var(--border)">
         <div>
@@ -2561,7 +2596,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v106.0';
+const APP_VERSION = 'v106.1';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -3226,7 +3261,12 @@ const DEFAULTS={
   // call (2026-08-03): his labour only. Display-only: the invoice always bills
   // the full amount. A missing key reads as the component's own default, so a
   // pre-v106 settings blob classifies exactly as a fresh install does.
-  retention:{labour:true,extra:false,machine:false,travel:false,materials:false}
+  retention:{labour:true,extra:false,machine:false,travel:false,materials:false},
+  // v106.1 — the Today-tab goal hero, and whether it explains what the pace
+  // figure is built on. Both default ON; the caveat is a toggle because it stops
+  // being useful once the working weeks are steady.
+  showGoalOnToday:true,
+  goalPaceCaveat:true
 };
 
 function S(){return DB.def('settings',DEFAULTS)}
@@ -3909,6 +3949,7 @@ function showScreen(id,btn){
     if(isEmployeeMode()){renderTimesheet();}
     else{populateClientDropdown();renderInvoice();refreshTeamHours();}
   }
+  if(id==='checkin') refreshTodayTab();
   if(id==='analytics') renderAnalytics();
   if(id==='retained') renderRetainedReview();
   if(id==='trips') renderTrips();
@@ -4816,6 +4857,9 @@ function showCheckinIdle(){
 }
 // Today tab reflects one of three states: running timer / latest unconfirmed / idle.
 function refreshTodayTab(){
+  // Before the branch — the hero shows in every Today state (idle, running,
+  // review), so it must not sit behind one of the early returns below.
+  try{ renderTodayGoalHero(); }catch(e){ console.warn('goal hero',e); }
   const ad=activeDay();
   if(ad && !ad.finish){ showActiveTimer(ad); return; }
   const q=unconfirmedQueue();
@@ -6408,6 +6452,80 @@ function retainedTarget(){
   return weekly>0&&eff>0?weekly*eff*52:0;
 }
 
+/* Week buckets (Monday-start) for the FY to date, retained + hours per week.
+   Only weeks that HAVE days appear — `weekPace` derives the idle count from the
+   elapsed total, so a missing week is correctly an idle one rather than absent. */
+function retainedWeeks(rows){
+  const out={};
+  rows.forEach(r=>{
+    const d=new Date(r.day.date+'T00:00:00');
+    const mon=new Date(d); mon.setDate(d.getDate()-((d.getDay()+6)%7));
+    const k=mon.getFullYear()+'-'+String(mon.getMonth()+1).padStart(2,'0')+'-'+String(mon.getDate()).padStart(2,'0');
+    if(!out[k]) out[k]={key:k,retained:0,hours:0};
+    out[k].retained+=splitDayRevenue(r.totals,retentionPolicy(S())).retained;
+    out[k].hours+=(+r.totals.h||0);
+  });
+  return Object.keys(out).sort().map(k=>out[k]);
+}
+
+function fyWeeksElapsed(fyStartYear,now){
+  return Math.max(0,Math.min(52,(now-new Date(fyStartYear+'-07-01T00:00:00'))/(7*24*60*60*1000)));
+}
+
+/* The home-tab hero. Deliberately NOT a second implementation of the goal — it
+   reads the same tally and the same target as the Stats widget, so the two can
+   never disagree. What it adds is the pace BASIS: "behind by $X" alone cannot
+   distinguish a rate problem from two weeks off, and the difference is the only
+   thing a working operator can act on. */
+function renderTodayGoalHero(){
+  const slot=document.getElementById('today-goal-slot');
+  if(!slot) return;
+  const s=S();
+  if(s.showGoalOnToday===false){ slot.innerHTML=''; return; }
+
+  const now=new Date(), curFY=fyForDate(now);
+  const {rows,tally}=retainedYtd(curFY);
+  const target=retainedTarget();
+  const prog=goalProgress(tally.retained,target,[]);
+
+  if(!prog.hasTarget){
+    slot.innerHTML=`<div class="gh-card" onclick="showScreen('analytics',document.querySelectorAll('.nav-btn')[3])">
+      <div class="gh-top"><div class="gh-label">🎯 ${fyLabelYr(curFY)} retained</div></div>
+      <div class="gh-nums"><div class="gh-now">${fmtMoney(tally.retained)}</div></div>
+      <div class="gh-pace">No earnings goal set — add one in Settings to track against it.</div>
+      <div class="gh-more">Full breakdown ›</div></div>`;
+    return;
+  }
+
+  const weeksElapsed=fyWeeksElapsed(curFY,now);
+  const basis=weekPace(retainedWeeks(rows),weeksElapsed);
+  const expected=target*Math.min(52,weeksElapsed)/52;
+  const gap=expected-tally.retained;
+
+  // The headline verdict stands unsoftened; the note explains what it is made of.
+  const verdict = tally.retained>=target ? 'Goal reached 🎉'
+    : gap<=1 ? 'On pace ✓'
+    : 'Behind by '+fmtMoney(gap)+' on a straight-line target.';
+  const verdictColor = tally.retained>=target||gap<=1 ? '#8FE3B0' : '#F5B7A0';
+
+  const caveats = s.goalPaceCaveat===false ? [] : paceCaveats(basis,{});
+
+  slot.innerHTML=`<div class="gh-card" onclick="showScreen('analytics',document.querySelectorAll('.nav-btn')[3])">
+    <div class="gh-top">
+      <div class="gh-label">🎯 ${fyLabelYr(curFY)} retained</div>
+      <div class="gh-pct">${prog.pct.toFixed(1)}%</div>
+    </div>
+    <div class="gh-nums">
+      <div class="gh-now">${fmtMoney(tally.retained)}</div>
+      <div class="gh-of">of ${fmtMoney(prog.target)}</div>
+    </div>
+    <div class="gh-bar"><div class="gh-fill" style="width:${prog.pct.toFixed(2)}%"></div></div>
+    <div class="gh-pace" style="color:${verdictColor}">${verdict}</div>
+    ${caveats.length?`<div class="gh-note">${caveats.map(c=>`<div>${escHtml(c)}</div>`).join('')}</div>`:''}
+    <div class="gh-more">Full breakdown ›</div>
+  </div>`;
+}
+
 function renderGoalWidget(){
   const el=document.getElementById('goal-widget');
   if(!el) return;
@@ -6533,6 +6651,18 @@ function renderRetainedReview(){
 
 // Flipping a component re-derives everything from the same stored days — there
 // is nothing to migrate, which is the point of deriving rather than stamping.
+// One handler per toggle, matching saveExtraWorkerPref/saveMachineHirePref —
+// the v105.0 "one canonical affordance per function" rule is asserted by a test.
+function _saveGoalPref(key,elId){
+  const s=S(), el=document.getElementById(elId);
+  if(el) s[key]=el.checked;
+  DB.set('settings',s);
+  if(window.CloudSync) window.CloudSync.pushAll().catch(()=>{});
+  renderTodayGoalHero();
+}
+function saveGoalTodayPref(){ _saveGoalPref('showGoalOnToday','s-show-goal-today'); }
+function saveGoalCaveatPref(){ _saveGoalPref('goalPaceCaveat','s-goal-pace-caveat'); }
+
 function setRetention(key,on){
   const s=S();
   if(!s.retention) s.retention={};
@@ -6703,7 +6833,13 @@ function renderAnalytics(){
   document.getElementById('ana-avg-hrs').textContent=(wh.reduce((a,b)=>a+b,0)/8).toFixed(1);
   const li=ai.slice(-6),av=li.length?li.reduce((s,i)=>s+i.total,0)/li.length:0;
   document.getElementById('ana-avg-inv').textContent=av>=1000?'$'+Math.round(av/100)/10+'k':fmtMoney(av);
-  let te=0,th=0;ad.forEach(d=>{const{h,total}=dayTotals(d);th+=h;te+=total;});
+  // v106.1 — "Effective rate" is HIS rate per HIS hour, so the numerator must be
+  // retained revenue. It used dayTotals().total, which divides an extra
+  // labourer's earnings by Steven's own hours: on his real data that reported
+  // $67/hr against a configured rate of $60, the $7 gap being entirely the
+  // passthrough. Retained-based it comes out at exactly $60.
+  const _effPol=retentionPolicy(s);
+  let te=0,th=0;ad.forEach(d=>{const t=dayTotals(d);th+=t.h;te+=splitDayRevenue(t,_effPol).retained;});
   document.getElementById('ana-eff-rate').textContent='$'+(th>0?te/th:0).toFixed(0);
   const ti=ai.reduce((s,i)=>s+i.total,0);document.getElementById('ana-total').textContent=ti>=10000?'$'+Math.round(ti/100)/10+'k':fmtMoney(ti);
   // C6: invoice summaries store the ex-GST total. Label it honestly when GST is on
@@ -6762,6 +6898,9 @@ function loadSettings(){
   });
   const _whg=document.getElementById('s-weeklyHrsGoal'); if(_whg) _whg.value = s.weeklyHrsGoal>0 ? s.weeklyHrsGoal : '';
   const _aeg=document.getElementById('s-annualEarningsGoal'); if(_aeg) _aeg.value = s.annualEarningsGoal>0 ? s.annualEarningsGoal : '';
+  // v106.1 — absence reads as ON (the shipped default), never as unchecked.
+  const _sgt=document.getElementById('s-show-goal-today'); if(_sgt) _sgt.checked = s.showGoalOnToday!==false;
+  const _gpc=document.getElementById('s-goal-pace-caveat'); if(_gpc) _gpc.checked = s.goalPaceCaveat!==false;
   onGoalInput('init');
   const _emCb=document.getElementById('s-earthmoving-mode');
   if(_emCb) _emCb.checked=isEarthmovingModeOn(s);
@@ -13989,6 +14128,62 @@ function paceNarrative(o){
   return { state:willMake ? 'on-track' : 'behind', weeksToGoal:weeksToGoal, perWeek:perWeek,
            caveats:caveats, text:text };
 }
+
+/* v106.1 — the basis a pace figure is built on.
+   A straight-line target divides the goal evenly across 52 weeks. A working year
+   is not even: Steven spent the start of FY2026-27 gold fossicking and away with
+   family, so 2 of the first 5 weeks have no hours in them at all. Averaging the
+   retained total over ELAPSED weeks silently charges those holidays to his rate
+   and prints "Behind by $8,796" with no way to tell whether that is a rate
+   problem or an attendance one. It is attendance, and the app should say so.
+
+   `weeks` is [{key, retained, hours}] for the weeks that HAVE data — the caller
+   owns the calendar, this owns the arithmetic. A week counts as worked iff it
+   has hours, so a week of $0 travel-only entries never poses as a working week. */
+function weekPace(weeks, elapsedWeeks){
+  var list = weeks || [], el = Math.max(0, +elapsedWeeks || 0);
+  var worked = 0, retained = 0, hours = 0;
+  for (var i = 0; i < list.length; i++){
+    var h = +list[i].hours || 0;
+    retained += (+list[i].retained || 0);
+    hours += h;
+    if (h > 0) worked++;
+  }
+  return {
+    retained:retained, hours:hours, elapsedWeeks:el, workedWeeks:worked,
+    idleWeeks:Math.max(0, Math.round(el) - worked),
+    perElapsedWeek:     el > 0     ? retained / el     : null,
+    perWorkedWeek:      worked > 0 ? retained / worked : null,
+    hoursPerWorkedWeek: worked > 0 ? hours / worked    : null
+  };
+}
+
+/* Honest framing for a behind-target figure. Deliberately does NOT soften the
+   number — it stands. What these lines add is what the number is made of, which
+   is the difference between "you are underperforming" and "you took two weeks
+   off". Each is earned; none is printed unconditionally. */
+function paceCaveats(basis, o){
+  o = o || {};
+  var b = basis || {}, out = [];
+  var worked = +b.workedWeeks || 0, idle = +b.idleWeeks || 0, el = +b.elapsedWeeks || 0;
+
+  if (worked === 0)
+    return el > 0 ? ['No hours logged yet this financial year, so there is no rate to compare against.'] : [];
+
+  // The load-bearing one: what the weeks he actually worked look like.
+  if (idle > 0 && b.perWorkedWeek != null)
+    out.push(Math.round(el) + ' weeks into the year, ' + worked + ' of them with hours logged. ' +
+             'On those weeks you averaged ' + fmtHrsWk(b.hoursPerWorkedWeek) +
+             ' and ' + fmtUsd(b.perWorkedWeek) + '.');
+
+  // Early in the year the straight-line assumption dominates everything else.
+  if (el > 0 && el < (+o.earlyWeeks || 13))
+    out.push('It is still early in the financial year, and a straight-line target spreads the goal evenly across 52 weeks — so a quiet start reads as a big gap. This figure moves a lot until the weeks fill in.');
+
+  return out;
+}
+
+function fmtHrsWk(h){ return (+h || 0).toFixed(1) + 'h/wk'; }
 
 function fmtUsd(n){
   var v = +n || 0;

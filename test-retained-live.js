@@ -170,11 +170,17 @@ const BOOT = `(function(){
     }
   }
 
+  /* Also clears a lingering toast and un-sticks the header. In a
+     captureBeyondViewport clip, anything position:sticky/fixed pins itself at
+     its VIEWPORT offset and lands in the middle of the image — and a toast from
+     an assertion three blocks ago is still fading. Neither is a layout bug; both
+     ruin the shot. */
   const hideAuthChrome = () => ev(`(function(){
       ['screen-login','screen-loading'].forEach(function(id){
         var n=document.getElementById(id); if(n) n.style.display='none'; });
       var w=document.getElementById('main-app-wrapper'); if(w) w.style.display='block';
       var b=document.getElementById('backup-warning'); if(b) b.style.display='none';
+      var t=document.getElementById('toast'); if(t) t.classList.remove('show');
       return true;})()`);
 
   async function shot(name, selector) {
@@ -186,7 +192,9 @@ const BOOT = `(function(){
       var w=document.getElementById('main-app-wrapper'); if(w) w.style.display='block';
       var b=document.getElementById('backup-warning'); if(b) b.style.display='none';
       return true;})()`);
-    const box = await ev(`(function(){var n=document.querySelector(${JSON.stringify(selector)});
+    const box = await ev(`(function(){
+      [].forEach.call(document.querySelectorAll('.header,.nav'),function(n){ n.style.position='static'; });
+      var n=document.querySelector(${JSON.stringify(selector)});
       if(!n) return null; n.scrollIntoView(); var r=n.getBoundingClientRect();
       return {x:Math.max(0,r.left+window.scrollX-8), y:Math.max(0,r.top+window.scrollY-8),
               width:Math.min(375,r.width+16), height:r.height+16};})()`);
@@ -462,6 +470,116 @@ const BOOT = `(function(){
     await ev(`showScreen('retained')`); await sleep(300);
     const emptyReview = await ev(`document.getElementById('rv-list').textContent.replace(/\\s+/g,' ').trim()`);
     ok('the review screen explains an empty state', /Nothing is being excluded/.test(emptyReview), emptyReview.slice(0, 80));
+  }
+
+  console.log('\n── PIN: test_today_tab_goal_hero_with_honest_pace ─────────────────');
+  {
+    /* Steven's REAL FY2026-27 shape, read off the synced Firestore blob on
+       2026-08-03: 11 days across 3 weeks (15.75h / 17.5h / 32.28h), 2 weeks with
+       no hours at all — he was gold fossicking and away with family — against a
+       $140,400 goal. This is the exact state that renders "Behind by $8,796". */
+    await ev(`(function(){
+      var mk=function(d,st,fi){return {id:'r'+d,date:d,site:'Lucas Ranch',start:st,finish:fi,
+        lunchMins:0,rate:60,sonWorking:false,machines:[],travelMode:'none',materials:[]};};
+      var D=[];
+      // week of 2026-06-28 → 15.75h (spans the FY boundary; only Jul days count)
+      D.push(mk('2026-07-01','07:00','12:45'), mk('2026-07-02','07:00','12:00'), mk('2026-07-03','07:00','12:00'));
+      // week of 2026-07-05 → 17.5h
+      D.push(mk('2026-07-06','07:00','13:00'), mk('2026-07-07','07:00','12:30'), mk('2026-07-08','07:00','13:00'));
+      // weeks of 2026-07-12 and 2026-07-19 → NOTHING (the holidays)
+      // week of 2026-07-26 → 32.28h
+      D.push(mk('2026-07-27','07:00','13:30'), mk('2026-07-28','07:00','13:30'), mk('2026-07-29','07:00','13:30'),
+             mk('2026-07-30','07:00','13:30'), mk('2026-07-31','07:00','13:17'));
+      localStorage.setItem('mcn_days', JSON.stringify(D));
+      var s=JSON.parse(localStorage.getItem('mcn_settings')||'{}');
+      s.rate=60; s.annualEarningsGoal=140400; s.weeklyHrsGoal=45; delete s.retention;
+      delete s.showGoalOnToday; delete s.goalPaceCaveat;
+      localStorage.setItem('mcn_settings', JSON.stringify(s));
+      return D.length;})()`);
+    await ev(`showScreen('checkin')`); await sleep(500);
+
+    const h = await ev(`(function(){var c=document.querySelector('#today-goal-slot .gh-card');
+      if(!c) return null;
+      return {now:c.querySelector('.gh-now').textContent.trim(),
+              of:c.querySelector('.gh-of').textContent.trim(),
+              pct:c.querySelector('.gh-pct').textContent.trim(),
+              fill:c.querySelector('.gh-fill').style.width,
+              pace:c.querySelector('.gh-pace').textContent.replace(/\\s+/g,' ').trim(),
+              notes:[].map.call(c.querySelectorAll('.gh-note div'),function(n){return n.textContent.replace(/\\s+/g,' ').trim();}),
+              more:!!c.querySelector('.gh-more'),
+              right:Math.round(c.getBoundingClientRect().right)};})()`);
+
+    ok('PIN: the hero renders on the Today tab', !!h);
+    ok('PIN: it shows the retained figure', h.now === '$3,932.00', h.now);
+    ok('…against his real target', h.of === 'of $140,400.00', h.of);
+    ok('…as a percentage', h.pct === '2.8%', h.pct);
+    ok('the bar matches', h.fill === '2.8%', h.fill);   // CSS normalises 2.80% → 2.8%
+    // The gap grows with the wall clock (the straight-line target advances every
+    // hour), so this is pinned to the band, not to a cent. Steven's screenshot
+    // read $8,804.17; an offline replay at midnight gives $8,796.57.
+    ok('PIN: the behind-target number STANDS, unsoftened',
+       /Behind by \$8,[78]\d\d\.\d\d on a straight-line target\./.test(h.pace), h.pace);
+    ok('PIN: the note says how many weeks he actually worked',
+       /5 weeks into the year, 3 of them with hours logged/.test(h.notes[0] || ''), h.notes[0]);
+    ok('PIN: …and what those weeks looked like',
+       /21\.8h\/wk and \$1,31\d/.test(h.notes[0] || ''), h.notes[0]);
+    ok('…plus the early-FY explanation', /still early in the financial year/.test((h.notes[1] || '')), h.notes[1]);
+    ok('PIN: the note never claims he is on track',
+       !h.notes.some(n => /on track|on pace|caught up/i.test(n)), h.notes);
+    ok('it offers the full breakdown', h.more);
+    ok('the hero fits 375px', h.right <= 375, h.right);
+    ok('the page does not scroll sideways', await ev(`document.documentElement.scrollWidth`) <= 375);
+    await shot('04-today-hero-375', '#today-goal-slot .gh-card');
+    await shotViewport('05-today-tab-375');
+
+    // The Stats widget must agree — same tally, same target, one source.
+    await ev(`showScreen('analytics')`); await sleep(400);
+    ok('the Stats widget shows the same number',
+       await ev(`document.querySelector('#goal-widget .gw-now').textContent.trim()`) === '$3,932.00');
+    ok('PIN: nothing is excluded this FY — the tally has no passthrough',
+       await ev(`retainedYtd(fyForDate(new Date('2026-08-03'))).tally.passthrough`) === 0);
+    ok('PIN: …so the review CTA is correctly absent',
+       !(await ev(`!!document.querySelector('#goal-widget .gw-review')`)));
+
+    // The caveat is a toggle, not a permanent fixture.
+    await ev(`var s=S(); s.goalPaceCaveat=false; DB.set('settings',s);`);
+    await ev(`showScreen('checkin')`); await sleep(400);
+    const off = await ev(`(function(){var c=document.querySelector('#today-goal-slot .gh-card');
+      return {note:!!c.querySelector('.gh-note'), pace:c.querySelector('.gh-pace').textContent.trim()};})()`);
+    ok('PIN: turning the caveat off removes the note', !off.note);
+    ok('PIN: …and the behind-target figure is still there', /Behind by/.test(off.pace), off.pace);
+
+    // The whole hero is switchable too.
+    await ev(`var s=S(); s.showGoalOnToday=false; DB.set('settings',s);`);
+    await ev(`showScreen('checkin')`); await sleep(400);
+    ok('turning the hero off empties the slot',
+       await ev(`document.getElementById('today-goal-slot').innerHTML.trim()`) === '');
+    ok('…and Today still renders its own content',
+       await ev(`!!document.getElementById('checkin-idle')`));
+
+    await ev(`var s=S(); delete s.showGoalOnToday; delete s.goalPaceCaveat; DB.set('settings',s);`);
+    await ev(`showScreen('checkin')`); await sleep(300);
+    ok('absence of the keys reads as ON',
+       await ev(`!!document.querySelector('#today-goal-slot .gh-card')`));
+  }
+
+  console.log('\n── PIN: test_effective_rate_excludes_passthrough_live ─────────────');
+  {
+    // Two days: one labour-only, one with an extra labourer. His own rate is $60,
+    // so "Effective rate" must read $60 — not $60 plus somebody else's wage
+    // divided across his hours.
+    await ev(`(function(){
+      var D=[{id:'e1',date:'2026-07-06',site:'X',start:'07:00',finish:'15:00',lunchMins:0,rate:60,
+              sonWorking:false,machines:[],travelMode:'none',materials:[]},
+             {id:'e2',date:'2026-07-07',site:'X',start:'07:00',finish:'15:00',lunchMins:0,rate:60,
+              sonWorking:true,sonHours:8,sonrate:30,machines:[],travelMode:'none',materials:[]}];
+      localStorage.setItem('mcn_days', JSON.stringify(D)); return true;})()`);
+    await ev(`showScreen('analytics')`); await sleep(500);
+    const eff = await ev(`document.getElementById('ana-eff-rate').textContent.trim()`);
+    ok('PIN: effective rate is HIS rate, not inflated by the extra labourer', eff === '$60', eff);
+    ok('…and the gross-based figure would have been $75',
+       await ev(`(function(){var g=0,h=0;days().forEach(function(d){var t=dayTotals(d);g+=t.total;h+=t.h;});
+                  return '$'+Math.round(g/h);})()`) === '$75');
   }
 
   console.log('\n── no page errors ─────────────────────────────────────────────────');
