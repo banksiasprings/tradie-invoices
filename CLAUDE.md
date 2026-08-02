@@ -22,11 +22,11 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v105.2 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2393) | v106.0 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.105.2 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
-| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.105.2 / versionCode 16 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.106.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.106.0 / versionCode 16 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -927,6 +927,79 @@ decimal) + 30 live in `test-triplog-screen-live.js`. The live fixture seeds a
 classifier, which is itself worth knowing when writing these.
 Screenshots: `plans/v104-shots/10-worksite-travel-folded.png` (+ `11-…-expanded`).
 
+### v106.0 — retained revenue: the goal number counts only what he keeps
+
+Steven: *"the goal tally sums line items I don't actually keep — extra labour
+that goes to subbies. I want it out of my goal-tracking number but still on the
+invoice."*
+
+**Two premises in the brief were wrong, and were corrected before building.**
+There is no minimum-charge concept anywhere in this app — no min-charge, callout,
+subbie or passthrough logic exists; the only extra-labour line is the hourly
+**Extra labourer** (`sonWorking`/`sonHours`/`sonrate`), which he confirmed is
+what he meant. And "Xero export" here is the accountant **days CSV**, not an API
+— Xero integration is still unstarted (`XERO-INTEGRATION-PLAN.md`).
+
+**His gate (2026-08-03): retained = HIS LABOUR ONLY.** Extra labourer, machine
+hire, travel *and* materials are all passthrough — broader than the brief implied,
+which is exactly why it was asked rather than assumed.
+
+**The bug underneath the ask:** the goal card already disagreed with itself.
+`renderThisYear` summed `hours × the CURRENT rate` (excluding everything, and
+re-pricing every past day whenever the rate rose); its own tap-through
+`openYearGoalDetail` summed `dayTotals().total` (extra labour, machines, travel
+and materials included). Two numbers, one card, both labelled "YTD". Both now
+read one shared tally.
+
+**The taxonomy.** `RETAINED_COMPONENTS` partitions every invoice dollar into
+exactly five components (`myE` · `sonE` · `machineTotal` · `travelTotal` ·
+`materialsTotal`), each retained or passthrough. `splitDayRevenue().gross` **is**
+`dayTotals().total` — pinned by a test against the real shipped money function,
+which is what makes "the invoice is untouched" arithmetic rather than a promise.
+
+**No schema change, no backfill, no migration.** The split is *derived* from
+structure every day record already carries, so history reclassifies itself the
+moment the policy changes and a wrong policy is never baked into stored data.
+That is strictly better than a stamped flag: there is nothing to migrate, and
+nothing to un-migrate when he changes his mind.
+
+**Absence reads as the default, never as false** — the `earthmovingMode` rule. A
+pre-v106 settings blob classifies exactly as a fresh install does.
+
+**Review screen** (`#screen-retained`, per [[review-tab-before-invoice]]): every
+excluded line item, per day, with its own detail line (`8.00h × $30.00/hr`,
+`Excavator — 6.00h × $150.00 + 2.00h operator`), the five toggles inline so the
+decision is made where the evidence is, and its own CSV — **deliberately separate
+from the accountant/Xero days CSV**, which must keep describing what was invoiced.
+
+**Goal widget** (top block on Stats, Freyr's shape in this app's navy/amber):
+big retained number · `of $X · N% there · $Y to go` · milestone-ticked bar
+(auto thirds, overridable via `settings.goalMilestones`) · contributing-vs-costing
+attribution with an "Invoiced, all in" net line · timestamp · pace commentary.
+
+**The pace text refuses to invent a number.** No target, no confirmed days, or a
+non-positive rate each return their own state and say *why* instead of printing a
+confident fiction. Caveats are earned: a thin sample (<10 days) names its size, a
+recent 4-week rate diverging >25% from the year average says so and in which
+direction, and seasonality is always stated. `goalProgress` returns **null**, not
+0, when there is no target — the v104.0 median rule.
+
+**Don't reintroduce:** a goal figure that includes passthrough; two different YTD
+numbers on one card; pricing history at the current rate; stamping a
+retained/passthrough flag onto day records (derive it); `===false` for a policy
+read (absence must read as the component default); a pace projection from a base
+that can't support one; a fabricated 0% when no target is set; touching
+`dayTotals`/`buildInvoiceHTML`/`previewInvoice`/`generateInvoice`/`exportDaysCSV`.
+
+**Tests:** `test-retained.js` (144 pure — pins
+`test_goal_tally_excludes_passthrough_but_invoice_total_unchanged`,
+`test_retention_policy_absence_reads_as_default`,
+`test_invoice_and_accountant_csv_untouched_by_retention`) ·
+`test-retained-live.js` (86 live, headless Chrome — seeds a 40-day FY, reads the
+widget off the DOM, flips a component and watches every figure move together, and
+**diffs every dollar figure on a generated invoice across all three retention
+policies to prove not one changes**). Screenshots: `plans/v106-shots/`.
+
 ### v105.1 — Setup Health wouldn't collapse; tap-to-fix was silent on an old APK
 
 **Both diagnosed off-device.** Wireless debugging was reportedly on, but the
@@ -1406,7 +1479,7 @@ figure changes").
 ### localStorage Keys
 | Key | Type | Description |
 |---|---|---|
-| `mcn_settings` | Object | Business settings (rate, client, trade type, etc.). **v104.8** adds `confirmTripsOnFinish` (default `false` — the trip-end vehicle prompt); **v104.5** adds `truckCapacityLcm` + `showLoadsOnInvoice`. |
+| `mcn_settings` | Object | Business settings (rate, client, trade type, etc.). **v104.8** adds `confirmTripsOnFinish` (default `false` — the trip-end vehicle prompt); **v104.5** adds `truckCapacityLcm` + `showLoadsOnInvoice`; **v106.0** adds `retention` (which invoice components count toward the GOAL number — display-only, never touches the invoice) and optional `goalMilestones`. |
 | `mcn_sites` | Array | Job sites with name, lat, lng, radius, client |
 | `mcn_clients` | Array | Clients with company, ABN, address, email |
 | `mcn_activeDay` | Object | The ONE currently-RUNNING (live) session — start set, no finish (null when idle). Drives the live timer. |
@@ -1641,7 +1714,7 @@ node test-tap-summary.js          # 71 pure   · tap/hold mutex + invoice auto-s
 node test-settings.js             # 105 pure  · collapsible + dedupe + auto-save + v105.1 pins
 node test-settings-live.js        # 70 live   · auto-save, offline retry, collapse across relaunch
 ```
-Full suite as of v105.2: **1178 pure + 737 live**. Live suites drive rows with **PointerEvent**, not TouchEvent — the
+Full suite as of v106.0: **1322 pure + 823 live**. Live suites drive rows with **PointerEvent**, not TouchEvent — the
 row gestures moved to Pointer Events in v104.9 and a TouchEvent press now reaches
 nothing. Live suites bind fixed HTTP + CDP ports, so a killed run leaves the port held and the next one dies with
 `EADDRINUSE` — `lsof -ti tcp:<port> | xargs kill -9` clears it. Live fixtures that
