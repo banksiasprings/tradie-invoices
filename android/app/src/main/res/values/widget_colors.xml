@@ -45,4 +45,27 @@
     <color name="widget_bar_fill">#A8432A</color>
     <color name="widget_bar_current">#7A2E1B</color>
     <color name="widget_bar_track">#DFD7C8</color>
+
+    <!-- ═══ v108.2 — the solar-style redesign ═══════════════════════════════
+         RING. Steven asked for the BSF Solar widget's circular progress graph,
+         green, and green it is: this is the same success colour the in-app goal
+         card uses, not a new hue. #1E7A4B on this cream is 5.32:1 — comfortably
+         past the 3:1 that WCAG AA asks of a non-text graphic, and past the 4.5:1
+         for text too, because the percentage sits INSIDE the ring.
+
+         The ring is the one thing besides the bars drawn with a Canvas in OUR
+         process (see WidgetRenderer.ringColors), so like widget_bar_* it is named
+         separately to keep that boundary visible. The percentage text over it is
+         a real TextView, so its colour still resolves in the launcher's process. -->
+    <color name="widget_ring_fill">#1E7A4B</color>
+    <color name="widget_ring_track">#DFD7C8</color>
+
+    <!-- STATUS PILL. Carries the verdict in three or four words. Never "on
+         track" — the ban is older than this layout and outlives it. -->
+    <color name="widget_pill_bg">#EBE3D6</color>
+    <color name="widget_pill_ink">#1C2A44</color>
+
+    <!-- BOTTOM ACTION BAR. Deliberately quiet: it is an affordance, not data,
+         and it must not compete with the ring for the eye. -->
+    <color name="widget_action_bg">#EFE8DC</color>
 </resources>

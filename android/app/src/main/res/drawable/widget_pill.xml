@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v108.2 — the status pill in the header row, from the BSF Solar widget's
+     "OFFLINE" chip. Colour comes from resources so the launcher's theme applies;
+     the radius is a plain 99dp because a pill is a pill at every API level (the
+     CARD radius follows Material You, a chip inside it does not need to). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/widget_pill_bg" />
+    <corners android:radius="99dp" />
+</shape>

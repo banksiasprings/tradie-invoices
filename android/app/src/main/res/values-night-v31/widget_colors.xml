@@ -24,4 +24,28 @@
     <!-- See the light overlay: one step brighter, not a white slab. -->
     <color name="widget_bar_current">@android:color/system_accent1_200</color>
     <color name="widget_bar_track">@android:color/system_accent1_700</color>
+
+    <!-- ═══ v108.2 — solar-style redesign, Material You DARK ════════════════
+         Tone direction inverted, as everywhere in this overlay: the ring takes a
+         LIGHT tone (_200) so it reads on the dark surface, and its track a dark
+         one. Getting this the wrong way round yields a ring you cannot see,
+         which is why the render test measures ring-vs-card separation. -->
+    <!-- widget_ring_fill is DELIBERATELY NOT OVERRIDDEN HERE, so it falls through
+         to values/ (and values-night/) at every API level.
+
+         Everything else on this card follows the wallpaper, which is what makes
+         the widget sit in the home screen rather than on it. The ring does not,
+         because the ring is the thing Steven actually asked for — "solar is way
+         cooler, I like the circle progress graph" — and he asked for it GREEN.
+         On a wallpaper-derived palette accent3_700 came out a dark plum, which
+         renders as a bruise on the track rather than as progress.
+
+         So: card and ink are Material You, the ring is brand. Adding the name
+         back to this file is all it takes to hand the ring to the wallpaper too. -->
+    <color name="widget_ring_track">@android:color/system_accent1_700</color>
+
+    <color name="widget_pill_bg">@android:color/system_accent1_700</color>
+    <color name="widget_pill_ink">@android:color/system_neutral1_50</color>
+
+    <color name="widget_action_bg">@android:color/system_neutral1_700</color>
 </resources>

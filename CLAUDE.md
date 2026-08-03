@@ -1225,6 +1225,93 @@ process"* is itself a match for `/Firestore/`. `test-widget.js` strips comments
 before scanning, and asserts the stripper is real so the five purity checks cannot
 pass vacuously.
 
+### v108.2 — the widget redesigned in the BSF Solar language
+
+Steven put the two side by side: *"solar is way cooler, I like the circle
+progress graph."* The v107/v108.0 card was a flat block with a big left-aligned
+number and an empty right half — no anchor, nowhere for the eye to land.
+
+⚠️ **v108.1 was already published when this landed** (release, APK, OTA manifest
+at 1.108.1). Re-cutting that number with different content is the **v82 cache
+trap** — a phone that already pulled 1.108.1 would never see the new bundle. So
+the redesign shipped as **v108.2**, bundled with the travel exclusion in one
+release as asked. **Two different bundles must never share a version number.**
+
+**Four bands, matching solar:**
+
+| band | carries |
+|---|---|
+| **header** | 🎯 Invoice · FY2026–27 · status pill (`BEHIND $9k`) |
+| **body** | the **ring** (green, % inside) beside `$3,932` / `of $140k target` / `This week 32.3h / 45h` |
+| **aux** | `🕐 21.8h/wk · 📅 3 of 5 · 💵 $60/hr`, beside the week chart |
+| **action** | `Tap to open` · `as of 12:25 PM` |
+
+**Sizes:** 2x1 = header + ring + number. 2x2 = all bands but aux. 4x2 = all four.
+Ring scales 18 / 36 / 46 dp.
+
+**The v107 flat bar and the milestone chips are DELETED, not hidden** — the ring
+is the progress indicator now, and dead ids in a layout are how a renderer comes
+to address a view that no longer means anything. The **verdict sentence** and the
+**pace caveat** also lost their slots; both survive compressed — the sentence as
+the pill's signed distance, and "3 of 5 weeks had hours" as the `📅 3 of 5` glyph.
+
+**The week chart survived, and only just.** v108.0's tappable bars are a shipped
+feature, so they were not going to be dropped for a ring: at 4x2 they now share
+band 3 with the aux glyphs (64/36), at 2x2 they keep the full width.
+
+**The ring is brand green at EVERY API level.** Card, ink and pill still follow
+Material You on 31+ so the widget sits in the launcher's palette — but
+`system_accent3_700` resolved to a dark plum on a real wallpaper, which reads as
+a bruise rather than progress. `widget_ring_fill` is deliberately **absent** from
+both v31 overlays so it falls through to the brand value; the ring TRACK is still
+overridden, so it tints with the card.
+
+**The percentage is a TextView, not part of the bitmap** — so its colour still
+resolves in the launcher's process. Only the two arcs are drawn by us.
+
+#### Four defects the render harness caught, and one it did not
+
+| found by | defect |
+|---|---|
+| test | `DateFormat.is24HourFormat(null)` NPEs — it reads a per-user setting and needs a real Context |
+| test | 2x1's sub-label squeezed to **1px**: a header band costs 11dp and the number needs 19 of the 20 left. The line was dropped, not the number — the ring says what it said |
+| test | 2x2 headline clipped (`$3,932` wanted 148px in a 126px box) → ring 40→36dp, base 18→15sp |
+| test | 4x2 week line squeezed to zero — the whole band budget was re-cut against the measurement |
+| **PNG** | the ring's `3%` and the action bar's `as of …` **drew nothing at all** |
+
+⚠️ **THE NEW REMOTEVIEWS TRAP: `android:gravity` on a `singleLine` TextView.**
+The view is VISIBLE, carries the right string, the right colour, the right text
+size and a correctly-laid-out box — and puts **zero pixels** on the canvas. Use
+`android:layout_gravity` to place a child inside its parent instead.
+
+⚠️ **And the false green that let it through — the worst in this harness so far.**
+`assertVisible` passes on a view nobody ever bound, because XML visibility
+defaults to VISIBLE. Adding `assertSays` (checking the actual string) **also
+passed**, because the string genuinely was there. Only counting pixels found it.
+`assertEveryTextSlotHasInk()` now samples each text slot's bounding box after
+`draw()` and fails a flat region — **verified by re-introducing the exact bug and
+watching it go red.**
+
+A second false green went with it: only the headline was checked for truncation,
+so 2x2 shipped three ellipses at once (`of $140k tar…`, `This week 3…`,
+`Tap to o…`). Every slot is checked now, for ellipsis *and* clipping, and the
+copy is size-aware rather than the box being stretched.
+
+**Don't reintroduce:** `android:gravity` on a singleLine RemoteViews TextView
+(asserted absent, with a control counting the singleLine views it scanned); a
+hard-coded ARGB in the renderer; the ring handed to Material You; `ringDp()`
+disagreeing with the layout's slot (pinned in BOTH the pure suite and the
+instrumented one, so CI catches it with no device); "on track"/"on pace"/"caught
+up" in the pill; a text assertion that proves visibility without proving ink.
+
+**Tests:** `test-widget.js` (**239 pure**, +71 — bands, the gravity scan, ring
+geometry cross-checked against the layout XML, ring/pill contrast, the pill's
+ban) · `WidgetRenderTest.java` (**11 instrumented**, was 6). Screenshots:
+`plans/v108.2-shots/` (18 — 3 sizes × 3 states × 2 themes).
+
+⚠️ **Requires an APK install** — new layouts, drawables and resource qualifiers.
+Capgo ships `www/` only. `versionCode` 19 → **20**.
+
 ### v108.1 — travel time leaves the goal, and the label was there all along
 
 **Asked three times, refused twice, and the refusals were wrong.** v106.0 and
@@ -2168,7 +2255,7 @@ node test-trip-popup.js           # 41 pure   · no trip-end popup by default + 
 node test-tap-summary.js          # 71 pure   · tap/hold mutex + invoice auto-summary
 node test-settings.js             # 105 pure  · collapsible + dedupe + auto-save + v105.1 pins
 node test-settings-live.js        # 70 live   · auto-save, offline retry, collapse across relaunch
-node test-widget.js               # 168 pure  · widget snapshot, WCAG palette, tap wiring (+ Java scans)
+node test-widget.js               # 239 pure  · snapshot, WCAG, ring geometry, the gravity scan
 node test-widget-week-live.js     # 22 live   · tap a week bar -> the Log scoped to that week
 node test-retained.js             # 265 pure  · retained tally, pace basis, v108.1 travel-time split
 node test-retained-live.js        # 137 live  · goal widget + his real 28 Jul travel day
@@ -2176,7 +2263,7 @@ node test-retained-live.js        # 137 live  · goal widget + his real 28 Jul t
 
 The widget's native half has its own instrumented test (needs a booted emulator):
 ```bash
-cd android && ./gradlew :app:connectedDebugAndroidTest   # WidgetRenderTest (6 tests):
+cd android && ./gradlew :app:connectedDebugAndroidTest   # WidgetRenderTest (11 tests):
 # renders 3 sizes x 3 states x 2 themes via the real RemoteViews.apply(), asserts the
 # themes actually differ, and fails on a squeezed/clipped child instead of leaving it
 # to someone noticing in a PNG.
@@ -2190,7 +2277,7 @@ cd android && ./gradlew :app:connectedDebugAndroidTest   # WidgetRenderTest (6 t
 #   adb exec-out run-as com.banksiasprings.invoices cat files/widget-shots/4x2-dark.png > out.png
 # (They are on INTERNAL storage: /sdcard/Android/data/<pkg> is not shell-listable on API 30+.)
 ```
-Full suite as of v108.1: **1611 pure + 896 live**, plus the instrumented
+Full suite as of v108.2: **1682 pure + 896 live**, plus the instrumented
 `WidgetRenderTest` (`./gradlew :app:connectedDebugAndroidTest`, needs an emulator). Live suites drive rows with **PointerEvent**, not TouchEvent — the
 row gestures moved to Pointer Events in v104.9 and a TouchEvent press now reaches
 nothing. Live suites bind fixed HTTP + CDP ports, so a killed run leaves the port held and the next one dies with

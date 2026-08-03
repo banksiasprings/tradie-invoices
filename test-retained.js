@@ -389,7 +389,7 @@ console.log('\n── PIN: test_goal_card_and_detail_agree ───────
 
 console.log('\n── version ────────────────────────────────────────────────────────');
 {
-  ok('APP_VERSION bumped to v108.1', /const APP_VERSION = 'v108\.1';/.test(html));
+  ok('APP_VERSION bumped to v108.2', /const APP_VERSION = 'v108\.2';/.test(html));
   ok('DEFAULTS carries the retention policy', /retention:\{labour:true,travel_time:false,extra:false,machine:false,travel:false,materials:false\}/.test(html));
 }
 

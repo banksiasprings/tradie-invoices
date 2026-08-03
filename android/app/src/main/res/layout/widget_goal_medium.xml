@@ -1,31 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  v107.0 — 2x2. The headline, plus the two things that change day to day.
+  v108.2 — 2x2, in the BSF Solar visual language. Same four bands as 4x2 minus
+  the aux glyph row, which is what the spec called for and what the height allows.
 
-  The extra height over 2x1 buys the week line ("This week 32.3h / 45h"), the
-  all-time effective rate, and the six-week bar shape. Those three answer "am I
-  working enough, at the right rate, and is this week normal" — the whole reason
-  to glance at a widget rather than open the app.
+  A 2x2 cell is 110x110dp — the SAME height as 4x2, with a quarter of the width.
+  So the difference between these two files is horizontal room, and the things
+  that get cut are the ones that need width to be legible:
 
-  Deliberately NOT here: the gap figure and its explanation. Both are sentences,
-  and a sentence squeezed into 110dp is a sentence nobody reads. They arrive at
-  4x2, where there is room.
+    · the aux glyph row (three figures across ~95dp is three ellipses)
+    · the sub-labels shrink, and "of $140k · 3%" carries what two lines did
 
-  SIZING IS TIGHT AND DELIBERATE. A 2x2 cell is 110x110dp, and after padding
-  there are ~90dp of vertical room for six stacked elements. The first build of
-  this layout asked for ~120dp: LinearLayout silently squeezed the last children
-  to nothing, so the week bars rendered as hairlines and the week/rate row did
-  not render at all. Every size here is chosen to sum UNDER the budget — if you
-  add a row, take the height from somewhere, and re-run WidgetRenderTest.
+  What is KEPT, because a glance needs an anchor and a verdict:
+    · the ring — smaller (40dp) but still the first thing the eye lands on
+    · the status pill, which is the whole "am I behind" answer in three words
+    · the week chart, tappable, from v108.0
+    · the action bar with its as-of time
 
-  v108.0 note: that "LOOK at the PNG" instruction is no longer the only defence.
-  The render test now measures every VISIBLE child after layout and fails if one
-  came out zero-height or if the headline was clipped, so the squeeze is a red
-  test rather than a screenshot somebody has to notice. It was a false green.
+  BUDGET (the failure mode here is silent — LinearLayout squeezes the LAST
+  children to nothing without error, which is how the v107.0 build of this file
+  rendered its bars as hairlines and dropped the week/rate row entirely):
 
-  v108.0 grew the chart 12dp to 18dp to make the bars tappable at all. The 6dp
-  was taken back from padding (10 to 8) and two margins (5 to 4, 3 to 2) so the
-  budget is unchanged — NOT from the headline, which was already at its floor.
+      padding 2x7 = 14   header 13   body 40   chart 15   action 13   margins 9
+      ——————————————————————————————————————————————————————————————————— 104
+
+  6dp of slack, and the body row is the one on a weight so it absorbs rounding.
+  If you add a row, take the height from somewhere and re-run WidgetRenderTest —
+  assertNothingSqueezed() will fail on a zero-height child rather than leaving it
+  to somebody noticing in a PNG.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
@@ -33,85 +34,138 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/widget_bg"
-    android:padding="8dp">
+    android:padding="7dp">
 
-    <TextView
-        android:id="@+id/w_label"
+    <!-- ── 1. HEADER ─────────────────────────────────────────────────────── -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textSize="8.5sp"
-        android:textStyle="bold"
-        android:singleLine="true"
-        android:ellipsize="end"
-        android:textColor="@color/widget_ink_dim"
-        android:text="🎯 Retained" />
-
-    <!-- Text size is set from Java per state (see WidgetRenderer.headlineSp). -->
-    <TextView
-        android:id="@+id/w_big"
-        android:layout_width="match_parent"
-        android:layout_height="25dp"
-        android:layout_marginTop="1dp"
-        android:textSize="20sp"
-        android:fontFamily="sans-serif-black"
+        android:layout_height="13dp"
+        android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:singleLine="true"
-        android:textColor="@color/widget_accent"
-        android:text="—" />
+        android:baselineAligned="false">
 
-    <TextView
-        android:id="@+id/w_of"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textSize="9.5sp"
-        android:singleLine="true"
-        android:ellipsize="end"
-        android:textColor="@color/widget_ink_dim"
-        android:text="" />
+        <TextView
+            android:id="@+id/w_appname"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:textColor="@color/widget_ink"
+            android:text="🎯 Invoice" />
 
-    <ProgressBar
-        android:id="@+id/w_bar"
-        style="?android:attr/progressBarStyleHorizontal"
-        android:layout_width="match_parent"
-        android:layout_height="4dp"
-        android:layout_marginTop="4dp"
-        android:max="100"
-        android:progress="0"
-        android:progressDrawable="@drawable/widget_progress" />
+        <!-- Spacer: at this width the FY does not fit beside the pill, so the
+             label is bound only when there is no pill to compete with. -->
+        <TextView
+            android:id="@+id/w_label"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:textSize="8sp"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:textColor="@color/widget_ink_dim"
+            android:text="" />
 
-    <!-- Absorbs slack so the block below sits on the bottom edge.
-         FrameLayout, NOT Space: RemoteViews only inflates classes carrying the
-         @RemoteView annotation, and android.widget.Space does not. It fails at
-         apply() time in the launcher, so the widget just never draws and the
-         reason lands in the launcher's logcat rather than ours. Plain View is
-         not allowed either. -->
-    <FrameLayout
+        <TextView
+            android:id="@+id/w_pill"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_pill"
+            android:paddingStart="5dp"
+            android:paddingEnd="5dp"
+            android:paddingTop="1dp"
+            android:paddingBottom="1dp"
+            android:textSize="7.5sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:textColor="@color/widget_pill_ink"
+            android:text="" />
+    </LinearLayout>
+
+    <!-- ── 2. BODY — ring | metrics ──────────────────────────────────────── -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:layout_weight="1"
+        android:layout_marginTop="3dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:baselineAligned="false">
 
-    <!-- ── v108.0 week chart, tappable ────────────────────────────────────────
-         The bars are still ONE bitmap: RemoteViews cannot size a child below API
-         31, so a real per-bar view would draw wrong on Steven's own phone class.
-         But a bitmap cannot be hit-tested either, so the tap targets are six
-         invisible weighted cells laid OVER it. Both the bitmap's bars and the
-         cells divide the same width evenly, so cell i sits exactly on bar i —
-         that correspondence is the whole trick, and it is asserted in the render
-         test rather than trusted.
+        <FrameLayout
+            android:id="@+id/w_ringwrap"
+            android:layout_width="36dp"
+            android:layout_height="36dp">
 
-         The cells are FrameLayout, NOT Space or View: RemoteViews only inflates
-         classes carrying @RemoteView, and it fails at apply() time in the
-         LAUNCHER, so the widget just never draws and the reason lands in someone
-         else's logcat. Same trap as the spacer above.
+            <ImageView
+                android:id="@+id/w_ring"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:contentDescription="@null" />
 
-         18dp is short of the 48dp touch-target guidance and there is no honest
-         way around it — a 2x2 cell is 110dp tall in total. A miss lands on the
-         card, which opens Stats, so the fallback is useful rather than dead. -->
+            <TextView
+                android:id="@+id/w_ringpct"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:textSize="11sp"
+                android:fontFamily="sans-serif-black"
+                android:singleLine="true"
+                android:textColor="@color/widget_ink"
+                android:text="" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:orientation="vertical"
+            android:gravity="center_vertical">
+
+            <!-- Text size is set from Java per state (WidgetRenderer.setHeadline). -->
+            <TextView
+                android:id="@+id/w_big"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="18sp"
+                android:fontFamily="sans-serif-black"
+                android:singleLine="true"
+                android:textColor="@color/widget_accent"
+                android:text="—" />
+
+            <TextView
+                android:id="@+id/w_of"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="8.5sp"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:textColor="@color/widget_ink_dim"
+                android:text="" />
+
+            <TextView
+                android:id="@+id/w_week"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="8.5sp"
+                android:textStyle="bold"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:textColor="@color/widget_ink"
+                android:text="" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- ── 3. WEEK CHART — full width here, since there is no aux row ────── -->
     <FrameLayout
         android:id="@+id/w_chart"
         android:layout_width="match_parent"
-        android:layout_height="18dp"
-        android:layout_marginTop="2dp">
+        android:layout_height="15dp"
+        android:layout_marginTop="3dp">
 
         <ImageView
             android:id="@+id/w_bars"
@@ -149,19 +203,38 @@
         </LinearLayout>
     </FrameLayout>
 
-    <!-- The effective rate does NOT appear at this size. It is an all-time figure
-         that moves very slowly, and fitting it here pushed "This week 32.3h / 45h"
-         into an ellipsis — a truncated live number is worse than a missing slow
-         one. It appears at 4x2, where the footer has a slot for it. -->
-    <TextView
-        android:id="@+id/w_week"
+    <!-- ── 4. ACTION BAR ─────────────────────────────────────────────────── -->
+    <LinearLayout
+        android:id="@+id/w_actionbar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:textSize="9sp"
-        android:singleLine="true"
-        android:ellipsize="end"
-        android:textColor="@color/widget_ink"
-        android:text="" />
+        android:layout_height="13dp"
+        android:layout_marginTop="3dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/widget_actionbar"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:baselineAligned="false">
+
+        <TextView
+            android:id="@+id/w_action"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="7.5sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:textColor="@color/widget_ink_dim"
+            android:text="Tap to open" />
+
+        <TextView
+            android:id="@+id/w_asof"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="7.5sp"
+            android:singleLine="true"
+            android:textColor="@color/widget_ink_dim"
+            android:text="" />
+    </LinearLayout>
 
 </LinearLayout>

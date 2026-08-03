@@ -81,11 +81,26 @@ public class WidgetStore {
         public Double pct = null;
         public Double remaining = null;
         public String gapText = "";
+        /**
+         * v108.2 — the signed distance from a straight-line target, in dollars.
+         * POSITIVE means behind (expected minus actual), matching widgetGapText()
+         * in the JS. Previously only the rendered sentence crossed the boundary;
+         * the status pill needs the number so it can say "BEHIND $8,984" in the
+         * three words a pill has room for. Null when there is no target.
+         */
+        public Double gap = null;
         public String paceNote = null;
         public Double weekGoalHours = null;
         public Double effectiveRate = null;
         public int workedWeeks = 0;
         public int elapsedWeeks = 0;
+        /**
+         * v108.2 — average hours across the weeks that actually had hours in them.
+         * The app has emitted this since v107.0; nothing read it until the aux
+         * glyph row needed "🕐 21.8h/wk". Null when no week has been worked —
+         * absence, not a confident 0.0.
+         */
+        public Double hoursPerWorkedWeek = null;
         public List<Week> weeks = new ArrayList<>();
         public List<Milestone> milestones = new ArrayList<>();
 
@@ -139,11 +154,13 @@ public class WidgetStore {
             s.pct = optDouble(o, "pct");
             s.remaining = optDouble(o, "remaining");
             s.gapText = o.optString("gapText", "");
+            s.gap = optDouble(o, "gap");
             s.paceNote = o.isNull("paceNote") ? null : o.optString("paceNote", null);
             s.weekGoalHours = optDouble(o, "weekGoalHours");
             s.effectiveRate = optDouble(o, "effectiveRate");
             s.workedWeeks = o.optInt("workedWeeks", 0);
             s.elapsedWeeks = o.optInt("elapsedWeeks", 0);
+            s.hoursPerWorkedWeek = optDouble(o, "hoursPerWorkedWeek");
 
             JSONArray wk = o.optJSONArray("weeks");
             if (wk != null) {

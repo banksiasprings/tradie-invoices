@@ -494,13 +494,179 @@ console.log('\n── the graph still refuses to fabricate ───────
      /bindBarTaps\(ctx, v, weeks, n\)/.test(rend));
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// v108.2 — the solar-style redesign
+//
+// Steven: "solar is way cooler, I like the circle progress graph." Four bands —
+// header + pill, ring beside metrics, aux glyph row, action bar.
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\n── v108.2: the four bands exist ──────────────────────────────────');
+{
+  const L = { '2x1': res('layout/widget_goal_small.xml'),
+              '2x2': res('layout/widget_goal_medium.xml'),
+              '4x2': res('layout/widget_goal_large.xml') };
+
+  for (const [name, xml] of Object.entries(L)) {
+    ok(name + ': header carries the app name', /@\+id\/w_appname/.test(xml));
+    ok(name + ': …and the status pill', /@\+id\/w_pill/.test(xml));
+    ok(name + ': the ring is a container so the % can sit over it',
+       /@\+id\/w_ringwrap/.test(xml) && /@\+id\/w_ring"/.test(xml));
+    ok(name + ': the pill has a rounded background', /@drawable\/widget_pill/.test(xml));
+  }
+  for (const name of ['2x2', '4x2']) {
+    ok(name + ': the action bar says what a tap does', /@\+id\/w_action/.test(L[name]));
+    ok(name + ': …and how old the figure is', /@\+id\/w_asof/.test(L[name]));
+    ok(name + ': …on its own quiet background', /@drawable\/widget_actionbar/.test(L[name]));
+  }
+  ok('4x2 carries the aux glyph row',
+     ['hours', 'weeks', 'rate'].every(k => new RegExp('@\\+id/w_aux_' + k).test(L['4x2'])));
+  ok('2x2 does NOT — three figures across 95dp is three ellipses',
+     !/w_aux_hours/.test(L['2x2']));
+  ok('2x1 has no aux row and no action bar',
+     !/w_aux_hours/.test(L['2x1']) && !/w_action"/.test(L['2x1']));
+  ok('2x1 has no sub-label either — the ring carries it', !/@\+id\/w_of/.test(L['2x1']));
+  // The v107/v108.0 flat bar and milestone chips are GONE, not orphaned: the ring
+  // is the progress indicator now, and leaving dead ids in the layout is how a
+  // renderer comes to address a view that no longer means anything.
+  ok('the old progress bar is gone from every layout',
+     Object.values(L).every(x => !/@\+id\/w_bar"/.test(x)));
+  ok('…and so are the milestone chips', Object.values(L).every(x => !/w_milestones/.test(x)));
+  const rend = code(fs.readFileSync(path.join(__dirname,
+    'android/app/src/main/java/com/banksiasprings/invoices/WidgetRenderer.java'), 'utf8'));
+  ok('…and the renderer no longer addresses them',
+     !/R\.id\.w_bar\b/.test(rend) && !/R\.id\.w_milestones/.test(rend));
+}
+
+console.log('\n── v108.2: android:gravity is the new RemoteViews trap ───────────');
+{
+  /* THE FINDING OF THIS RELEASE, and it cost two invisible views.
+
+     `android:gravity` on a singleLine TextView inflated through RemoteViews can
+     leave the text UNDRAWN — the view is VISIBLE, has the right string, the
+     right colour, the right size and a correct box, and puts zero pixels on the
+     canvas. Both the ring's "3%" and the action bar's "as of 12:15 PM" shipped
+     that way in the first build, and every assertion in this suite passed.
+
+     Use android:layout_gravity to place a child inside its parent. */
+  const layouts = ['small', 'medium', 'large'].map(z => res('layout/widget_goal_' + z + '.xml'));
+  const offenders = [];
+  for (const xml of layouts) {
+    for (const m of xml.matchAll(/<TextView\b[\s\S]*?\/>/g)) {
+      const t = m[0];
+      if (/android:gravity=/.test(t) && /android:singleLine="true"/.test(t)) {
+        offenders.push((t.match(/@\+id\/(\w+)/) || [, '?'])[1]);
+      }
+    }
+  }
+  ok('no singleLine TextView uses android:gravity', offenders.length === 0, offenders);
+  ok('the ring % is centred with layout_gravity instead',
+     /android:layout_gravity="center"/.test(res('layout/widget_goal_large.xml')));
+  // CONTROL: the scan must actually be looking at TextViews, or "none found" is
+  // meaningless. There ARE singleLine TextViews in these layouts.
+  const nSingle = layouts.join('').match(/android:singleLine="true"/g).length;
+  ok('CONTROL: the scan saw ' + nSingle + ' singleLine TextViews to check', nSingle > 10, nSingle);
+}
+
+console.log('\n── v108.2: the ring ──────────────────────────────────────────────');
+{
+  const rend = code(fs.readFileSync(path.join(__dirname,
+    'android/app/src/main/java/com/banksiasprings/invoices/WidgetRenderer.java'), 'utf8'));
+
+  ok('the ring is drawn with an arc, not faked with a bar',
+     /drawArc\(box, -90, sweep, false, p\)/.test(rend));
+  ok('…starting at twelve o\'clock', /drawArc\(box, -90,/.test(rend));
+  ok('…over a full-circle track', /drawArc\(box, 0, 360, false, p\)/.test(rend));
+  ok('its colours come from resources, never a hard-coded ARGB',
+     /ctx\.getColor\(R\.color\.widget_ring_fill\)/.test(rend) && !/0xFF[0-9A-Fa-f]{6}/.test(rend));
+  ok('a null percentage draws the track ALONE — never 0% of a goal that is unset',
+     /if \(s\.pct != null\)/.test(rend));
+  ok('the percentage is a TextView, so its colour stays in the launcher\'s process',
+     /setTextViewText\(R\.id\.w_ringpct/.test(rend));
+  ok('2x1 has no percentage inside an 18dp ring',
+     /if \(size == Size\.SMALL\) return;/.test(rend));
+
+  /* RING DIAMETER DRIFT, checked WITHOUT an emulator. ringDp() picks the bitmap
+     size; the layout picks the slot it lands in. Nothing connects them but a
+     developer remembering both, and when they disagree the ImageView silently
+     rescales — a soft ring nobody notices. WidgetRenderTest pins this on-device;
+     this pins it in CI, where there is no device. */
+  const dp = { SMALL: 18, MEDIUM: 36, LARGE: 46 };
+  ok('ringDp() is 18 / 36 / 46',
+     new RegExp('Size\\.SMALL \\? ' + dp.SMALL + ' : size == Size\\.MEDIUM \\? '
+                + dp.MEDIUM + ' : ' + dp.LARGE).test(rend));
+  for (const [z, size] of [['small', 'SMALL'], ['medium', 'MEDIUM'], ['large', 'LARGE']]) {
+    const xml = res('layout/widget_goal_' + z + '.xml');
+    const m = xml.match(/@\+id\/w_ringwrap"\s*\n\s*android:layout_width="(\d+)dp"\s*\n\s*android:layout_height="(\d+)dp"/);
+    ok(z + ': the ring slot is declared in the layout', !!m);
+    if (m) {
+      ok(z + ': slot ' + m[1] + 'dp matches ringDp() ' + dp[size], +m[1] === dp[size], m[1]);
+      ok(z + ': the ring slot is square', m[1] === m[2]);
+    }
+  }
+}
+
+console.log('\n── v108.2: ring contrast, and the green that survived ────────────');
+{
+  for (const [mode, file] of [['light', 'values/widget_colors.xml'],
+                              ['dark',  'values-night/widget_colors.xml']]) {
+    const c = colours(res(file));
+    const r = ratio(c.widget_ring_fill, c.widget_bg);
+    ok(mode + ': the ring clears 3:1 on the card (' + r.toFixed(2) + ':1)', r >= 3, r);
+    ok(mode + ': the ring is not its own track', c.widget_ring_fill !== c.widget_ring_track);
+    const t = ratio(c.widget_ring_track, c.widget_bg);
+    ok(mode + ': the TRACK is visible too (' + t.toFixed(2) + ':1) — an invisible'
+       + ' track makes a part-filled ring unreadable', t >= 1.2, t);
+    const pill = ratio(c.widget_pill_ink, c.widget_pill_bg);
+    ok(mode + ': pill text passes AA on the pill (' + pill.toFixed(2) + ':1)', pill >= 4.5, pill);
+  }
+
+  /* THE RING IS BRAND, EVERYWHERE. Card, ink and pill follow Material You on
+     API 31+ so the widget sits in the launcher's palette — but Steven asked for
+     a GREEN ring, and on a wallpaper-derived palette accent3_700 came out a dark
+     plum that read as a bruise. So widget_ring_fill is deliberately absent from
+     both v31 overlays and falls through to the brand value. */
+  for (const f of ['values-v31/widget_colors.xml', 'values-night-v31/widget_colors.xml']) {
+    const x = res(f);
+    ok(f.split('/')[0] + ': ring fill is NOT overridden — brand green wins',
+       !/<color name="widget_ring_fill">/.test(x));
+    ok(f.split('/')[0] + ': ring TRACK is overridden, so it tints with the card',
+       /<color name="widget_ring_track">/.test(x));
+  }
+  // On API 34 the light track measured 1.14:1 at accent1_100 — invisible.
+  ok('the Material You light track was darkened to _200 after measuring it',
+     /widget_ring_track">@android:color\/system_accent1_200</.test(res('values-v31/widget_colors.xml')));
+  // CONTROL: prove the "not overridden" check can fail — the name IS defined
+  // in the brand files, so the scan is looking at the right thing.
+  ok('CONTROL: the brand files DO define it',
+     /<color name="widget_ring_fill">/.test(res('values/widget_colors.xml')) &&
+     /<color name="widget_ring_fill">/.test(res('values-night/widget_colors.xml')));
+}
+
+console.log('\n── v108.2: the pill obeys the ban ────────────────────────────────');
+{
+  const rend = code(fs.readFileSync(path.join(__dirname,
+    'android/app/src/main/java/com/banksiasprings/invoices/WidgetRenderer.java'), 'utf8'));
+  const pill = rend.slice(rend.indexOf('static String pillText'),
+                          rend.indexOf('private static void bindPill'));
+  ok('the pill exists', pill.length > 100);
+  for (const banned of ['on track', 'On track', 'ON TRACK', 'on pace', 'ON PACE', 'caught up', 'CAUGHT UP'])
+    ok('the pill never says "' + banned + '"', !pill.includes(banned));
+  ok('it states a signed distance instead', /"BEHIND " : "AHEAD "/.test(pill));
+  ok('…and distinguishes level from behind', /"LEVEL"/.test(pill));
+  ok('…and a met goal from a missing one',
+     /"GOAL MET"/.test(pill) && /"NO GOAL"/.test(pill) && /"NO DATA"/.test(pill));
+  // CONTROL: the slice is real, not an empty string that passes every !includes.
+  ok('CONTROL: the slice contains the words it is being checked for absence around',
+     pill.includes('BEHIND') && pill.includes('reached'));
+}
+
 console.log('\n── version ───────────────────────────────────────────────────────');
 {
-  ok('APP_VERSION bumped to v108.1', /const APP_VERSION = 'v108\.1';/.test(html));
+  ok('APP_VERSION bumped to v108.2', /const APP_VERSION = 'v108\.2';/.test(html));
   ok('Capgo builtin tracks it (the v82 cache-trap rule)',
-     /"version": "1\.108\.1"/.test(fs.readFileSync(path.join(__dirname, 'capacitor.config.json'), 'utf8')));
+     /"version": "1\.108\.2"/.test(fs.readFileSync(path.join(__dirname, 'capacitor.config.json'), 'utf8')));
   ok('versionCode bumped — new layouts and resource folders need an APK',
-     /versionCode 19/.test(fs.readFileSync(path.join(__dirname, 'android/app/build.gradle'), 'utf8')));
+     /versionCode 20/.test(fs.readFileSync(path.join(__dirname, 'android/app/build.gradle'), 'utf8')));
 }
 
 console.log('\n' + '─'.repeat(66));

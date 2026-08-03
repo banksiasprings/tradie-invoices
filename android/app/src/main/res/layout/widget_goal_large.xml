@@ -1,36 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  v107.0 — 4x2. Two columns over a full-width footer: the number on the left,
-  what it is made of on the right, the six-week shape underneath.
+  v108.2 — 4x2, rebuilt in the visual language of Steven's BSF Solar widget.
 
-  This is the only size with room for sentences, so it is the only size that gets
-  the verdict and the caveat. The verdict is a signed distance from a straight
-  line ("Behind by $8,797 …"), passed through from the app verbatim and never
-  softened — a home screen is exactly where "on track" would be read as a fact
-  rather than a reassurance, which is why that vocabulary is banned outright and
-  asserted by a test.
+  He put the two side by side: "solar is way cooler, I like the circle progress
+  graph." The v107/v108.0 card was a flat block with a big left-aligned number and
+  a lot of empty space to its right — no anchor, so the eye had nowhere to land.
+  Solar's answer is a ring: one bright shape that reads as a proportion before you
+  have read a single digit.
 
-  The caveat underneath is earned, not decorative: it says how many of the elapsed
-  weeks actually had hours in them, which is the difference between an attendance
-  gap and a rate problem. When the weeks are steady it does not render at all.
+  FOUR BANDS, top to bottom, matching solar:
+    1. HEADER    icon + name (bold) + subtle FY + status pill, right-aligned
+    2. BODY      ring on the left (the anchor), metrics stacked on the right
+    3. AUX       the small glyph row — hours/weeks/rate — beside the week chart
+    4. ACTION    a quiet rounded bar: "Tap to open" + "as of 10:46 AM"
 
-  THE HEIGHT BUDGET IS THE SAME 110dp AS 2x2 — four cells wide buys width, not
-  height. The first build stacked label/big/of/bar/milestones/bars in the left
-  column, which came to ~50% more than the column had: LinearLayout squeezed the
-  bar, the milestones and the bars out of existence WITHOUT ERROR, and the big
-  number ellipsised to "$3,9…". So the week bars moved to a full-width footer
-  (where they also read better), the milestone chips ride beside them, and the
-  headline autosizes. If you add a row here, take the height from somewhere and
-  re-run WidgetRenderTest.
+  THE HEIGHT BUDGET IS STILL 110dp. Four cells wide buys width, never height, and
+  this layout asks for more bands than the one it replaces — so every dimension
+  below was cut against the render test rather than chosen:
 
-  v108.0 note: overflow is no longer silent. The render test measures every
-  VISIBLE child after layout and fails on a zero-height one or a clipped
-  headline, which is what "LOOK at the PNG" was standing in for.
+      padding 2x6 = 12   header 12   body 54   aux 14   action 12   margins 6
+      ——————————————————————————————————————————————————————————————————— 110
 
-  v108.0 grew the footer chart 14dp to 20dp so its bars can be tapped. The 6dp
-  came from padding (12 to 10) and the footer margin (6 to 4) — deliberately NOT
-  from the top row, because the headline lives there on a weight and would have
-  silently lost 6dp of glyph height rather than shrinking its text.
+  assertNothingSqueezed() in WidgetRenderTest measures every visible child after
+  layout and fails on a zero-height view or a TextView shorter than its own
+  glyphs, so an added row shows up as a red test rather than as LinearLayout
+  silently squeezing the action bar out of existence — which is exactly how the
+  v107.0 build of this file first came out. The body row is the one on a weight,
+  so it is the one that absorbs the rounding.
+
+  THE WEEK CHART SURVIVED, and only just. v108.0 made its bars tappable and that
+  is a shipped feature, so it was not going to be dropped to make room for a ring.
+  It now shares band 3 with the aux glyphs (weights 64/36) instead of owning a
+  full-width footer. Six bars in ~36% of a 250dp card is still ~85dp — more
+  pixels per bar than the 2x2 has ever had.
+
+  The 64/36 split is measured, not chosen: at 54/46 the first glyph ellipsised to
+  "21.8h…", losing the "/wk" that makes it a rate rather than a number.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
@@ -38,42 +43,111 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/widget_bg"
-    android:padding="10dp">
+    android:padding="6dp">
 
+    <!-- ── 1. HEADER ─────────────────────────────────────────────────────── -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="12dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:baselineAligned="false">
+
+        <TextView
+            android:id="@+id/w_appname"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="9.5sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:textColor="@color/widget_ink"
+            android:text="🎯 Invoice" />
+
+        <!-- The FY, subtle, exactly as solar puts its status text beside the
+             app name. Carries the staleness suffix when the snapshot is old. -->
+        <TextView
+            android:id="@+id/w_label"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="5dp"
+            android:textSize="8.5sp"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:textColor="@color/widget_ink_dim"
+            android:text="" />
+
+        <TextView
+            android:id="@+id/w_pill"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_pill"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:paddingTop="1dp"
+            android:paddingBottom="1dp"
+            android:textSize="8sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:textColor="@color/widget_pill_ink"
+            android:text="" />
+    </LinearLayout>
+
+    <!-- ── 2. BODY — ring | metrics ──────────────────────────────────────── -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
+        android:layout_marginTop="2dp"
         android:orientation="horizontal"
+        android:gravity="center_vertical"
         android:baselineAligned="false">
 
-        <!-- LEFT — the goal itself. -->
+        <!-- The ring, with its percentage centred over it. The ARCS are a bitmap
+             (RemoteViews has no arc primitive); the NUMBER is a real TextView, so
+             its colour still resolves in the launcher's process and follows the
+             system theme like everything else. That split is deliberate — baking
+             the text into the bitmap would have put one more colour on the wrong
+             side of the process boundary. -->
+        <FrameLayout
+            android:id="@+id/w_ringwrap"
+            android:layout_width="46dp"
+            android:layout_height="46dp">
+
+            <ImageView
+                android:id="@+id/w_ring"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:contentDescription="@null" />
+
+            <TextView
+                android:id="@+id/w_ringpct"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-black"
+                android:singleLine="true"
+                android:textColor="@color/widget_ink"
+                android:text="" />
+        </FrameLayout>
+
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="44"
-            android:orientation="vertical">
+            android:layout_weight="1"
+            android:layout_marginStart="11dp"
+            android:orientation="vertical"
+            android:gravity="center_vertical">
 
-            <TextView
-                android:id="@+id/w_label"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textSize="8.5sp"
-                android:textStyle="bold"
-                android:singleLine="true"
-                android:ellipsize="end"
-                android:textColor="@color/widget_ink_dim"
-                android:text="🎯 Retained" />
-
-            <!-- Text size is set from Java per state (see WidgetRenderer.headlineSp). -->
+            <!-- Text size is set from Java per state (WidgetRenderer.setHeadline). -->
             <TextView
                 android:id="@+id/w_big"
                 android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:textSize="26sp"
+                android:layout_height="wrap_content"
+                android:textSize="22sp"
                 android:fontFamily="sans-serif-black"
-                android:gravity="center_vertical"
                 android:singleLine="true"
                 android:textColor="@color/widget_accent"
                 android:text="—" />
@@ -82,59 +156,19 @@
                 android:id="@+id/w_of"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textSize="9.5sp"
+                android:textSize="8.5sp"
                 android:singleLine="true"
                 android:ellipsize="end"
                 android:textColor="@color/widget_ink_dim"
                 android:text="" />
 
-            <ProgressBar
-                android:id="@+id/w_bar"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="match_parent"
-                android:layout_height="5dp"
-                android:layout_marginTop="6dp"
-                android:max="100"
-                android:progress="0"
-                android:progressDrawable="@drawable/widget_progress" />
-        </LinearLayout>
-
-        <!-- RIGHT — what the number is made of. -->
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="56"
-            android:layout_marginStart="13dp"
-            android:orientation="vertical">
-
-            <TextView
-                android:id="@+id/w_gap"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textSize="9.5sp"
-                android:textStyle="bold"
-                android:maxLines="2"
-                android:ellipsize="end"
-                android:textColor="@color/widget_ink"
-                android:text="" />
-
-            <TextView
-                android:id="@+id/w_note"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:layout_marginTop="4dp"
-                android:textSize="8.5sp"
-                android:maxLines="2"
-                android:ellipsize="end"
-                android:textColor="@color/widget_ink_dim"
-                android:text="" />
-
+            <!-- Solar's "Surplus +1,271 W" slot: the one figure that changes
+                 within the day. Here that is the week against its goal. -->
             <TextView
                 android:id="@+id/w_week"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textSize="9.5sp"
+                android:textSize="8.5sp"
                 android:textStyle="bold"
                 android:singleLine="true"
                 android:ellipsize="end"
@@ -143,27 +177,69 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- FOOTER — the six-week shape, the milestone ticks, and the two small
-         figures that had nowhere else to sit. Full width, so the bars get enough
-         pixels per bar to actually read as a trend. -->
+    <!-- ── 3. AUX — glyph row, and the week chart beside it ──────────────── -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
+        android:layout_height="14dp"
+        android:layout_marginTop="2dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:baselineAligned="false">
 
-        <!-- ── v108.0 week chart, tappable — see widget_goal_medium.xml for why
-             the bars are one bitmap with six invisible cells laid over it.
-             Wider here (weight 26 to 38) as well as taller: 4x2 is the size with
-             the pixels to make six weeks read as a trend rather than a texture,
-             and a wider cell is also a more forgiving tap. -->
+        <LinearLayout
+            android:id="@+id/w_aux"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="64"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:baselineAligned="false">
+
+            <TextView
+                android:id="@+id/w_aux_hours"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="8sp"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:textColor="@color/widget_ink_dim"
+                android:text="" />
+
+            <TextView
+                android:id="@+id/w_aux_weeks"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="0.8"
+                android:textSize="8sp"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:textColor="@color/widget_ink_dim"
+                android:text="" />
+
+            <TextView
+                android:id="@+id/w_aux_rate"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="8sp"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:textColor="@color/widget_ink_dim"
+                android:text="" />
+        </LinearLayout>
+
+        <!-- v108.0's tappable week chart — one bitmap with six invisible cells
+             laid over it. Kept through the redesign because the taps are a
+             shipped feature; narrowed from a full-width footer to this share of
+             band 3. See WidgetRenderer.bindBars for why cell i and bar i cannot
+             drift apart. -->
         <FrameLayout
             android:id="@+id/w_chart"
             android:layout_width="0dp"
-            android:layout_height="20dp"
-            android:layout_weight="38">
+            android:layout_height="13dp"
+            android:layout_weight="36"
+            android:layout_marginStart="7dp">
 
             <ImageView
                 android:id="@+id/w_bars"
@@ -200,32 +276,38 @@
                     android:layout_weight="1" />
             </LinearLayout>
         </FrameLayout>
+    </LinearLayout>
+
+    <!-- ── 4. ACTION BAR ─────────────────────────────────────────────────── -->
+    <LinearLayout
+        android:id="@+id/w_actionbar"
+        android:layout_width="match_parent"
+        android:layout_height="12dp"
+        android:layout_marginTop="2dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/widget_actionbar"
+        android:paddingStart="7dp"
+        android:paddingEnd="7dp"
+        android:baselineAligned="false">
 
         <TextView
-            android:id="@+id/w_milestones"
+            android:id="@+id/w_action"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_weight="40"
-            android:layout_marginStart="8dp"
-            android:textSize="8.5sp"
-            android:singleLine="true"
-            android:ellipsize="end"
-            android:textColor="@color/widget_ink_dim"
-            android:text="" />
-
-        <!-- The six-week chart to the left already shows last week, and shows it
-             in context, so this slot carries the rate rather than repeating it. -->
-        <TextView
-            android:id="@+id/w_rate"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="22"
-            android:layout_marginStart="6dp"
-            android:textSize="8.5sp"
+            android:layout_weight="1"
+            android:textSize="8sp"
             android:textStyle="bold"
             android:singleLine="true"
-            android:ellipsize="end"
-            android:gravity="end"
+            android:textColor="@color/widget_ink_dim"
+            android:text="Tap to open" />
+
+        <TextView
+            android:id="@+id/w_asof"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="8sp"
+            android:singleLine="true"
             android:textColor="@color/widget_ink_dim"
             android:text="" />
     </LinearLayout>

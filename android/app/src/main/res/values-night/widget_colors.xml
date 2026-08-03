@@ -27,4 +27,16 @@
     <color name="widget_bar_fill">#F0A58A</color>
     <color name="widget_bar_current">#FFD2C0</color>
     <color name="widget_bar_track">#24334C</color>
+
+    <!-- ═══ v108.2 — solar-style redesign, DARK ═════════════════════════════
+         The ring green lightens the same way the accent does. #7FD3A0 on the
+         charcoal card is 9.24:1. See values/widget_colors.xml for why the ring
+         is drawn from OUR resources while its percentage label is not. -->
+    <color name="widget_ring_fill">#7FD3A0</color>
+    <color name="widget_ring_track">#24334C</color>
+
+    <color name="widget_pill_bg">#1E2C44</color>
+    <color name="widget_pill_ink">#ECF1F8</color>
+
+    <color name="widget_action_bg">#1A2537</color>
 </resources>

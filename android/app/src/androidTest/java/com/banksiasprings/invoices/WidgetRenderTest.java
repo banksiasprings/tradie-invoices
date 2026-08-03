@@ -2,6 +2,7 @@ package com.banksiasprings.invoices;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
@@ -24,6 +25,7 @@ import org.junit.runner.RunWith;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.util.Locale;
 
 /**
  * v107.0 — renders the home-screen widget at every supported size, in light and
@@ -242,6 +244,324 @@ public class WidgetRenderTest {
         }
     }
 
+    // ═══ v108.2 — the solar-style redesign ═════════════════════════════════════
+
+    /**
+     * The ring is drawn at a pixel size chosen in Java ({@link WidgetRenderer#ringDp})
+     * and displayed in a FrameLayout sized in XML. NOTHING connects those two
+     * numbers but a developer remembering both, and when they drift the ImageView
+     * silently rescales the bitmap — a soft, slightly wrong ring that no assertion
+     * about visibility would ever catch.
+     *
+     * So: the bitmap's intrinsic size must equal the view it lands in, at every
+     * size, with a 1px tolerance for dp rounding.
+     */
+    @Test
+    public void ringBitmapMatchesItsSlotAtEverySize() {
+        Context app = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        WidgetStore.save(app, REAL_JSON);
+        WidgetStore.Snapshot s = WidgetStore.load(app);
+        float d = app.getResources().getDisplayMetrics().density;
+        long now = System.currentTimeMillis();
+
+        for (int[] sz : SIZES) {
+            int i = sz[0];
+            View v = renderLaidOut(app, s, SIZE_ENUM[i], sz[1], sz[2], now);
+            android.widget.ImageView iv = v.findViewById(R.id.w_ring);
+            assertNotNull(SIZE_NAMES[i] + ": the ring must be in the layout", iv);
+            assertEquals(SIZE_NAMES[i] + ": the ring must be visible", View.VISIBLE, iv.getVisibility());
+            assertNotNull(SIZE_NAMES[i] + ": the ring must carry a bitmap", iv.getDrawable());
+
+            int want = Math.max(1, (int) (WidgetRenderer.ringDp(SIZE_ENUM[i]) * d));
+            int bmp  = iv.getDrawable().getIntrinsicWidth();
+            assertTrue(SIZE_NAMES[i] + ": ring bitmap is " + bmp + "px for a "
+                       + WidgetRenderer.ringDp(SIZE_ENUM[i]) + "dp ring (expected " + want + ")",
+                       Math.abs(bmp - want) <= 1);
+            assertTrue(SIZE_NAMES[i] + ": ring bitmap (" + bmp + "px) does not match its slot ("
+                       + iv.getWidth() + "px) — the layout and ringDp() have drifted",
+                       Math.abs(bmp - iv.getWidth()) <= 1);
+            assertTrue(SIZE_NAMES[i] + ": the ring must be square", iv.getWidth() == iv.getHeight());
+        }
+    }
+
+    /**
+     * A ring the same colour as the card it sits on is not a ring.
+     *
+     * WCAG 2.1 asks 3:1 of a non-text graphic that carries meaning, and this one
+     * carries the whole progress figure. Both colours are real resources, so the
+     * ratio is computable here — unlike the Material You overlay on API 31+, where
+     * they come from the wallpaper and only the rendered PNG can settle it. That
+     * is why this also asserts the drawn pixels differ from the background, which
+     * holds on every API.
+     */
+    @Test
+    public void ringIsDistinguishableFromTheCardInBothThemes() {
+        Context app = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        for (boolean night : new boolean[] { false, true }) {
+            Context ctx = themed(app, night);
+            String mode = night ? "dark" : "light";
+            int[] ring = WidgetRenderer.ringColors(ctx);
+            int card = ctx.getColor(R.color.widget_bg);
+
+            double fillVsCard = contrast(ring[0], card);
+            assertTrue(mode + ": ring fill vs card is " + fillVsCard + ":1, under the 3:1"
+                       + " WCAG asks of a meaningful graphic", fillVsCard >= 3.0);
+            assertTrue(mode + ": the ring fill must differ from its own track", ring[0] != ring[1]);
+            double trackVsCard = contrast(ring[1], card);
+            assertTrue(mode + ": the ring TRACK must be visible against the card too"
+                       + " (an invisible track makes a part-filled ring unreadable) — "
+                       + trackVsCard + ":1", trackVsCard >= 1.2);
+        }
+        // The colours must actually move with the theme — the ring is drawn in OUR
+        // process, so this is the same failure mode the bars had before v108.0.
+        assertTrue("ring fill must differ between themes",
+                   WidgetRenderer.ringColors(themed(app, false))[0]
+                   != WidgetRenderer.ringColors(themed(app, true))[0]);
+    }
+
+    /**
+     * The primary number must never be truncated.
+     *
+     * `w_big` is singleLine with no ellipsize, so an over-long string does not get
+     * a "…" — it is simply CLIPPED mid-glyph, which looks like a rendering bug
+     * rather than a layout one. v107.0 shipped "$3,9…" this way and it took a PNG
+     * to notice. WidgetRenderer.setHeadline() scales the text down to fit; this
+     * asserts the scaling actually worked, in every state, at every size.
+     */
+    @Test
+    public void noTextIsTruncatedAtAnySize() {
+        Context app = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        long now = System.currentTimeMillis();
+        String[] states = { REAL_JSON, "", NO_GOAL_JSON };
+        String[] names  = { "real", "fresh-install", "no-goal" };
+
+        for (boolean night : new boolean[] { false, true }) {
+            Context ctx = themed(app, night);
+            for (int st = 0; st < states.length; st++) {
+                WidgetStore.save(app, states[st]);
+                WidgetStore.Snapshot s = WidgetStore.load(app);
+                for (int[] sz : SIZES) {
+                    int i = sz[0];
+                    View v = renderLaidOut(ctx, s, SIZE_ENUM[i], sz[1], sz[2], now);
+                    String where = SIZE_NAMES[i] + "/" + names[st] + (night ? "/dark" : "/light");
+                    // EVERY slot, not just the headline. The 2x2 build that
+                    // preceded this shipped three ellipses at once — "of $140k
+                    // tar…", "This week 3…", "Tap to o…" — and only the headline
+                    // was being checked, so the suite was green. An ellipsis is a
+                    // layout failure wherever it lands; the fix is shorter copy at
+                    // that size, which is what ofLine()/bindWeek() now do.
+                    for (int id : new int[] { R.id.w_big, R.id.w_pill, R.id.w_of, R.id.w_week,
+                                              R.id.w_appname, R.id.w_label, R.id.w_action,
+                                              R.id.w_asof, R.id.w_aux_hours, R.id.w_aux_weeks,
+                                              R.id.w_aux_rate }) {
+                        assertNoClippedText(v, id, where);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * The ban, on the surface most likely to break it.
+     *
+     * A status pill is three words at 8sp, which is exactly the pressure that
+     * produces "ON TRACK". Every state must state a signed distance or a fact.
+     */
+    @Test
+    public void thePillNeverSoftensTheVerdict() {
+        Context app = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        String ahead = REAL_JSON.replace("\"gap\":8796.57", "\"gap\":-1200.0")
+                                .replace("\"state\":\"behind\"", "\"state\":\"ahead\"");
+        String level = REAL_JSON.replace("\"gap\":8796.57", "\"gap\":0.2")
+                                .replace("\"state\":\"behind\"", "\"state\":\"level\"");
+        String met   = REAL_JSON.replace("\"state\":\"behind\"", "\"state\":\"reached\"");
+
+        String[] blobs = { REAL_JSON, ahead, level, met, NO_GOAL_JSON, "", "{not json" };
+        String[] banned = { "on track", "on pace", "caught up" };
+
+        for (String blob : blobs) {
+            WidgetStore.save(app, blob);
+            String pill = WidgetRenderer.pillText(WidgetStore.load(app)).toLowerCase(Locale.US);
+            for (String b : banned)
+                assertTrue("the pill said \"" + pill + "\" — \"" + b + "\" is banned outright",
+                           !pill.contains(b));
+        }
+
+        // …and it must actually SAY something in the states that have a verdict,
+        // or the assertions above pass on an empty string.
+        WidgetStore.save(app, REAL_JSON);
+        assertEquals("BEHIND $9k", WidgetRenderer.pillText(WidgetStore.load(app)));
+        WidgetStore.save(app, ahead);
+        assertTrue("ahead must read as ahead",
+                   WidgetRenderer.pillText(WidgetStore.load(app)).startsWith("AHEAD"));
+        WidgetStore.save(app, level);
+        assertEquals("LEVEL", WidgetRenderer.pillText(WidgetStore.load(app)));
+        WidgetStore.save(app, met);
+        assertEquals("GOAL MET", WidgetRenderer.pillText(WidgetStore.load(app)));
+        WidgetStore.save(app, NO_GOAL_JSON);
+        assertEquals("NO GOAL", WidgetRenderer.pillText(WidgetStore.load(app)));
+        WidgetStore.save(app, "");
+        assertEquals("NO DATA", WidgetRenderer.pillText(WidgetStore.load(app)));
+    }
+
+    /**
+     * The four bands, actually present. A redesign that silently loses a band to
+     * an over-budget column is the exact failure this file exists to catch, and
+     * "it rendered" is not evidence the band is there.
+     */
+    @Test
+    public void everyBandIsPresentAtTheSizeThatShouldHaveIt() {
+        Context app = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        WidgetStore.save(app, REAL_JSON);
+        WidgetStore.Snapshot s = WidgetStore.load(app);
+        long now = System.currentTimeMillis();
+
+        for (int[] sz : SIZES) {
+            int i = sz[0];
+            View v = renderLaidOut(app, s, SIZE_ENUM[i], sz[1], sz[2], now);
+            String at = SIZE_NAMES[i] + ": ";
+            assertVisible(at + "header app name", v, R.id.w_appname);
+            assertVisible(at + "status pill", v, R.id.w_pill);
+            assertVisible(at + "the ring", v, R.id.w_ring);
+            assertVisible(at + "the primary number", v, R.id.w_big);
+
+            if (i == 0) {   // 2x1 — no aux row, no action bar, no sub-label, and
+                            // no % inside an 18dp ring. All four are ABSENT from
+                            // the layout rather than hidden, so this asserts
+                            // absence: a view that reappears would be squeezed.
+                assertNull(at + "2x1 must not carry an action bar", v.findViewById(R.id.w_action));
+                assertNull(at + "2x1 must not carry an aux row", v.findViewById(R.id.w_aux));
+                assertNull(at + "2x1 has no room for a sub-label — the ring carries it",
+                           v.findViewById(R.id.w_of));
+                View pct = v.findViewById(R.id.w_ringpct);
+                assertTrue(at + "18dp is too small for a percentage inside the ring",
+                           pct == null || pct.getVisibility() != View.VISIBLE);
+                continue;
+            }
+
+            assertVisible(at + "the sub-label", v, R.id.w_of);
+            assertVisible(at + "the week chart (kept through the redesign)", v, R.id.w_chart);
+            // NOT assertVisible: a TextView nobody ever bound is still VISIBLE by
+            // XML default, so "the band is present" passes on an empty box. That
+            // is exactly how the first run of this test declared the ring
+            // percentage and the as-of stamp fine while both rendered blank.
+            assertSays(at + "the ring must state its percentage", v, R.id.w_ringpct, "3%");
+            assertNonEmpty(at + "the week line", v, R.id.w_week);
+            assertSays(at + "the action bar names the gesture", v, R.id.w_action, "Tap to open");
+            // 4x2 has room for the "as of " prefix; 2x2 shows a bare clock,
+            // because the prefix collided with "Tap to open" at 110dp.
+            if (i == 2) assertStartsWith(at + "the as-of stamp", v, R.id.w_asof, "as of ");
+            else        assertMatches(at + "the as-of stamp is a clock", v, R.id.w_asof,
+                                      "\\d{1,2}:\\d{2}( [AP]M)?");
+
+            if (i == 2) {   // 4x2 — the aux glyph row
+                assertVisible(at + "aux hours", v, R.id.w_aux_hours);
+                assertVisible(at + "aux weeks", v, R.id.w_aux_weeks);
+                assertVisible(at + "aux rate", v, R.id.w_aux_rate);
+                assertEquals(at + "aux hours reads the worked-week average",
+                             "🕐 21.8h/wk", text(v, R.id.w_aux_hours));
+                assertEquals(at + "aux weeks reads worked of elapsed",
+                             "📅 3 of 5", text(v, R.id.w_aux_weeks));
+                assertEquals(at + "aux rate is his rate", "💵 $60/hr", text(v, R.id.w_aux_rate));
+            }
+        }
+    }
+
+    /**
+     * Visible AND carrying the expected text.
+     *
+     * assertVisible alone is a weak assertion for a TextView: XML visibility
+     * defaults to VISIBLE, so a view the renderer never touched passes it while
+     * drawing nothing. Every text slot the redesign added is checked for content.
+     */
+    private static void assertSays(String msg, View root, int id, String want) {
+        assertVisible(msg, root, id);
+        assertEquals(msg + " — wrong text", want, text(root, id));
+    }
+
+    private static void assertNonEmpty(String msg, View root, int id) {
+        assertVisible(msg, root, id);
+        assertTrue(msg + " — the view is visible but empty", text(root, id).length() > 0);
+    }
+
+    private static void assertStartsWith(String msg, View root, int id, String prefix) {
+        assertVisible(msg, root, id);
+        String t = text(root, id);
+        assertTrue(msg + " — expected something starting \"" + prefix + "\", got \"" + t + "\"",
+                   t.startsWith(prefix));
+    }
+
+
+    private static void assertMatches(String msg, View root, int id, String regex) {
+        assertVisible(msg, root, id);
+        String t = text(root, id);
+        assertTrue(msg + " — \"" + t + "\" does not match /" + regex + "/", t.matches(regex));
+    }
+
+    private static void assertVisible(String msg, View root, int id) {
+        View c = root.findViewById(id);
+        assertNotNull(msg + " — view is absent from the layout", c);
+        assertEquals(msg + " — view is not visible", View.VISIBLE, c.getVisibility());
+    }
+
+    private static String text(View root, int id) {
+        return ((TextView) root.findViewById(id)).getText().toString();
+    }
+
+    /**
+     * Clipped means "the glyphs are wider than the box", which for a singleLine
+     * TextView with no ellipsize is a silent mid-character cut rather than a "…".
+     */
+    private static void assertNoClippedText(View root, int id, String tag) {
+        View c = root.findViewById(id);
+        if (!(c instanceof TextView) || c.getVisibility() != View.VISIBLE) return;
+        TextView t = (TextView) c;
+        CharSequence s = t.getText();
+        if (s == null || s.length() == 0) return;
+
+        // Two different failures, because these slots fail two different ways.
+        // A view with ellipsize=end reports an ellipsis count; w_big has none, so
+        // an over-long string there is CLIPPED mid-glyph with nothing to report.
+        if (t.getLayout() != null) {
+            assertEquals(tag + ": " + idName(t) + " was ellipsised — \"" + s + "\"",
+                         0, t.getLayout().getEllipsisCount(0));
+        }
+        float need = t.getPaint().measureText(s.toString());
+        int have = t.getWidth() - t.getPaddingStart() - t.getPaddingEnd();
+        assertTrue(tag + ": " + idName(t) + " needs " + need + "px for \"" + s
+                   + "\" but has " + have + "px — clipped", need <= have + 0.5f);
+    }
+
+    /** Build, apply and lay out at a given cell size, without writing a PNG. */
+    private static View renderLaidOut(Context ctx, WidgetStore.Snapshot s,
+                                      WidgetRenderer.Size size, int wDp, int hDp, long now) {
+        DisplayMetrics dm = ctx.getResources().getDisplayMetrics();
+        int w = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, wDp, dm);
+        int h = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, hDp, dm);
+        View v = WidgetRenderer.build(ctx, s, size, now).apply(ctx, new FrameLayout(ctx));
+        v.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+                  View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY));
+        v.layout(0, 0, w, h);
+        return v;
+    }
+
+    /** WCAG relative-luminance contrast ratio between two opaque colours. */
+    private static double contrast(int a, int b) {
+        double la = relLuma(a), lb = relLuma(b);
+        double hi = Math.max(la, lb), lo = Math.min(la, lb);
+        return (hi + 0.05) / (lo + 0.05);
+    }
+
+    private static double relLuma(int c) {
+        double[] v = new double[3];
+        int[] ch = { (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF };
+        for (int i = 0; i < 3; i++) {
+            double s = ch[i] / 255.0;
+            v[i] = s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+        }
+        return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+    }
+
     private static int visibleHits(View root) {
         int[] ids = { R.id.w_hit0, R.id.w_hit1, R.id.w_hit2, R.id.w_hit3, R.id.w_hit4, R.id.w_hit5 };
         int n = 0;
@@ -324,11 +644,71 @@ public class WidgetRenderTest {
 
         Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         v.draw(new Canvas(bmp));
+
+        assertEveryTextSlotHasInk(v, bmp, out.getName());
+
         try (FileOutputStream fos = new FileOutputStream(out)) {
             bmp.compress(Bitmap.CompressFormat.PNG, 100, fos);
         }
         assertTrue("wrote " + out.getName(), out.length() > 0);
         return bmp;
+    }
+
+    /**
+     * v108.2 — THE THIRD FALSE GREEN IN THIS HARNESS, and the nastiest so far.
+     *
+     * Everything above this line can pass while a TextView draws absolutely
+     * nothing. The view is VISIBLE, it has the right text, the right colour, the
+     * right text size and a correctly-laid-out box — and the pixels are blank.
+     *
+     * That is not hypothetical. The first build of the redesign shipped it twice
+     * at once: `android:gravity` on a `singleLine` TextView inflated through
+     * RemoteViews left both the ring's "3%" and the action bar's "as of 12:15 PM"
+     * invisible. `assertVisible` passed. Adding `assertSays` — which checks the
+     * actual string — ALSO passed, because the string was genuinely there. Only
+     * counting pixels found it. (The fix is `layout_gravity` for placement inside
+     * a parent, and no `gravity` on a single-line RemoteViews TextView.)
+     *
+     * So this is the assertion of record: a text slot that claims to say
+     * something must put ink on the canvas. Uniform region => nothing was drawn.
+     */
+    private static void assertEveryTextSlotHasInk(View root, Bitmap bmp, String tag) {
+        int[] ids = { R.id.w_appname, R.id.w_pill, R.id.w_label, R.id.w_big, R.id.w_of,
+                      R.id.w_week, R.id.w_ringpct, R.id.w_action, R.id.w_asof,
+                      R.id.w_aux_hours, R.id.w_aux_weeks, R.id.w_aux_rate };
+        for (int id : ids) {
+            View c = root.findViewById(id);
+            if (!(c instanceof TextView) || c.getVisibility() != View.VISIBLE) continue;
+            TextView t = (TextView) c;
+            if (t.getText() == null || t.getText().length() == 0) continue;
+
+            int x0 = 0, y0 = 0;
+            for (View p = c; p != null && p != root.getParent(); ) {
+                x0 += p.getLeft(); y0 += p.getTop();
+                if (p == root) break;
+                p = (p.getParent() instanceof View) ? (View) p.getParent() : null;
+            }
+            int x1 = Math.min(bmp.getWidth(),  x0 + c.getWidth());
+            int y1 = Math.min(bmp.getHeight(), y0 + c.getHeight());
+            x0 = Math.max(0, x0); y0 = Math.max(0, y0);
+            if (x1 <= x0 || y1 <= y0) continue;
+
+            int lo = 255, hi = 0;
+            for (int y = y0; y < y1; y++) {
+                for (int x = x0; x < x1; x++) {
+                    int p = bmp.getPixel(x, y);
+                    int lum = (int) (0.299 * ((p >> 16) & 0xFF)
+                                   + 0.587 * ((p >> 8) & 0xFF)
+                                   + 0.114 * (p & 0xFF));
+                    if (lum < lo) lo = lum;
+                    if (lum > hi) hi = lum;
+                }
+            }
+            assertTrue(tag + ": " + idName(c) + " says \"" + t.getText()
+                       + "\" but drew NOTHING — the region is a flat "
+                       + lo + " (see the note on android:gravity above)",
+                       hi - lo > 25);
+        }
     }
 
     /**

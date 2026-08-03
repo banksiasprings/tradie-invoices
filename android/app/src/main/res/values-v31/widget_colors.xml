@@ -41,4 +41,35 @@
          than the tallest bar in the same series. -->
     <color name="widget_bar_current">@android:color/system_accent1_800</color>
     <color name="widget_bar_track">@android:color/system_accent1_100</color>
+
+    <!-- ═══ v108.2 — solar-style redesign, Material You LIGHT ═══════════════
+         accent3 is Android's tertiary ramp, which is where the green-ish tone
+         lives in a wallpaper-derived palette — the closest the system offers to
+         the ring green in values/. As everywhere in this file the guarantee is
+         TONAL DISTANCE, not a hex we can measure: _700 against a _50 surface is
+         a 650-tone gap. The rendered PNGs are the empirical check. -->
+    <!-- _200, not _100. At _100 the track measured 1.14:1 against the _50 card
+         on a real API 34 device: the unfilled part of the ring was invisible, so
+         a 3% ring read as a small green arc floating in space rather than as a
+         circle 3% full. Caught by ringIsDistinguishableFromTheCardInBothThemes,
+         which resolves the ACTUAL wallpaper tones rather than trusting the ramp
+         names — the empirical check the v108.0 notes said these would need. -->
+    <!-- widget_ring_fill is DELIBERATELY NOT OVERRIDDEN HERE, so it falls through
+         to values/ (and values-night/) at every API level.
+
+         Everything else on this card follows the wallpaper, which is what makes
+         the widget sit in the home screen rather than on it. The ring does not,
+         because the ring is the thing Steven actually asked for — "solar is way
+         cooler, I like the circle progress graph" — and he asked for it GREEN.
+         On a wallpaper-derived palette accent3_700 came out a dark plum, which
+         renders as a bruise on the track rather than as progress.
+
+         So: card and ink are Material You, the ring is brand. Adding the name
+         back to this file is all it takes to hand the ring to the wallpaper too. -->
+    <color name="widget_ring_track">@android:color/system_accent1_200</color>
+
+    <color name="widget_pill_bg">@android:color/system_accent1_100</color>
+    <color name="widget_pill_ink">@android:color/system_neutral1_900</color>
+
+    <color name="widget_action_bg">@android:color/system_neutral2_100</color>
 </resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v108.2 — the bottom action row ("Tap to open · as of 10:46 AM"), from the
+     solar widget's refresh bar. Deliberately a quiet fill rather than an outline:
+     it is an affordance and a timestamp, and it must not compete with the ring. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/widget_action_bg" />
+    <corners android:radius="8dp" />
+</shape>

@@ -1,18 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  v107.0 — 2x1. The headline and its one qualifier. Nothing else fits, honestly.
+  v108.2 — 2x1, in the BSF Solar language: header band, then ring beside number.
+  No aux row, no action bar — the spec says so and the arithmetic agrees.
 
-  A 2x1 cell is 110x40dp. After padding there are ~28dp of vertical room — TWO
-  short lines, and that is the whole budget. The first build of this layout asked
-  for a label, the number, the of-line AND a progress bar; at 40dp they drew on
-  top of one another and the result was an unreadable smear. So this size drops:
+  A 2x1 cell is 110x40dp. After 4dp of padding there are 32dp of vertical room,
+  and that is the entire budget:
 
-    · the FY label — the number is unmistakably money, and the app is one tap away
-    · the progress bar — "3%" is on the of-line, and says the same thing in less
-      than a third of the height
+      header 10   margin 1   body 20   =  31
 
-  Both come back at 2x2, where there is room to read them. Keeping them here
-  would not have shown more information, it would have shown less of it legibly.
+  So the header here is a single 8sp line carrying the app name and the pill, and
+  the ring is 18dp — small, but a ring at 18dp still reads as a proportion, which
+  a 4dp progress bar at this width did not.
+
+  THERE IS NO SUB-LABEL HERE, AND THE FIRST BUILD PROVED WHY. It had one, and the
+  render test failed with "w_of is 1px tall for 20px text": adding a header band
+  costs 11dp, the number needs ~19dp of the 20dp left, and the of-line got what
+  was over. That is the documented LinearLayout squeeze, caught by the harness
+  rather than by somebody noticing a smear in a PNG.
+
+  The honest fix was to drop the line, not to shave the number: the ring now says
+  what "of $140k · 3%" was spelling out, which is the entire argument of the
+  redesign. The FY label is dropped too (it does not fit beside a pill at 110dp),
+  and so is the week line. All of them come back at 2x2.
+
+  WHY THE RING EARNS ITS SPACE HERE. v107.0's 2x1 was the number and one
+  qualifier, left-aligned, with the right half of the card empty — the exact
+  complaint Steven had about the whole widget. Even at 18dp the ring fills that
+  dead space with the one thing the qualifier was spelling out in text.
 
   Fonts: sans-serif-black stands in for Montserrat 800 (the app's heading weight)
   — RemoteViews cannot use a webfont, and the weight is what carries the app's
@@ -23,33 +37,103 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:gravity="center_vertical"
     android:background="@drawable/widget_bg"
-    android:padding="5dp">
+    android:padding="4dp">
 
-    <!-- Text size is set from Java per state (see WidgetRenderer.headlineSp) —
-         a six-character number and a twelve-character sentence cannot share one.
-         XML autosize was tried first and lost a silent fight with
-         setTextViewTextSize, leaving the empty state reading "Open the a…". -->
-    <TextView
-        android:id="@+id/w_big"
+    <!-- ── HEADER ────────────────────────────────────────────────────────── -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="19dp"
-        android:textSize="15sp"
-        android:fontFamily="sans-serif-black"
+        android:layout_height="10dp"
+        android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:singleLine="true"
-        android:textColor="@color/widget_accent"
-        android:text="—" />
+        android:baselineAligned="false">
 
-    <TextView
-        android:id="@+id/w_of"
+        <TextView
+            android:id="@+id/w_appname"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="8sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:textColor="@color/widget_ink"
+            android:text="🎯 Invoice" />
+
+        <TextView
+            android:id="@+id/w_pill"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_pill"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp"
+            android:textSize="7sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:textColor="@color/widget_pill_ink"
+            android:text="" />
+    </LinearLayout>
+
+    <!-- ── BODY — ring | number ──────────────────────────────────────────── -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textSize="8sp"
-        android:singleLine="true"
-        android:ellipsize="end"
-        android:textColor="@color/widget_ink_dim"
-        android:text="" />
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="1dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:baselineAligned="false">
+
+        <FrameLayout
+            android:id="@+id/w_ringwrap"
+            android:layout_width="18dp"
+            android:layout_height="18dp">
+
+            <ImageView
+                android:id="@+id/w_ring"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:contentDescription="@null" />
+
+            <!-- No percentage inside at this diameter: 18dp holds about three
+                 characters of a heavy face before the glyphs touch the stroke,
+                 and "100%" is four. The of-line beside it carries the number. -->
+            <TextView
+                android:id="@+id/w_ringpct"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:textSize="6sp"
+                android:fontFamily="sans-serif-black"
+                android:singleLine="true"
+                android:visibility="gone"
+                android:textColor="@color/widget_ink"
+                android:text="" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:orientation="vertical"
+            android:gravity="center_vertical">
+
+            <!-- Text size is set from Java per state (WidgetRenderer.setHeadline) —
+                 a six-character number and a twelve-character sentence cannot
+                 share one. XML autosize was tried first and lost a silent fight
+                 with setTextViewTextSize, leaving the empty state "Open the a…". -->
+            <TextView
+                android:id="@+id/w_big"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="14sp"
+                android:fontFamily="sans-serif-black"
+                android:singleLine="true"
+                android:textColor="@color/widget_accent"
+                android:text="—" />
+        </LinearLayout>
+    </LinearLayout>
 
 </LinearLayout>
