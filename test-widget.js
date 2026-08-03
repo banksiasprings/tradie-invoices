@@ -226,8 +226,13 @@ console.log('\n── wiring (source assertions) ──────────�
   ok('the snapshot reads the SAME tally as the Stats widget',
      /function collectWidgetSnapshot\(now\)\{[\s\S]{0,400}retainedYtd\(curFY\)/.test(html));
   ok('…and the SAME target', /function collectWidgetSnapshot\(now\)\{[\s\S]{0,500}retainedTarget\(\)/.test(html));
+  // v108.1 routed the widget's $/hr through allTimeSplitRows() so it shares the
+  // travel split with the Analytics tile. The billing boundary is unchanged: that
+  // helper reads days(), the CONFIRMED store, and nothing else.
   ok('confirmed days only — days(), never the unconfirmed queue',
-     /effectiveRate:effectiveRetainedRate\(days\(\)\.map/.test(html)
+     /effectiveRate:effectiveRetainedRate\(allTimeSplitRows\(\),policy\)/.test(html)
+     && /function allTimeSplitRows\(dayList\)\{[\s\S]{0,200}list=dayList\|\|days\(\)/.test(html)
+     && !/function allTimeSplitRows[\s\S]{0,300}unconfirmed\(\)/.test(html)
      && !/collectWidgetSnapshot[\s\S]{0,900}unconfirmedQueue/.test(html));
 }
 
@@ -491,11 +496,11 @@ console.log('\n── the graph still refuses to fabricate ───────
 
 console.log('\n── version ───────────────────────────────────────────────────────');
 {
-  ok('APP_VERSION bumped to v108.0', /const APP_VERSION = 'v108\.0';/.test(html));
+  ok('APP_VERSION bumped to v108.1', /const APP_VERSION = 'v108\.1';/.test(html));
   ok('Capgo builtin tracks it (the v82 cache-trap rule)',
-     /"version": "1\.108\.0"/.test(fs.readFileSync(path.join(__dirname, 'capacitor.config.json'), 'utf8')));
+     /"version": "1\.108\.1"/.test(fs.readFileSync(path.join(__dirname, 'capacitor.config.json'), 'utf8')));
   ok('versionCode bumped — new layouts and resource folders need an APK',
-     /versionCode 18/.test(fs.readFileSync(path.join(__dirname, 'android/app/build.gradle'), 'utf8')));
+     /versionCode 19/.test(fs.readFileSync(path.join(__dirname, 'android/app/build.gradle'), 'utf8')));
 }
 
 console.log('\n' + '─'.repeat(66));

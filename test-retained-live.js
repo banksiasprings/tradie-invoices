@@ -348,7 +348,7 @@ const BOOT = `(function(){
     ok('PIN: one row per excluded line item, not one per day', r.items === 24, r.items);
     ok('PIN: …across the 20 days that had any', r.dayBlocks === 20, r.dayBlocks);
     ok('the item count is stated', /24 items/.test(r.count), r.count);
-    ok('five component toggles', r.toggles === 5, r.toggles);
+    ok('six component toggles (v108.1 split labour from travel time)', r.toggles === 6, r.toggles);
     ok('exactly one is on (labour)', r.on === 1, r.on);
     ok('rows carry a human detail line', r.details.length > 0);
     ok('…extra labour shows hours × rate', r.details.some(d => /8\.00h × \$30\.00\/hr/.test(d)), r.details[0]);
@@ -574,6 +574,104 @@ const BOOT = `(function(){
     ok('…and the gross-based figure would have been $75',
        await ev(`(function(){var g=0,h=0;days().forEach(function(d){var t=dayTotals(d);g+=t.total;h+=t.h;});
                   return '$'+Math.round(g/h);})()`) === '$75');
+  }
+
+  // ═══ v108.1 — travel time out of the goal, still on the invoice ═══════════
+  console.log('\n── PIN: test_travel_time_leaves_the_goal_live ─────────────────────');
+  {
+    // Steven's 28 July, to the second: billed 07:30–18:00 with a 30-minute
+    // lunch, and an approved business trip that ran from before he clocked on
+    // until 10:04. 2.76h of the billed 10h was driving.
+    await ev(`(function(){
+      var day={id:'t1',date:'2026-07-28',site:'Lucas Ranch',start:'07:30',finish:'18:00',
+               lunchMins:30,rate:60,sonWorking:false,machines:[],travelMode:'none',
+               materials:[],status:'CONFIRMED'};
+      var ms=function(t){return new Date('2026-07-28T'+t).getTime();};
+      var T=[{id:'tr1',date:'2026-07-28',category:'business',distance_km:55.89,duration_min:202,
+              start_time:ms('06:42:59'),end_time:ms('10:04:53'),approved_at:1},
+             {id:'tr2',date:'2026-07-28',category:'business',distance_km:22.51,duration_min:25,
+              start_time:ms('17:49:22'),end_time:ms('18:14:32'),approved_at:1},
+             {id:'tr4',date:'2026-07-28',category:'personal',distance_km:9.3,duration_min:35,
+              start_time:ms('19:00:00'),end_time:ms('19:35:00')},
+             {id:'tr3',date:'2026-07-28',category:'business',intraSite:true,distance_km:4.3,
+              duration_min:110,start_time:ms('11:00:00'),end_time:ms('12:50:00')}];
+      localStorage.setItem('mcn_days', JSON.stringify([day]));
+      localStorage.setItem('mcn_trips', JSON.stringify(T));
+      var s=S(); delete s.retention; DB.set('settings',s);
+      return true;})()`);
+    await ev(`showScreen('analytics')`); await sleep(500);
+
+    const t = await ev(`(function(){
+      var r=retainedYtd(fyForDate(new Date('2026-08-03')));
+      var row=r.rows[0];
+      return {retained:r.tally.retained, gross:r.tally.gross, hours:r.tally.hours,
+              onsiteHours:r.tally.onsiteHours, travelH:row.totals.travelH,
+              travelE:row.totals.travelTimeE, onsiteE:row.totals.onsiteE, myE:row.totals.myE};})()`);
+
+    ok('PIN: the billed day is still $600 to the client', near(t.gross, 600), t.gross);
+    ok('PIN: 2.76h of it was approved business travel', near(t.travelH, 2.7586, 0.001), t.travelH);
+    ok('PIN: …priced at $165.52', near(t.travelE, 165.52, 0.01), t.travelE);
+    ok('PIN: the goal number is $434.48, not $600', near(t.retained, 434.48, 0.01), t.retained);
+    ok('PIN: the split still sums to his labour', near(t.onsiteE + t.travelE, t.myE));
+    ok('total hours are unchanged at 10h', near(t.hours, 10), t.hours);
+    ok('…while on-site hours are 7.24h', near(t.onsiteHours, 7.2414, 0.001), t.onsiteHours);
+    ok('CONTROL: the personal trip did not count', near(t.travelH, 2.7586, 0.001));
+    ok('CONTROL: neither did the on-site paddock lap (110 min, inside the day)',
+       t.travelH < 3);
+
+    // The review screen must show WHY, with the evidence.
+    await ev(`showScreen('retained')`); await sleep(500);
+    const r = await ev(`(function(){var s=document.getElementById('screen-retained');
+      var items=[].slice.call(s.querySelectorAll('.rv-item'));
+      return {n:items.length,
+              names:items.map(function(i){return (i.querySelector('.rv-iname')||{}).textContent||'';}),
+              details:items.map(function(i){return (i.querySelector('.rv-idet')||{}).textContent||'';}),
+              toggles:s.querySelectorAll('.rv-tog').length,
+              excluded:(s.querySelectorAll('.rv-v')[1]||{}).textContent||''};})()`);
+    ok('PIN: the review screen lists the travel-time exclusion', r.names.some(n => /Travel time/.test(n)), r.names);
+    ok('PIN: …with the hours on the row', r.names.some(n => /2\.76h/.test(n)), r.names);
+    // The row shows the TRIP's own clock times, not the clamped overlap — so he
+    // can see it started 47 minutes before he clocked on, which is the context
+    // that makes "2.76h of 10h" checkable rather than a bare assertion.
+    ok('PIN: …the trip that caused it, by clock time',
+       r.details.some(d => /06:42–10:04/.test(d)), r.details);
+    ok('PIN: …and the second trip of the day, at knock-off',
+       r.details.some(d => /17:49–18:14/.test(d)), r.details);
+    ok('PIN: …its distance', r.details.some(d => /55\.9 km/.test(d)));
+    ok('PIN: …and its average speed, the tell for a trip that never sealed',
+       r.details.some(d => /17 km\/h/.test(d)), r.details);
+    ok('PIN: the excluded total says $165.52', /165\.52/.test(r.excluded), r.excluded);
+    ok('a toggle exists to put it back', r.toggles === 6, r.toggles);
+    await shot('03-travel-time-excluded-375', '#screen-retained .section');
+
+    // The widget must not disagree with the screen.
+    const snap = await ev(`(function(){var s=collectWidgetSnapshot(new Date('2026-08-03T09:00:00'));
+      return {retained:s.retained, weeks:s.weeks, rate:s.effectiveRate};})()`);
+    ok('PIN: the home-screen widget carries the SAME retained figure',
+       near(snap.retained, 434.48, 0.01), snap.retained);
+    ok('PIN: …and its week bucket does too', near(snap.weeks[0].r, 434.48, 0.01), snap.weeks[0]);
+    ok('PIN: the widget $/hr is still his configured $60, not $43',
+       near(snap.rate, 60, 0.01), snap.rate);
+
+    // And the invoice is byte-identical with the exclusion on or off.
+    const invA = await ev(`buildInvoiceHTML()`);
+    await ev(`setRetention('travel_time', true)`); await sleep(300);
+    const onRetained = await ev(`retainedYtd(fyForDate(new Date('2026-08-03'))).tally.retained`);
+    const invB = await ev(`buildInvoiceHTML()`);
+    ok('PIN: flipping travel time ON restores the full $600 goal figure',
+       near(onRetained, 600), onRetained);
+    // CONTROL: "identical" is worthless if both are empty. Prove the invoice
+    // actually carries the day, at the FULL billed amount, before comparing.
+    ok('CONTROL: the invoice is non-empty and bills the full $600',
+       invA.length > 500 && /600\.00/.test(invA), invA.length);
+    ok('CONTROL: …and it names his 10 billed hours, not the 7.24 on-site ones',
+       /10\.00/.test(invA) && !/7\.24/.test(invA));
+    ok('PIN: …and the invoice HTML is byte-identical either way', invA === invB);
+    ok('PIN: no field was stamped onto any day record',
+       await ev(`days().every(function(d){return d.travelH===undefined && d.onsiteE===undefined && d.travelTimeE===undefined;})`));
+    ok('PIN: …nor onto any trip record',
+       await ev(`trips().every(function(t){return t.travelH===undefined && t.excluded===undefined;})`));
+    await ev(`var s=S(); delete s.retention; DB.set('settings',s);`);
   }
 
   console.log('\n── no page errors ─────────────────────────────────────────────────');

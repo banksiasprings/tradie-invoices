@@ -108,7 +108,8 @@ console.log('\n── PIN: test_retention_policy_absence_reads_as_default ──
 {
   ok('PIN: an empty settings blob = the shipped default',
      JSON.stringify(retentionPolicy({})) ===
-     JSON.stringify({ labour: true, extra: false, machine: false, travel: false, materials: false }));
+     JSON.stringify({ labour: true, travel_time: false, extra: false, machine: false,
+                      travel: false, materials: false }));
   ok('PIN: a pre-v106 blob (no `retention` key) classifies identically',
      JSON.stringify(retentionPolicy({ rate: 55, sonrate: 30 })) === JSON.stringify(retentionPolicy({})));
   ok('PIN: null settings does not throw', retentionPolicy(null).labour === true);
@@ -124,11 +125,15 @@ console.log('\n── PIN: test_retention_policy_absence_reads_as_default ──
 
 console.log('\n── the taxonomy ───────────────────────────────────────────────────');
 {
-  ok('five components, no more', RETAINED_COMPONENTS.length === 5);
-  ok('each names a dayTotals field',
-     RETAINED_COMPONENTS.every(c => ['myE','sonE','machineTotal','travelTotal','materialsTotal'].includes(c.field)));
+  // v108.1 split `labour` in two: on-site labour is retained, the travel hours
+  // inside the same billed window are not. Six components, still a partition.
+  ok('six components, no more', RETAINED_COMPONENTS.length === 6);
+  ok('each names a totals field',
+     RETAINED_COMPONENTS.every(c => ['onsiteE','travelTimeE','sonE','machineTotal','travelTotal','materialsTotal'].includes(c.field)));
   ok('the fields are distinct (a partition, not an overlap)',
-     new Set(RETAINED_COMPONENTS.map(c => c.field)).size === 5);
+     new Set(RETAINED_COMPONENTS.map(c => c.field)).size === 6);
+  ok('labour keeps a pre-split fallback so bare dayTotals() still classifies',
+     RETAINED_COMPONENTS.find(c => c.key === 'labour').altField === 'myE');
   ok('only labour is retained by default', RETAINED_COMPONENTS.filter(c => c.retained).map(c => c.key).join() === 'labour');
   ok('every component explains itself to the user', RETAINED_COMPONENTS.every(c => c.why && c.why.length > 20));
 }
@@ -378,14 +383,14 @@ console.log('\n── PIN: test_goal_card_and_detail_agree ───────
   ok('…and names each deduction', /less '\+escHtml\(c\.label\)/.test(html));
   ok('past FYs are retained too, so the comparison is like-for-like',
      /fyMap\[f\]\.earn\+=splitDayRevenue\(t,policy\)\.retained;/.test(html));
-  ok('…including the Analytics past-FY list', /byFY\[fy\]\.earn\+=splitDayRevenue\(dayTotals\(d\),policy\)\.retained;/.test(html));
+  ok('…including the Analytics past-FY list', /byFY\[fy\]\.earn\+=splitDayRevenue\(dayTotalsSplit\(d,_pastTrips\),policy\)\.retained;/.test(html));
   ok('the card label says "Retained earnings", not "Annual earnings"', /Retained earnings<\/div>/.test(html));
 }
 
 console.log('\n── version ────────────────────────────────────────────────────────');
 {
-  ok('APP_VERSION bumped to v108.0', /const APP_VERSION = 'v108\.0';/.test(html));
-  ok('DEFAULTS carries the retention policy', /retention:\{labour:true,extra:false,machine:false,travel:false,materials:false\}/.test(html));
+  ok('APP_VERSION bumped to v108.1', /const APP_VERSION = 'v108\.1';/.test(html));
+  ok('DEFAULTS carries the retention policy', /retention:\{labour:true,travel_time:false,extra:false,machine:false,travel:false,materials:false\}/.test(html));
 }
 
 
@@ -506,12 +511,261 @@ console.log('\n── PIN: test_effective_rate_is_his_rate_not_the_passthrough �
      /ana-eff-rate'\)\.textContent='\$'\+\(_effRate==null\?0:_effRate\)\.toFixed\(0\)/.test(html)
      && /const _effRate=effectiveRetainedRate\(/.test(html));
   ok('PIN: …and so does the widget snapshot',
-     /effectiveRate:effectiveRetainedRate\(days\(\)\.map/.test(html));
+     /effectiveRate:effectiveRetainedRate\(allTimeSplitRows\(\),policy\)/.test(html));
+  ok('PIN: …reading the same all-time split rows as the tile',
+     /const _effRate=effectiveRetainedRate\(allTimeSplitRows\(ad\),/.test(html));
   const HOURS = 387.02, GROSS = 26003, RETAINED = 23221;
   ok('the old figure was $67/hr', Math.round(GROSS / HOURS) === 67);
   ok('PIN: the new one is $60/hr — exactly his configured rate', Math.round(RETAINED / HOURS) === 60);
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v108.1 — travel TIME inside a billed day
+//
+// Asked for three times now, and refused twice on the grounds that "no job-type
+// taxonomy exists". Steven was right and that reading was wrong. The label DOES
+// exist: approving a trip writes `category:'business'`, confirming a lap writes
+// `confirmed_at` on a circuit, and the invoice's own "Work carried out" block
+// prints the two beside each other. What did not exist was a link from that
+// label to the goal tally — the v106.0 `travel` component is travel BILLING,
+// which he has never switched on, so it always summed $0.
+// ═══════════════════════════════════════════════════════════════════════════
+const ctx2 = {};
+new Function('ctx', slice('//__V106_RETAINED_PURE_START__', '//__V106_RETAINED_PURE_END__') + '\n' +
+  ['isTravelLabelled','mergeSpans','travelTimeForDay','withTravelSplit',
+   'componentAmount','travelTimeDetail','effectiveRetainedRate']
+    .map(n => `ctx.${n}=${n};`).join(''))(ctx2);
+const { isTravelLabelled, mergeSpans, travelTimeForDay, withTravelSplit,
+        componentAmount, travelTimeDetail, effectiveRetainedRate } = ctx2;
+
+// Local-time parse for both the window and the trips, so the arithmetic is the
+// same in any TZ the suite happens to run in.
+const H = (t, date) =>
+  new Date((date || '2026-07-28') + 'T' + (t.length === 5 ? t + ':00' : t)).getTime();
+
+console.log('\n── PIN: test_travel_label_is_the_approved_business_trip_category ──');
+{
+  // THE DRIFT PIN. The exclusion must read the same predicate that writes the
+  // invoice's "N km travel" line. If someone changes one, this fails.
+  ok('PIN: a business-tagged trip is travel', isTravelLabelled({ category: 'business' }));
+  ok('PIN: personal is not', !isTravelLabelled({ category: 'personal' }));
+  ok('PIN: commute is not', !isTravelLabelled({ category: 'commute' }));
+  ok('PIN: untagged is not — an unreviewed trip is not evidence of anything',
+     !isTravelLabelled({ category: 'unknown' }) && !isTravelLabelled({}));
+  ok('PIN: on-site paddock movement is not travel', !isTravelLabelled({ category: 'business', intraSite: true }));
+  ok('PIN: a disregarded home trip is not travel', !isTravelLabelled({ category: 'business', disregarded: true }));
+  ok('PIN: null is safe', !isTravelLabelled(null));
+
+  // The invoice's travel line, in source. Same three conditions, same order of
+  // reasoning — this is the thing the predicate must not drift away from.
+  ok('PIN: the invoice km line uses category==="business" too',
+     /t\.category==='business' && !isIntraSite\(t\) && !isDisregarded\(t\)/.test(html));
+  ok('PIN: …and the exclusion reads the SAME three conditions',
+     /t\.category === 'business' && !t\.intraSite && !t\.disregarded/.test(html));
+  // Control: prove the assertion above is not matching its own documentation.
+  ok('CONTROL: the predicate is a function, not a comment',
+     /function isTravelLabelled\(t\)\{/.test(html.replace(/\/\*[\s\S]*?\*\//g, '')));
+}
+
+console.log('\n── overlap arithmetic ─────────────────────────────────────────────');
+{
+  ok('two overlapping spans merge to one', mergeSpans([[0, 10], [5, 20]]).length === 1);
+  ok('…and keep the outer bounds', JSON.stringify(mergeSpans([[0, 10], [5, 20]])) === '[[0,20]]');
+  ok('touching spans merge', JSON.stringify(mergeSpans([[0, 10], [10, 20]])) === '[[0,20]]');
+  ok('disjoint spans stay separate', mergeSpans([[0, 5], [10, 20]]).length === 2);
+  ok('unsorted input is handled', JSON.stringify(mergeSpans([[10, 20], [0, 5]])) === '[[0,5],[10,20]]');
+  ok('zero-length spans are dropped', mergeSpans([[5, 5]]).length === 0);
+  ok('empty and null are safe', mergeSpans([]).length === 0 && mergeSpans(null).length === 0);
+
+  const win = { start: H('07:30'), finish: H('18:00') };
+  ok('a trip wholly outside the window contributes nothing',
+     travelTimeForDay(win, [{ category: 'business', start_time: H('19:00'), end_time: H('20:00') }], 10).hours === 0);
+  ok('a trip straddling the start counts only the part inside',
+     near(travelTimeForDay(win, [{ category: 'business', start_time: H('06:30'), end_time: H('08:30') }], 10).hours, 1));
+  ok('a trip straddling the finish counts only the part inside',
+     near(travelTimeForDay(win, [{ category: 'business', start_time: H('17:30'), end_time: H('19:30') }], 10).hours, 0.5));
+  ok('two overlapping trips are not double-counted',
+     near(travelTimeForDay(win, [
+       { category: 'business', start_time: H('08:00'), end_time: H('10:00') },
+       { category: 'business', start_time: H('09:00'), end_time: H('11:00') }], 10).hours, 3));
+  ok('the result is capped at the billed hours — never more than all travel',
+     travelTimeForDay(win, [{ category: 'business', start_time: H('07:30'), end_time: H('18:00') }], 2).hours === 2);
+  ok('a zero-length window yields nothing rather than NaN',
+     travelTimeForDay({ start: 0, finish: 0 }, [{ category: 'business', start_time: 1, end_time: 2 }], 8).hours === 0);
+  ok('the trips behind the figure come back with it',
+     travelTimeForDay(win, [{ category: 'business', start_time: H('08:00'), end_time: H('09:00') }], 8).trips.length === 1);
+  ok('…and an excluded trip is not among them',
+     travelTimeForDay(win, [{ category: 'personal', start_time: H('08:00'), end_time: H('09:00') }], 8).trips.length === 0);
+}
+
+console.log('\n── PIN: test_travel_hours_leave_the_goal_but_not_the_invoice ──────');
+{
+  const t = dayTotals(FULL_DAY);                      // 8h × $60 = $480 labour
+  const split = withTravelSplit(t, 2, []);
+  const p = retentionPolicy({});
+  const sp = splitDayRevenue(split, p);
+
+  ok('PIN: the split is a partition — onsiteE + travelTimeE === myE',
+     near(split.onsiteE + split.travelTimeE, t.myE), { on: split.onsiteE, tr: split.travelTimeE, myE: t.myE });
+  ok('PIN: …so gross is STILL dayTotals().total, to the cent',
+     near(sp.gross, t.total), { gross: sp.gross, total: t.total });
+  ok('PIN: the invoice figure did not move at all', near(sp.gross, 1904));
+  ok('PIN: 2 of 8 hours priced at his rate = $120 out of the goal',
+     near(split.travelTimeE, 120), split.travelTimeE);
+  ok('PIN: retained drops by exactly that, no more', near(sp.retained, 480 - 120), sp.retained);
+  ok('PIN: travel time is excluded by default',
+     sp.components.find(c => c.key === 'travel_time').retained === false);
+  ok('hours are split too', near(split.onsiteH, 6) && near(split.travelH, 2));
+  ok('total hours are NOT reduced — he was on the clock either way', near(split.h, t.h));
+
+  // Flipping it back on is a toggle, not a code change (the v106.0 promise).
+  const spOn = splitDayRevenue(split, retentionPolicy({ retention: { travel_time: true } }));
+  ok('flipping it on restores the full labour figure', near(spOn.retained, 480), spOn.retained);
+  ok('…and gross is unchanged by the flip', near(spOn.gross, t.total));
+}
+
+console.log('\n── PIN: test_bare_daytotals_still_classifies_as_before ────────────');
+{
+  // The false-green this design could most easily produce: `labour` now names
+  // `onsiteE`, which a bare dayTotals() does not have. Without the altField
+  // fallback every unsplit caller would silently retain $0 and every past year
+  // would read as a collapse in earnings.
+  const t = dayTotals(FULL_DAY);
+  const p = retentionPolicy({});
+  ok('PIN: bare dayTotals() has no onsiteE', t.onsiteE === undefined);
+  ok('PIN: …and labour still resolves, via the fallback',
+     near(componentAmount(t, RETAINED_COMPONENTS.find(c => c.key === 'labour')), t.myE));
+  ok('PIN: so an unsplit day classifies exactly as it did pre-v108.1',
+     near(splitDayRevenue(t, p).retained, 480));
+  ok('PIN: …and travel time reads as 0, not NaN',
+     splitDayRevenue(t, p).components.find(c => c.key === 'travel_time').amount === 0);
+  ok('CONTROL: the fallback is doing the work — remove it and labour is 0',
+     componentAmount(t, { field: 'onsiteE' }) === 0);
+}
+
+console.log('\n── PIN: test_effective_rate_survives_the_travel_split ─────────────');
+{
+  // The brief's constraint: the v106.1 $60/hr fix must not regress. Retained
+  // dollars fall, so the denominator has to fall with them.
+  const t = withTravelSplit(dayTotals(LABOUR_ONLY_DAY), 2, []);   // 8h, 2 travel
+  const p = retentionPolicy({});
+  ok('the day is 8h at $60', near(t.h, 8) && near(t.myE, 480));
+  ok('PIN: $/hr is still exactly his rate after the split',
+     near(effectiveRetainedRate([{ totals: t }], p), 60),
+     effectiveRetainedRate([{ totals: t }], p));
+  ok('CONTROL: dividing by TOTAL hours would have reported less than his rate',
+     near(splitDayRevenue(t, p).retained / t.h, 45));
+  ok('a bare (unsplit) row still reports his rate',
+     near(effectiveRetainedRate([{ totals: dayTotals(LABOUR_ONLY_DAY) }], p), 60));
+  ok('no hours yields null, never a confident $0/hr',
+     effectiveRetainedRate([], p) === null);
+}
+
+console.log('\n── PIN: test_travel_exclusion_matches_his_real_field_data ─────────');
+{
+  // Steven's four real days that carry approved business travel inside the
+  // billed window, read off the synced Firestore blob on 2026-08-03. Times are
+  // his, TO THE SECOND — rounding the trips to whole minutes moves the total by
+  // $1.36, which is exactly the kind of drift a fixture is supposed to catch.
+  // Coordinates are deliberately absent (this repo is PUBLIC).
+  const REAL = [
+    { date: '2026-07-28', start: '07:30', finish: '18:00', lunchMins: 30, rate: 60,
+      trips: [['06:42:59', '10:04:53', 55.89], ['17:49:22', '18:14:32', 22.51], ['19:31:48', '20:07:00', 24.17]] },
+    { date: '2026-07-29', start: '13:34', finish: '17:25', lunchMins: 30, rate: 60,
+      trips: [['10:19:04', '11:46:43', 75.30], ['12:25:16', '13:50:59', 71.64],
+              ['16:48:48', '17:26:01', 7.91], ['17:25:17', '18:58:46', 41.55]] },
+    { date: '2026-07-30', start: '07:30', finish: '17:56', lunchMins: 30, rate: 60,
+      trips: [['06:15:01', '06:59:24', 49.88], ['17:53:05', '18:15:48', 23.55], ['19:31:57', '20:07:28', 19.03]] },
+    { date: '2026-07-31', start: '08:45', finish: '11:15', lunchMins: 0, rate: 60,
+      trips: [['07:59:40', '08:30:29', 34.04], ['08:30:49', '08:59:44', 20.13], ['11:20:14', '12:31:57', 39.52]] }
+  ];
+  const win = d => ({ start: H(d.start, d.date), finish: H(d.finish, d.date) });
+  const mk = d => d.trips.map(([a, b, km]) => ({
+    category: 'business', date: d.date, distance_km: km,
+    start_time: H(a, d.date), end_time: H(b, d.date) }));
+
+  let totalTravelE = 0, totalRetained = 0, totalGross = 0;
+  const p = retentionPolicy({});
+  REAL.forEach(d => {
+    const base = dayTotals({ ...d, sonWorking: false, machines: [], materials: [], travelMode: 'none' });
+    const tt = travelTimeForDay(win(d), mk(d), base.h);
+    const split = withTravelSplit(base, tt.hours, tt.trips);
+    const sp = splitDayRevenue(split, p);
+    totalTravelE += split.travelTimeE; totalRetained += sp.retained; totalGross += sp.gross;
+  });
+
+  // Tolerance of 5c, not a cent: the real trip records carry milliseconds and
+  // this fixture reconstructs them to the second, so the last cent is not
+  // recoverable. Any change to the MECHANIC moves this by dollars, not cents —
+  // which is what the pin is for.
+  ok('PIN: his four travelling days exclude $236.36 of driving',
+     near(totalTravelE, 236.36, 0.05), totalTravelE.toFixed(2));
+  ok('PIN: 3.94h of the billed time was driving', near(totalTravelE / 60, 3.9394, 0.001));
+  ok('PIN: the invoice for those days is unchanged at $1,547',
+     near(totalGross, 1547, 0.01), totalGross.toFixed(2));
+  ok('PIN: retained on those days is $1,310.64', near(totalRetained, 1310.64, 0.01), totalRetained.toFixed(2));
+  ok('PIN: …and the two still add up to the invoice',
+     near(totalRetained + totalTravelE, totalGross));
+  ok('PIN: FY2026-27 YTD moves $3,932.00 → $3,695.64',
+     near(3932 - totalTravelE, 3695.64, 0.05));
+  ok('PIN: …a 6.0% haircut on the headline, not a rounding error',
+     near((totalTravelE / 3932) * 100, 6.01, 0.05));
+
+  // The previous session estimated this at $0.00 by reading the ask as the
+  // v106.0 travel-BILLING component. He has never used it, so that number was
+  // right about that component and wrong about the question.
+  ok('CONTROL: travelMode "none" means the v106.0 travel component IS $0',
+     dayTotals({ ...REAL[0], sonWorking: false, machines: [], materials: [], travelMode: 'none' }).travelTotal === 0);
+  ok('CONTROL: …so the delta could only ever come from the labour split',
+     totalTravelE > 0);
+}
+
+console.log('\n── the review screen shows the evidence, not just the total ───────');
+{
+  const t = withTravelSplit(dayTotals(LABOUR_ONLY_DAY), 2.76,
+    [{ start_time: H('07:30'), end_time: H('10:04'), distance_km: 55.89, duration_min: 202 }]);
+  const detail = travelTimeDetail(t);
+  ok('the detail names the hours against the billed day', /2\.76h of 8\.00h billed/.test(detail), detail);
+  ok('…the clock times of the trip', /07:30–10:04/.test(detail), detail);
+  ok('…the distance', /55\.9 km/.test(detail));
+  ok('…and the average speed, which is what exposes a trip that never sealed',
+     /17 km\/h/.test(detail), detail);
+  ok('no trips yields a bare, honest header', !/—/.test(travelTimeDetail(withTravelSplit(dayTotals(LABOUR_ONLY_DAY), 0, []))));
+
+  const items = excludedItemsForDay(LABOUR_ONLY_DAY, t, retentionPolicy({}));
+  const row = items.find(i => i.key === 'travel_time');
+  ok('the review screen gets a travel-time row', !!row);
+  ok('…carrying the hours, because the size of this one is a duration',
+     row && near(row.hours, 2.76));
+  ok('…and the dollars', row && near(row.amount, 2.76 * 60));
+  ok('a day with no travel produces no such row',
+     !excludedItemsForDay(LABOUR_ONLY_DAY, withTravelSplit(dayTotals(LABOUR_ONLY_DAY), 0, []),
+        retentionPolicy({})).some(i => i.key === 'travel_time'));
+  ok('the CSV carries an Hours column', /'Date','Site','Component','Detail','Hours','Amount'/.test(html));
+}
+
+console.log('\n── the wiring, in source ──────────────────────────────────────────');
+{
+  ok('ONE place turns a day into split totals', /function dayTotalsSplit\(d,cachedTrips\)\{/.test(html));
+  ok('the FY rows go through it', /totals:dayTotalsSplit\(d,allTrips\)/.test(html));
+  ok('the billed window comes from start/finish, matching dayTotals()',
+     /function dayBilledWindow\(d\)\{/.test(html) && /at\(d\.start\), fi=at\(d\.finish\|\|d\.start\)/.test(html));
+  ok('…NOT from startTs, which 48 of his 57 real days do not have',
+     !/dayBilledWindow[\s\S]{0,400}startTs/.test(html));
+  ok('the week buckets inherit the split (widget parity)',
+     /out\[k\]\.retained\+=splitDayRevenue\(r\.totals,retentionPolicy\(S\(\)\)\)\.retained;/.test(html));
+  ok('the goal card and the widget both read retainedYtd',
+     /function renderGoalWidget\(\)\{[\s\S]{0,300}retainedYtd\(curFY\)/.test(html)
+     && /function collectWidgetSnapshot\(now\)\{[\s\S]{0,400}retainedYtd\(curFY\)/.test(html));
+  ok('no money function was touched',
+     !/function dayTotals\(d\)\{[\s\S]{0,2000}travelTimeE/.test(html));
+  ok('the invoice builders are untouched by the split',
+     !/function buildInvoiceHTML\(\)\{[\s\S]{0,4000}travelTimeE/.test(html)
+     && !/function previewInvoice\(\)\{[\s\S]{0,4000}travelTimeE/.test(html));
+  ok('the accountant/Xero days CSV is untouched',
+     !/function exportDaysCSV\([\s\S]{0,2000}travelTimeE/.test(html));
+}
 
 console.log('\n' + '─'.repeat(66));
 console.log(fail === 0 ? `✓ ALL ${pass} PASSED` : `✗ ${fail} FAILED (${pass} passed)`);

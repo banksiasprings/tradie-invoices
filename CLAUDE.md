@@ -1225,9 +1225,120 @@ process"* is itself a match for `/Firestore/`. `test-widget.js` strips comments
 before scanning, and asserts the stripper is real so the five purity checks cannot
 pass vacuously.
 
+### v108.1 — travel time leaves the goal, and the label was there all along
+
+**Asked three times, refused twice, and the refusals were wrong.** v106.0 and
+v108.0 both concluded "no job-type taxonomy exists, travel is already excluded".
+Steven pushed back: *"when I do loads and approve them through the app, entries
+get written distinctly labelled — some say travel, others say loads."* He was
+right about the data and right about the number.
+
+**Two different things are called travel, and the earlier looks read the wrong one.**
+
+| | what it is | his data |
+|---|---|---|
+| `travel` (v106.0 component) | travel BILLING — `travelMode` km/hours on a day record | **never used.** All 57 confirmed days carry `travelMode:'none'`, so this component has always summed exactly **$0** |
+| **travel TIME** (v108.1) | hours the WORK TIMER ran while an approved business trip was in progress | **$236.36 across 4 days**, all this FY |
+
+Lucas Ranch is a **2900 m** fence. The clock starts when he reaches the district
+and every hour until he leaves bills at his rate — whether he spent it on the
+machine or in the ute. That is the travel he meant, and it was inside `myE`.
+
+**The label really does exist, in `mcn_trips`.** Approving a trip in the Trip Log
+writes `category:'business'`; confirming a lap in Loads writes `confirmed_at` on
+a circuit. Those are the two labels the invoice's own **"Work carried out"** block
+prints beside each other — `16 loads (…) hauled from Silt stockpile to Lookout
+pad` / `34.6 km travel`. The exclusion reads the **same predicate that writes that
+km line** (`_invoiceSummaryDays`), so the review screen can never name a different
+set of trips than the invoice does. `isTravelLabelled()` is that predicate in one
+place; a drift test pins it against the invoice's copy, with a control proving the
+assertion isn't matching its own comment.
+
+**The mechanic:** business trips are clipped to the day's billed window, **merged**
+(two trips sharing a minute are one minute), summed, and capped at the billed
+hours. `withTravelSplit` divides `myE` into `onsiteE` + `travelTimeE` using the
+rate recovered as `myE/h`, so the two parts sum to `myE` **by construction** —
+which is what keeps `gross === dayTotals().total` and the invoice arithmetically
+untouched rather than untouched by promise.
+
+**The window comes from `date` + `start`/`finish`, NOT `startTs`.** `dayTotals`
+computes billed hours from those two fields, so the window measured against them
+must too or the pair can silently disagree after a rounded or hand-edited start.
+(48 of his 57 real days predate `startTs` entirely, so it could not be the source
+of truth regardless.)
+
+**NO SCHEMA CHANGE, NO BACKFILL** — the v106.0 rule. Re-tagging a trip as private
+reclassifies history on the spot; nothing is stamped on a day or a trip record,
+asserted live.
+
+**Hours are hours.** Total hours are NOT reduced — he was on the clock either way,
+and the 45h/wk goal is about time. The one figure that had to follow is the
+**effective rate**: retained dollars fall, so `effectiveRetainedRate` divides by
+**on-site** hours (`tally.onsiteHours`) and still reports exactly his configured
+$60. Dividing on-site dollars by total hours would have reported $43 and re-opened
+the v106.1 bug from the other side — pinned, with a control.
+
+**`altField` is load-bearing, not tidiness.** `labour` now names `onsiteE`, which a
+bare `dayTotals()` does not have. Without the `myE` fallback every unsplit caller
+(the past-FY paths) would silently retain **$0** and every past year would read as
+a collapse in earnings. Pinned with a control that removing it yields 0.
+
+**Review screen** (`#screen-retained`, per [[review-tab-before-invoice]]): the sixth
+toggle, and a row per travelling day carrying **the hours, the trips, their clock
+times, km, and average speed**. The speed is deliberate — a "trip" covering 56 km
+in 3h22m at **17 km/h** is far likelier to be a trip the detector never sealed than
+three hours of driving, and the reader must be able to see that rather than trust
+the total. Shown at `plans/v108.1-shots/`.
+
+**Delta on his real data:** FY2026-27 YTD **$3,932.00 → $3,695.64** (−$236.36,
+−6.0%), across 4 days. Nothing historical moves: `mcn_trips` starts 2026-07-27, so
+FY2025-26 is untouched. The v108.0 estimate of **$0.00 was wrong** — it was right
+about the v106.0 component and wrong about the question.
+
+**Open for Steven's gate (NOT guessed):** (1) he bills Muirlawn for that driving,
+so he does keep the money — this makes the goal *productive* earnings rather than
+*retained* earnings, which is a different question from v106.0's; (2) the 28 Jul
+trip averages 17 km/h over 3h22m and is probably a trip that failed to seal on
+arrival, so $165 of the $236 rests on one suspect record. Both are why this ships
+as a **toggle** with the evidence on screen.
+
+**Don't reintroduce:** reading the ask as the v106.0 travel-billing component (it
+is $0 and always has been); a travel predicate that drifts from the invoice's km
+line; `startTs` as the window source; reducing total hours; an effective rate whose
+denominator doesn't match its numerator; dropping `altField` from `labour`;
+stamping a split onto a day or trip record; touching `dayTotals` /
+`buildInvoiceHTML` / `previewInvoice` / `generateInvoice` / `exportDaysCSV`.
+
+⚠️ **Ships by OTA — no native change.** APK bumped anyway (versionCode 18 → **19**,
+`1.108.1`) so the phone can be brought up in one install given its OTA history.
+
+**Tests:** `test-retained.js` (**265 pure**, +76 — pins
+`test_travel_label_is_the_approved_business_trip_category`,
+`test_travel_hours_leave_the_goal_but_not_the_invoice`,
+`test_bare_daytotals_still_classifies_as_before`,
+`test_effective_rate_survives_the_travel_split`,
+`test_travel_exclusion_matches_his_real_field_data`) · `test-retained-live.js`
+(**137 live**, +26 — drives his real 28 July through the real screens and proves
+the goal, the review row and the widget snapshot all move together).
+
+⚠️ **False green caught in flight:** the live "the invoice is byte-identical either
+way" assertion compares two strings and would pass on two **empty** invoices. It
+now has controls asserting the invoice is non-empty, bills the full $600, and
+names his 10 billed hours rather than the 7.24 on-site ones. Also worth knowing:
+the first real-data fixture rounded trip times to whole minutes and was $1.36 out —
+the real records carry milliseconds, so that pin holds to 5c, not to the cent.
+
 ### v108.0 — the widget follows the system theme, and its chart became tappable
 
 #### The travel exclusion Steven asked for was already shipped
+
+> ⚠️ **CORRECTED BY v108.1 — this section answered the wrong question.** It read
+> "travel time" as the v106.0 travel-BILLING component, which Steven has never
+> switched on ($0 on all 57 days), and concluded nothing was being counted. The
+> travel he meant is the work timer running while he drives: **$236.36 across 4
+> days, −6.0% on his FY26-27 headline.** The three findings below are still true
+> as written — there is no job-type field, and loads/charcoal carry no money —
+> but the label he described was real, in `mcn_trips`. See v108.1 above.
 
 Brief: *"the goal tally currently includes travel time … only loads and charcoal
 should count."* **Travel has been excluded from the goal tally since v106.0** —
@@ -2059,8 +2170,8 @@ node test-settings.js             # 105 pure  · collapsible + dedupe + auto-sav
 node test-settings-live.js        # 70 live   · auto-save, offline retry, collapse across relaunch
 node test-widget.js               # 168 pure  · widget snapshot, WCAG palette, tap wiring (+ Java scans)
 node test-widget-week-live.js     # 22 live   · tap a week bar -> the Log scoped to that week
-node test-retained.js             # 189 pure  · retained tally, pace basis, hero-removal pin
-node test-retained-live.js        # 111 live  · goal widget + the real-FY snapshot round-trip
+node test-retained.js             # 265 pure  · retained tally, pace basis, v108.1 travel-time split
+node test-retained-live.js        # 137 live  · goal widget + his real 28 Jul travel day
 ```
 
 The widget's native half has its own instrumented test (needs a booted emulator):
@@ -2079,7 +2190,7 @@ cd android && ./gradlew :app:connectedDebugAndroidTest   # WidgetRenderTest (6 t
 #   adb exec-out run-as com.banksiasprings.invoices cat files/widget-shots/4x2-dark.png > out.png
 # (They are on INTERNAL storage: /sdcard/Android/data/<pkg> is not shell-listable on API 30+.)
 ```
-Full suite as of v108.0: **1536 pure + 870 live**, plus the instrumented
+Full suite as of v108.1: **1611 pure + 896 live**, plus the instrumented
 `WidgetRenderTest` (`./gradlew :app:connectedDebugAndroidTest`, needs an emulator). Live suites drive rows with **PointerEvent**, not TouchEvent — the
 row gestures moved to Pointer Events in v104.9 and a TouchEvent press now reaches
 nothing. Live suites bind fixed HTTP + CDP ports, so a killed run leaves the port held and the next one dies with
