@@ -2573,7 +2573,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v108.0';
+const APP_VERSION = 'v108.1';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -3247,7 +3247,7 @@ const DEFAULTS={
   // call (2026-08-03): his labour only. Display-only: the invoice always bills
   // the full amount. A missing key reads as the component's own default, so a
   // pre-v106 settings blob classifies exactly as a fresh install does.
-  retention:{labour:true,extra:false,machine:false,travel:false,materials:false}
+  retention:{labour:true,travel_time:false,extra:false,machine:false,travel:false,materials:false}
 };
 
 function S(){return DB.def('settings',DEFAULTS)}
@@ -6404,6 +6404,7 @@ function renderPastFYs(allDays,curFY,rate){
   const card=document.getElementById('ty-past-fy-card');
   const list=document.getElementById('ty-past-fy-list');
   const policy=retentionPolicy(S());
+  const _pastTrips=trips();
   const byFY={};
   allDays.forEach(d=>{
     if(!d.finish||!d.date) return;
@@ -6413,7 +6414,8 @@ function renderPastFYs(allDays,curFY,rate){
     byFY[fy].hrs+=Math.max(0,timeDiffHours(d.start,d.finish)-(d.lunchMins||0)/60);
     // v106.0: retained, and priced at the rate each day actually carried. The
     // old `h × current rate` re-priced every past year whenever the rate rose.
-    byFY[fy].earn+=splitDayRevenue(dayTotals(d),policy).retained;
+    // v108.1: split too, so a past year is measured the same way as this one.
+    byFY[fy].earn+=splitDayRevenue(dayTotalsSplit(d,_pastTrips),policy).retained;
   });
   const sorted=Object.keys(byFY).map(Number).sort((a,b)=>b-a);
   if(!sorted.length){card.style.display='none';return;}
@@ -6438,10 +6440,45 @@ function renderPastFYs(allDays,curFY,rate){
 // disagree about which days are in scope.
 function retainedRows(fyStartYear){
   const fy=fyRange(fyStartYear);
+  const allTrips=trips();
   return days()
     .filter(d=>d.date>=fy.start&&d.date<=fy.end&&d.finish)
     .sort((a,b)=>a.date<b.date?1:-1)
-    .map(d=>({day:d,totals:dayTotals(d)}));
+    .map(d=>({day:d,totals:dayTotalsSplit(d,allTrips)}));
+}
+
+/* v108.1 — the billed window as WALL-CLOCK ms, derived from the record's own
+   date + HH:MM. Deliberately NOT `startTs`/`finishTs`: dayTotals() computes the
+   billed hours from `start`/`finish`, so the window a travel overlap is measured
+   against has to come from the same two fields or the two can silently disagree
+   after a rounded or hand-edited start. (48 of the 57 real day records predate
+   `startTs` entirely, so it could not be the source of truth regardless.) */
+function dayBilledWindow(d){
+  if(!d||!d.date||!d.start) return {start:0,finish:0};
+  const base=new Date(d.date+'T00:00:00').getTime();
+  const at=hm=>{const p=String(hm).split(':');return base+((+p[0]||0)*60+(+p[1]||0))*60000;};
+  const st=at(d.start), fi=at(d.finish||d.start);
+  return {start:st,finish:Math.max(st,fi)};
+}
+
+/* All-time [{totals}] with the split applied — the shape effectiveRetainedRate
+   wants, for the Analytics tile and the widget, which must print the same $/hr. */
+function allTimeSplitRows(dayList){
+  const all=trips(), list=dayList||days();
+  return list.map(d=>({totals:dayTotalsSplit(d,all)}));
+}
+
+/* dayTotals() plus the v108.1 labour split. THE single place a day becomes
+   split totals — every retained caller goes through it, so the goal card, the
+   review screen, the CSV and the home-screen widget cannot disagree about how
+   much of a day was driving. `cachedTrips` avoids re-reading the store per day
+   in a loop; omitted, it reads once. */
+function dayTotalsSplit(d,cachedTrips){
+  const t=dayTotals(d);
+  const all=cachedTrips||trips();
+  const sameDay=all.filter(x=>x&&x.date===d.date);
+  const tt=travelTimeForDay(dayBilledWindow(d),sameDay,t.h);
+  return withTravelSplit(t,tt.hours,tt.trips);
 }
 
 // Retained YTD for the current FY, with the tally and the policy that produced
@@ -6511,7 +6548,7 @@ function collectWidgetSnapshot(now){
     milestones:deriveMilestones(target,s.goalMilestones),
     weekGoalHours:parseFloat(s.weeklyHrsGoal)||0,
     // All time, exactly as the Analytics tile computes it (same shared helper).
-    effectiveRate:effectiveRetainedRate(days().map(d=>({totals:dayTotals(d)})),policy)
+    effectiveRate:effectiveRetainedRate(allTimeSplitRows(),policy)
   });
 }
 
@@ -6669,7 +6706,7 @@ function renderRetainedReview(){
     return `<div class="rv-day">
       <div class="rv-dhd"><span>${fmtDate(x.day.date)} <em>${escHtml(x.day.site||'')}</em></span><span style="color:var(--amber)">${fmtMoney(dayTotal)}</span></div>
       ${x.items.map(i=>`<div class="rv-item">
-        <div style="min-width:0"><div class="rv-iname">${escHtml(i.label)}</div>${i.detail?`<div class="rv-idet">${escHtml(i.detail)}</div>`:''}</div>
+        <div style="min-width:0"><div class="rv-iname">${escHtml(i.label)}${i.hours?` <span style="font-weight:600;color:var(--text2)">· ${i.hours.toFixed(2)}h</span>`:''}</div>${i.detail?`<div class="rv-idet">${escHtml(i.detail)}</div>`:''}</div>
         <div class="rv-iamt">${fmtMoney(i.amount)}</div>
       </div>`).join('')}
     </div>`;
@@ -6695,9 +6732,9 @@ function setRetention(key,on){
 function exportExcludedCSV(){
   const now=new Date(), curFY=fyForDate(now);
   const {policy,rows}=retainedYtd(curFY);
-  const lines=[['Date','Site','Component','Detail','Amount']];
+  const lines=[['Date','Site','Component','Detail','Hours','Amount']];
   rows.forEach(r=>excludedItemsForDay(r.day,r.totals,policy).forEach(i=>
-    lines.push([i.date,i.site,i.label,i.detail,i.amount.toFixed(2)])));
+    lines.push([i.date,i.site,i.label,i.detail,i.hours!=null?i.hours.toFixed(2):'',i.amount.toFixed(2)])));
   if(lines.length===1){toast('Nothing excluded to export');return;}
   // UTF-8 BOM + CRLF, matching the v101 exporter so Excel opens it cleanly.
   const csv='﻿'+lines.map(row=>row.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\r\n');
@@ -6739,13 +6776,13 @@ function openYearGoalDetail(){
   const avgDaily=fyDays.length?totalEarn/fyDays.length:0;
 
   // Past FYs from days history
-  const fyMap={};
+  const fyMap={}, _ygdTrips=trips();
   allDays.forEach(d=>{
     if(!d.finish||!d.date) return;
     const f=fyForDate(d.date);
     if(f>=curFY) return;
     if(!fyMap[f]) fyMap[f]={startYear:f,h:0,earn:0,days:0};
-    const t=dayTotals(d);
+    const t=dayTotalsSplit(d,_ygdTrips);
     fyMap[f].h+=t.h;
     // v106.0: retained, matching the current-year figure directly above it. A
     // gross past year sitting under a retained current year would read as a
@@ -6855,7 +6892,7 @@ function renderAnalytics(){
   // passthrough. Retained-based it comes out at exactly $60.
   // v107.0 — shared with the home-screen widget snapshot via effectiveRetainedRate,
   // so the tile and the widget cannot print different $/hr figures.
-  const _effRate=effectiveRetainedRate(ad.map(d=>({totals:dayTotals(d)})),retentionPolicy(s));
+  const _effRate=effectiveRetainedRate(allTimeSplitRows(ad),retentionPolicy(s));
   document.getElementById('ana-eff-rate').textContent='$'+(_effRate==null?0:_effRate).toFixed(0);
   const ti=ai.reduce((s,i)=>s+i.total,0);document.getElementById('ana-total').textContent=ti>=10000?'$'+Math.round(ti/100)/10+'k':fmtMoney(ti);
   // C6: invoice summaries store the ex-GST total. Label it honestly when GST is on
@@ -13928,12 +13965,20 @@ function fyList(list,currentFyStr){
    ═══════════════════════════════════════════════════════════════════════════ */
 //__V106_RETAINED_PURE_START__  (extracted verbatim by test-retained.js — keep pure: no DOM/DB/argless Date)
 
-/* The five components of an invoice, and who ends up with the money. `field`
-   names the key on a dayTotals() result — the ONLY coupling to the money code,
-   and a read-only one. `retained` is the default when the user has said nothing. */
+/* The components of an invoice, and who ends up with the money. `field` names
+   the key on a dayTotals() result — the ONLY coupling to the money code, and a
+   read-only one. `retained` is the default when the user has said nothing.
+
+   `altField` (v108.1) is the pre-split key to fall back on when `field` is
+   absent. It is load-bearing, not tidiness: `splitDayRevenue` is still called
+   with bare `dayTotals()` results from the past-FY paths, and without the
+   fallback `labour` would silently resolve to 0 and every past year would read
+   as a collapse in earnings. Pinned by a test. */
 var RETAINED_COMPONENTS = [
-  { key:'labour',    field:'myE',            label:'My labour',      retained:true,
+  { key:'labour',    field:'onsiteE', altField:'myE', label:'My labour', retained:true,
     why:'Hours on site × your rate. This is the money you actually keep.' },
+  { key:'travel_time', field:'travelTimeE',  label:'Travel time',    retained:false,
+    why:'Hours the work timer was running while a trip you approved as business was in progress. Still billed to the client — this only takes the driving out of your goal number.' },
   { key:'extra',     field:'sonE',           label:'Extra labourer', retained:false,
     why:'Billed to the client, then paid straight back out to whoever worked. It passes through you.' },
   { key:'machine',   field:'machineTotal',   label:'Machine hire',   retained:false,
@@ -13943,6 +13988,99 @@ var RETAINED_COMPONENTS = [
   { key:'materials', field:'materialsTotal', label:'Materials',      retained:false,
     why:'Supplies bought in and billed on. Turn this on only if you mark them up.' }
 ];
+
+/* One place that reads a component's dollars off a totals object, so the
+   fallback can't be remembered in one caller and forgotten in the next. */
+function componentAmount(totals, comp){
+  var t = totals || {}, v = t[comp.field];
+  if ((v === undefined || v === null) && comp.altField) v = t[comp.altField];
+  return +v || 0;
+}
+
+/* ── v108.1 — travel TIME inside a billed day ────────────────────────────────
+   Steven, twice: "the goal tally includes travel time." The v106.0 `travel`
+   component above is travel BILLING (`travelMode` km/hours) and he has never
+   used it — all 57 of his confirmed days carry `travelMode:'none'`, so that
+   component has always summed exactly $0. Reading the ask as that component is
+   how the last look concluded "already excluded, no change". It is a different
+   number.
+
+   The travel he means is the time the WORK TIMER was running while he was
+   demonstrably driving. His Lucas Ranch geofence is 2900 m: the clock starts
+   when he reaches the district, and every hour until he leaves bills at his
+   rate whether he spent it on the machine or in the ute.
+
+   HE WAS ALSO RIGHT THAT THE LABEL ALREADY EXISTS. Approving a trip in the Trip
+   Log writes `category:'business'` on it; confirming a lap in Loads writes
+   `confirmed_at` on a circuit. Those are the two labels the invoice's own "Work
+   carried out" block prints beside each other — "16 loads (…) hauled from Silt
+   stockpile to Lookout pad" and "34.6 km travel". This reads the SAME predicate
+   that writes that travel line (`_invoiceSummaryDays`), so the review screen can
+   never name a different set of trips than the invoice does.
+
+   NO SCHEMA CHANGE, NO BACKFILL — the v106.0 rule. The split is derived from
+   trip records the app already stores, so re-tagging a trip as private
+   reclassifies history on the spot and a wrong call is never baked into data. */
+
+/* THE AUTHORITATIVE TRAVEL LABEL. `category` is what the Trip Log approval
+   writes. On-site paddock movement and disregarded home trips are not travel
+   and were already out of the invoice's km line — this must keep agreeing with
+   it, which is what the drift test pins. */
+function isTravelLabelled(t){
+  return !!t && t.category === 'business' && !t.intraSite && !t.disregarded;
+}
+
+/* Two logged trips sharing a minute are still one minute of the day. */
+function mergeSpans(spans){
+  var list = (spans || []).filter(function(s){ return s && s[1] > s[0]; })
+                          .sort(function(a, b){ return a[0] - b[0]; });
+  var out = [];
+  for (var i = 0; i < list.length; i++){
+    var last = out[out.length - 1];
+    if (last && list[i][0] <= last[1]) last[1] = Math.max(last[1], list[i][1]);
+    else out.push([list[i][0], list[i][1]]);
+  }
+  return out;
+}
+
+/* Hours of the billed window spent on labelled travel, and the trips that put
+   them there — the review screen needs the evidence, not just the total.
+   `win` is {start,finish} in ms; `billedHours` is dayTotals().h and the result
+   is capped at it, so a day can never be more than entirely travel. */
+function travelTimeForDay(win, dayTrips, billedHours){
+  var w = win || {}, s = +w.start || 0, f = +w.finish || 0;
+  var cap = Math.max(0, +billedHours || 0);
+  var spans = [], used = [];
+  (dayTrips || []).forEach(function(t){
+    if (!isTravelLabelled(t)) return;
+    var a = Math.max(+t.start_time || 0, s), b = Math.min(+t.end_time || 0, f);
+    if (!(b > a)) return;
+    spans.push([a, b]); used.push(t);
+  });
+  if (!(f > s) || !spans.length) return { hours:0, trips:[] };
+  var ms = mergeSpans(spans).reduce(function(a, sp){ return a + (sp[1] - sp[0]); }, 0);
+  return { hours:Math.min(cap, ms / 3600000), trips:used };
+}
+
+/* Augment a dayTotals() result with the labour split. The two parts sum to myE
+   BY CONSTRUCTION — the rate is recovered from myE/h rather than re-read from
+   the day record — which is what keeps `gross` identical to dayTotals().total
+   and the invoice untouched. Pinned by a test. */
+function withTravelSplit(totals, travelHours, tripsUsed){
+  var t = totals || {};
+  var h = Math.max(0, +t.h || 0);
+  var th = Math.max(0, Math.min(h, +travelHours || 0));
+  var rate = h > 0 ? (+t.myE || 0) / h : 0;
+  var travelE = th * rate;
+  var out = {};
+  for (var k in t) if (Object.prototype.hasOwnProperty.call(t, k)) out[k] = t[k];
+  out.onsiteH = h - th;
+  out.travelH = th;
+  out.travelTimeE = travelE;
+  out.onsiteE = (+t.myE || 0) - travelE;
+  out.travelTrips = tripsUsed || [];
+  return out;
+}
 
 /* Absence reads as the DEFAULT, never as false — the same rule earthmovingMode
    follows. A settings blob written before v106 has no `retention` key at all,
@@ -13965,7 +14103,7 @@ function splitDayRevenue(totals, policy){
   var comps = [], retained = 0, passthrough = 0;
   for (var i = 0; i < RETAINED_COMPONENTS.length; i++){
     var c = RETAINED_COMPONENTS[i];
-    var amt = +t[c.field] || 0;
+    var amt = componentAmount(t, c);
     var keep = (p[c.key] === true);
     if (keep) retained += amt; else passthrough += amt;
     comps.push({ key:c.key, label:c.label, amount:amt, retained:keep });
@@ -13984,12 +14122,17 @@ function retainedTally(rows, policy){
                            retained:(p[c.key] === true), why:c.why };
     order.push(c.key);
   }
-  var retained = 0, passthrough = 0, hours = 0;
+  var retained = 0, passthrough = 0, hours = 0, onsiteHours = 0;
   for (var j = 0; j < list.length; j++){
     var t = (list[j] && list[j].totals) || {};
     var sp = splitDayRevenue(t, p);
     retained += sp.retained; passthrough += sp.passthrough;
     hours += (+t.h || 0);
+    /* v108.1 — hours that actually generated the retained figure. `hours` stays
+       TOTAL hours worked: he was on the clock either way, and the weekly-hours
+       goal is about time, not dollars. Only the $/hr figure needs the matched
+       denominator, or it would report less than his rate. */
+    onsiteHours += (t.onsiteH === undefined ? (+t.h || 0) : (+t.onsiteH || 0));
     for (var k = 0; k < sp.components.length; k++){
       var comp = sp.components[k];
       if (comp.amount > 0){ byComponent[comp.key].amount += comp.amount; byComponent[comp.key].days++; }
@@ -13997,7 +14140,7 @@ function retainedTally(rows, policy){
   }
   return {
     retained:retained, passthrough:passthrough, gross:retained + passthrough,
-    hours:hours, dayCount:list.length,
+    hours:hours, onsiteHours:onsiteHours, dayCount:list.length,
     byComponent:byComponent,
     contributing:order.map(function(k){ return byComponent[k]; }).filter(function(c){ return c.retained && c.amount > 0; }),
     costing:     order.map(function(k){ return byComponent[k]; }).filter(function(c){ return !c.retained && c.amount > 0; })
@@ -14013,16 +14156,45 @@ function excludedItemsForDay(day, totals, policy){
   for (var i = 0; i < RETAINED_COMPONENTS.length; i++){
     var c = RETAINED_COMPONENTS[i];
     if (p[c.key] === true) continue;               // retained — not an exclusion
-    var amt = +t[c.field] || 0;
+    var amt = componentAmount(t, c);
     if (!(amt > 0)) continue;                      // nothing billed under it that day
     out.push({ date:d.date || '', site:d.site || '', key:c.key, label:c.label,
-               amount:amt, detail:excludedDetail(c.key, t) });
+               amount:amt, detail:excludedDetail(c.key, t),
+               // Travel time is the one exclusion whose SIZE is a duration, not
+               // a dollar figure — "2.76h of a 10h day" is the fact he checks.
+               hours:(c.key === 'travel_time' ? (+t.travelH || 0) : null) });
   }
   return out;
 }
 
+/* Local HH:MM from an epoch. `new Date(ms)` is fine in this block — the rule is
+   no ARGLESS Date, because that is what would make a test depend on the clock. */
+function _hm(ms){
+  var d = new Date(+ms || 0);
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+/* v108.1 — the travel-time evidence, per trip. The average speed is here on
+   purpose: a "trip" that covers 56 km in 3h22m at 17 km/h is far more likely to
+   be a trip the detector failed to seal on arrival than three hours of actual
+   driving, and the whole point of a review screen is that the reader can see
+   that for themselves rather than trusting the total. */
+function travelTimeDetail(totals){
+  var t = totals || {};
+  var list = t.travelTrips || [];
+  var head = (+t.travelH || 0).toFixed(2) + 'h of ' + (+t.h || 0).toFixed(2) + 'h billed';
+  if (!list.length) return head;
+  return head + ' — ' + list.map(function(tr){
+    var mins = +tr.duration_min || 0, km = +tr.distance_km || 0;
+    var kmh = mins > 0 ? (km / (mins / 60)) : null;
+    return _hm(tr.start_time) + '–' + _hm(tr.end_time) +
+           ' (' + km.toFixed(1) + ' km' + (kmh != null ? ', ' + kmh.toFixed(0) + ' km/h' : '') + ')';
+  }).join(' · ');
+}
+
 function excludedDetail(key, totals){
   var t = totals || {};
+  if (key === 'travel_time') return travelTimeDetail(t);
   if (key === 'extra')
     return (+t.sonH || 0).toFixed(2) + 'h × $' + (+t.sonrate || 0).toFixed(2) + '/hr';
   if (key === 'machine')
@@ -14213,7 +14385,12 @@ function effectiveRetainedRate(rows, policy){
   for (var i = 0; i < list.length; i++){
     var t = list[i] && list[i].totals ? list[i].totals : list[i];
     if (!t) continue;
-    th += (+t.h || 0);
+    /* v108.1 — the denominator has to be the hours that produced the numerator.
+       Travel hours leave the retained figure, so they leave here too; dividing
+       on-site dollars by total hours would report LESS than his configured rate
+       and re-open the v106.1 bug from the other side. Falls back to total hours
+       when a caller passes bare dayTotals(), which is the pre-split behaviour. */
+    th += (t.onsiteH === undefined ? (+t.h || 0) : (+t.onsiteH || 0));
     te += splitDayRevenue(t, policy).retained;
   }
   return th > 0 ? te / th : null;
