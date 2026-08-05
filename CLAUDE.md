@@ -22,11 +22,11 @@ Primary client: Muirlawn Pty Ltd.
 
 | # | File | Variable | Current |
 |---|---|---|---|
-| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2576) | v108.0 |
+| 1 | `www/index.html` | `const APP_VERSION = 'vN'` (line ~2592) | v109.0 |
 | 2 | `www/sw.js` | `const CACHE = 'invoice-pdf-vN'` (line 2) | (rewritten on deploy — see below) |
 | 3 | `updates/latest.json` | `"version": "1.N.0"` | (regenerated on deploy — see below) |
-| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.108.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
-| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.108.0 / versionCode 18 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
+| 4 | `capacitor.config.json` | `CapacitorUpdater.version: "1.N.0"` | 1.109.0 — **bump with APP_VERSION on APK builds** (see v82 cache-trap bug) |
+| 5 | `package.json` + `android/app/build.gradle` | `version` / `versionName` + `versionCode` | 1.109.0 / versionCode 21 — informational, not read at runtime. **No iOS project exists in this repo** (Android + PWA only), so there is no `CFBundleShortVersionString` to bump. |
 
 > **Point releases (v92.1):** `APP_VERSION` now also accepts a dotted point-release (`vMAJOR.MINOR`), for JS-only patches on top of a shipped feature version. The deploy workflow parses it: `v92` → `1.92.0`, `v92.1` → `1.92.1`. Use a point release for a pure JS fix that shouldn't imply a new feature version.
 
@@ -1312,6 +1312,107 @@ ban) · `WidgetRenderTest.java` (**11 instrumented**, was 6). Screenshots:
 ⚠️ **Requires an APK install** — new layouts, drawables and resource qualifiers.
 Capgo ships `www/` only. `versionCode` 19 → **20**.
 
+### v109.0 — keep a copy, prove it was sent, send it again
+
+Three problems, all in the last ten seconds of an invoice.
+
+#### Job 1 — BCC self
+
+Steven keeps no copy of what he sends. `EmailComposer.open()` has taken a
+`bcc[]` since v1.0 of the plugin; the only reason it was never used is that
+nothing ever asked him for the address. New `mcn_settings.bccEmail` (default
+`''` = off), in the **Invoice details** card, with the Gmail filter he needs to
+keep the copies out of his inbox:
+
+```
+from:me AND has:attachment AND subject:"Invoice"   →  label "Sent Invoices" + Skip the Inbox
+```
+
+**The BCC is resolved inside `generatePDF`, not at the call sites** — the v107
+`DB.set`-hook rule. `bccList(settings, to)` is the one decision point, so a send
+path added later carries the copy for free instead of silently not carrying it.
+It returns `[]` and never null, drops a BCC equal to the recipient (copying them
+to themselves files nothing), and **refuses a typo'd address** rather than
+sending to something undeliverable — with a warning in the settings field,
+because a silently-dropped BCC is discovered months later or never.
+
+**The field is written UNCONDITIONALLY, unlike its neighbours.** Every other
+settings field uses `s.x = el.value || s.x`, which keeps the old value when the
+box is cleared. On this one that would mean the BCC could never be turned off.
+
+**Subject and body were being built twice** — once for the composer, once for
+the web mailto. Resend would have made it three. They are now one pure pair
+(`invoiceSubject`/`invoiceBody`), so a reworded email cannot go out looking like
+two different invoices.
+
+#### Job 2 — the compose-cancel bug
+
+`EmailComposer.open()` resolves when the **composer opens**, not when the mail
+is sent. The pre-v109 code read that as delivery, so backing out of Gmail still
+**archived the days and bumped the rate** — a phantom invoice with no PDF
+anywhere. No plugin callback can tell us; it has to be ASKED.
+
+`generatePDF` now returns `{delivered, channel}` instead of a bare `true` —
+`delivered` means "handed off", which is all it ever meant. `generateInvoice`
+asks **"Did you send Invoice #0045?"** and commits only on Yes.
+
+- The gate sits **beside the side effects, not inside `generatePDF`** — which is
+  why a resend, having nothing to gate, never asks.
+- **Dismissing counts as No.** The outcomes are not symmetrical: No costs one
+  re-send, a wrong Yes hides the days and raises the rate with nothing in the
+  client's inbox. `undoLastInvoice()` remains the recovery for a wrong Yes and is
+  untouched.
+- **A missing modal falls back to `confirm()`**, the blocking primitive
+  `generateInvoice` already uses. It must never silently commit.
+- `sendNeedsConfirm(channel)` returns true for every real channel **on purpose** —
+  the composer, share sheet and mailto all hand off to another app. It exists so
+  a channel that genuinely can confirm has one place to say so.
+
+#### Job 3 — Resend
+
+Rebuilds the PDF from the invoice's **own saved HTML** and opens the composer
+with the same client, the same BCC and the same attachment. It commits nothing:
+no rate bump, no archive, no new record, no number bump. *"Re-sends the same PDF
+— it doesn't count as a new invoice."*
+
+`resendTarget()` resolves the recipient from the record's **own saved client**
+first. The superseded exporter matched `clientName` against the *current* client
+list, so renaming or deleting a client lost the address of an invoice already
+sent to them — the v101.8 ghost-site bug in the invoice path.
+
+**`exportSavedInvoice` is DELETED, not left beside it.** It did the same job with
+a weaker lookup; the viewer's button now resends. One affordance, one
+implementation (the v105.0 rule).
+
+**Don't reintroduce:** a BCC resolved at the call sites; `|| s.bccEmail` on the
+BCC field (it could never be cleared); a bare `return true` from `generatePDF`;
+committing before the send is confirmed; a dismissal that counts as Yes; a
+resend that bumps the rate, archives a day or writes a record; matching a sent
+invoice's client by name when the record carries its own; three buttons beside
+the filename in the Saved Invoices row (it squeezed it to `Invoice #0…` on a
+375px phone — the row stacks now).
+
+**Tests:** `test-invoice-send.js` (**132 pure**) · `test-invoice-send-live.js`
+(**62 live**, headless Chrome — drives the real `generateInvoice`/`resendInvoice`
+against a bridge that CAPTURES the `EmailComposer.open()` payload).
+
+⚠️ **False green found by mutation, and it was the important one.** Deleting the
+single line that attaches `openOpts.bcc` left **all 127** pure assertions green:
+they proved the list was *computed*, never that it was *sent*. That is what the
+live capture suite exists for. Four more mutations (gate removed, bcc dropped
+from mailto, resend bumping the rate, the `||keep-old` pattern on the BCC field)
+were each confirmed to go red. The gate-removed mutation reproduces the original
+bug exactly — `{rate:60.2, invnum:46, invoiced:2}` after a cancel.
+
+⚠️ **Also fixed here:** `test-widget.js` and `test-retained.js` pinned
+`APP_VERSION` to the literal `v108.2`, so they went red on this ship. A version
+pin that must be edited every release teaches people to edit version pins. They
+now assert **at-or-past** their own release, plus that the three version numbers
+**agree** — the v82 cache trap, which is the invariant actually worth checking.
+
+⚠️ **Ships by OTA — no native change.** APK bumped anyway (versionCode 20 →
+**21**, `1.109.0`) given the phone's OTA history. Screenshots: `plans/v109-shots/`.
+
 ### v108.1 — travel time leaves the goal, and the label was there all along
 
 **Asked three times, refused twice, and the refusals were wrong.** v106.0 and
@@ -2021,7 +2122,7 @@ figure changes").
 ### localStorage Keys
 | Key | Type | Description |
 |---|---|---|
-| `mcn_settings` | Object | Business settings (rate, client, trade type, etc.). **v104.8** adds `confirmTripsOnFinish` (default `false` — the trip-end vehicle prompt); **v104.5** adds `truckCapacityLcm` + `showLoadsOnInvoice`; **v106.0** adds `retention` (which invoice components count toward the GOAL number — display-only, never touches the invoice) and optional `goalMilestones`; **v106.1** added `showGoalOnToday` + `goalPaceCaveat`, both **REMOVED in v107.0** with the Today-tab hero. |
+| `mcn_settings` | Object | Business settings (rate, client, trade type, etc.). **v104.8** adds `confirmTripsOnFinish` (default `false` — the trip-end vehicle prompt); **v104.5** adds `truckCapacityLcm` + `showLoadsOnInvoice`; **v106.0** adds `retention` (which invoice components count toward the GOAL number — display-only, never touches the invoice) and optional `goalMilestones`; **v106.1** added `showGoalOnToday` + `goalPaceCaveat`, both **REMOVED in v107.0** with the Today-tab hero; **v109.0** adds `bccEmail` (blank = keep no copy of sent invoices). |
 | `mcn_sites` | Array | Job sites with name, lat, lng, radius, client |
 | `mcn_clients` | Array | Clients with company, ABN, address, email |
 | `mcn_activeDay` | Object | The ONE currently-RUNNING (live) session — start set, no finish (null when idle). Drives the live timer. |
@@ -2277,7 +2378,7 @@ cd android && ./gradlew :app:connectedDebugAndroidTest   # WidgetRenderTest (11 
 #   adb exec-out run-as com.banksiasprings.invoices cat files/widget-shots/4x2-dark.png > out.png
 # (They are on INTERNAL storage: /sdcard/Android/data/<pkg> is not shell-listable on API 30+.)
 ```
-Full suite as of v108.2: **1682 pure + 896 live**, plus the instrumented
+Full suite as of v109.0: **1815 pure + 958 live**, plus the instrumented
 `WidgetRenderTest` (`./gradlew :app:connectedDebugAndroidTest`, needs an emulator). Live suites drive rows with **PointerEvent**, not TouchEvent — the
 row gestures moved to Pointer Events in v104.9 and a TouchEvent press now reaches
 nothing. Live suites bind fixed HTTP + CDP ports, so a killed run leaves the port held and the next one dies with

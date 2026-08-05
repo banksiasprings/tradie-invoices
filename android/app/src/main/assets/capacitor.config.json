@@ -16,7 +16,7 @@
 			"updateUrl": "https://banksiasprings.github.io/tradie-invoices/updates/latest.json",
 			"statsUrl": "",
 			"resetWhenUpdate": true,
-			"version": "1.108.2"
+			"version": "1.109.0"
 		}
 	}
 }

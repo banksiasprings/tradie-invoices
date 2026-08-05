@@ -2289,6 +2289,22 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
         <div class="field"><label>Next invoice #</label><input type="number" id="s-invnum"></div>
         <div class="field"><label>Annual increase (%)</label><input type="number" id="s-incpct" step="0.1" oninput="onGoalInput('rate')"></div>
       </div>
+      <!-- v109.0 BCC self — keep a copy of every invoice you send -->
+      <div class="field">
+        <label>BCC a copy to me</label>
+        <input type="email" id="s-bcc-email" placeholder="you@example.com" autocomplete="email">
+        <div id="s-bcc-warn" style="display:none;font-size:11px;color:var(--amber);margin-top:4px">That doesn’t look like an email address — no copy will be sent.</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:6px;line-height:1.5">
+          Every invoice you email gets blind-copied here, so you always hold the PDF you sent. Leave blank to turn off.
+          <div style="margin-top:8px;padding:9px 11px;background:var(--bg);border-radius:var(--radius-sm);border:1px solid var(--border)">
+            <strong style="color:var(--text)">Keep them out of your inbox</strong><br>
+            In Gmail, make a filter for<br>
+            <code id="s-bcc-filter" style="display:inline-block;margin:4px 0;font-size:11px;word-break:break-all;color:var(--amber)">from:me AND has:attachment AND subject:"Invoice"</code><br>
+            → apply label <strong>Sent Invoices</strong> + <strong>Skip the Inbox</strong>.
+            <button type="button" onclick="copyBccFilter()" class="btn btn-secondary btn-sm" style="margin-top:6px;font-size:11px">Copy filter</button>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="card card-collapsible" data-collapse-default="collapsed" data-collapse-key="benchmarks">
       <div class="card-title">Rate increase benchmarks (AU)</div>
@@ -2573,7 +2589,7 @@ window.closePendingModal = function(){ document.getElementById('pending-client-m
   </div>
 </div>
 <script>
-const APP_VERSION = 'v108.2';
+const APP_VERSION = 'v109.0';
 /* v82 NOTE: CapacitorUpdater config changed — resetWhenUpdate:true + builtin
    version bumped to match this release (was "1.0.0"). A stale May-9 OTA bundle
    (v79) had been overriding every installed APK because installing an APK
@@ -3109,6 +3125,23 @@ function forceAppUpdate(){ return otaCheck(false); }
 </div>
 
 <!-- INVOICE VIEWER MODAL -->
+<!-- v109.0 SEND CONFIRM — the composer resolves on open, so this is the only
+     thing standing between a cancelled email and an archived, rate-bumped day -->
+<div class="modal-bg" id="send-confirm-modal">
+  <div class="modal" style="max-width:340px">
+    <div class="modal-title">📤 <span id="send-confirm-q">Did you send it?</span> <button class="modal-close" onclick="answerSendConfirm(false)">✕</button></div>
+    <div id="send-confirm-hint" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:14px"></div>
+    <div style="font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:16px">
+      <strong style="color:var(--text)">Yes</strong> marks the days invoiced and raises your rate.<br>
+      <strong style="color:var(--text)">No</strong> changes nothing — your days stay in the list.
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" style="flex:1" onclick="answerSendConfirm(false)">No, not sent</button>
+      <button class="btn btn-primary" style="flex:1" onclick="answerSendConfirm(true)">Yes, sent ✓</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="invoice-viewer-modal" style="align-items:stretch">
   <div style="background:var(--surface);width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden">
     <div style="padding:14px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);flex-shrink:0;padding-top:calc(14px + env(safe-area-inset-top))">
@@ -3117,7 +3150,7 @@ function forceAppUpdate(){ return otaCheck(false); }
     </div>
     <iframe id="inv-viewer-frame" style="flex:1;border:none;width:100%;min-height:0" srcdoc=""></iframe>
     <div style="padding:12px 16px;padding-bottom:calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0">
-      <button class="btn btn-secondary" style="flex:1;font-size:13px" onclick="exportFromViewer()">⬇ Export PDF</button>
+      <button class="btn btn-secondary" style="flex:1;font-size:13px" onclick="exportFromViewer()" title="Re-sends the same PDF — doesn't count as a new invoice">↻ Resend</button>
       <button class="btn btn-secondary" style="flex:1;font-size:13px" id="inv-restore-btn" onclick="restoreInvoice()">↩ Restore &amp; Edit</button>
       <button class="btn btn-danger" style="flex:1;font-size:13px" onclick="deleteFromViewer()">🗑 Delete</button>
     </div>
@@ -3213,6 +3246,7 @@ const DEFAULTS={
   phone:'',email:'',bsb:'',account:'',
   client:'Muirlawn Pty Ltd',service:'Construction and Maintenance services',
   rate:55, sonrate:30, incpct:7.8, invnum:45,
+  bccEmail:'',                    // v109.0 — blank = no copy kept
   weeklyHrsGoal:40, annualEarningsGoal:0,
   travelMode:'none', travelKmRate:0.88, travelHrRate:30,
   machineRates:{Excavator:150,Grader:180,Bobcat:120,Dozer:200,Tractor:110},
@@ -6102,10 +6136,16 @@ function exportFullBackup(){
 }
 
 // Generate a real PDF from invoice HTML, then email or share it.
-// emailOpts (optional): { to, clientName, invoiceNum, senderName }
+// emailOpts (optional): { to, clientName, invoiceNum, senderName, bcc? }
 // On Capacitor Android: if emailOpts.to is set, opens email composer with PDF attached.
 //   Otherwise falls back to the native share sheet.
 // On web: downloads PDF, then opens mailto: if emailOpts.to is set.
+//
+// v109.0 — returns { delivered, channel } rather than a bare boolean. `delivered`
+// means "something was handed off"; it has NEVER meant "the client received it",
+// and the channel is what lets the caller ask the user which one it was. The
+// BCC is resolved HERE, not at the call sites, so every send path — including
+// any added later — carries Steven's copy without anyone remembering to pass it.
 async function generatePDF(html, filename, emailOpts) {
   toast('Generating PDF…');
   try {
@@ -6158,6 +6198,12 @@ async function generatePDF(html, filename, emailOpts) {
 
     const pdfName = filename.replace(/\.html$/, '') + '.pdf';
 
+    // v109.0 — one resolution point for the BCC. An explicit emailOpts.bcc wins
+    // (tests + any caller that needs to override); otherwise it comes from settings.
+    const _bcc = (emailOpts && emailOpts.bcc) || bccList(S(), emailOpts && emailOpts.to);
+    const _subject = invoiceSubject(emailOpts && emailOpts.invoiceNum, emailOpts && emailOpts.senderName);
+    const _body = invoiceBody(emailOpts && emailOpts.invoiceNum, emailOpts && emailOpts.clientName, emailOpts && emailOpts.senderName);
+
     if (window.Capacitor && window.Capacitor.isNativePlatform()) {
       const b64 = pdf.output('datauristring').split(',')[1];
       const { Filesystem, Share, EmailComposer } = window.Capacitor.Plugins;
@@ -6167,19 +6213,21 @@ async function generatePDF(html, filename, emailOpts) {
 
       if (emailOpts && emailOpts.to && EmailComposer) {
         // Open email composer with PDF attached and fields pre-populated
-        const clientDisplay = emailOpts.clientName || 'there';
-        const invRef = emailOpts.invoiceNum ? ' #' + emailOpts.invoiceNum : '';
-        const sender = emailOpts.senderName || '';
-        await EmailComposer.open({
+        const openOpts = {
           to: [emailOpts.to],
-          subject: 'Invoice' + invRef + (sender ? ' from ' + sender : ''),
-          body: 'Hi ' + clientDisplay + ',\n\nPlease find Invoice' + invRef + ' attached for recent work completed.\n\nDon\'t hesitate to get in touch if you have any questions.\n\nThanks,\n' + (sender || 'me'),
+          subject: _subject,
+          body: _body,
           isHtml: false,
           attachments: [{ type: 'absolute', path: uri.replace(/^file:\/\//, ''), name: pdfName }]
-        });
+        };
+        if (_bcc.length) openOpts.bcc = _bcc;
+        await EmailComposer.open(openOpts);
+        // Resolves on OPEN, not on send — the caller must confirm. See sendNeedsConfirm().
+        return { delivered: true, channel: 'email', bcc: _bcc };
       } else {
         // No client email on file — open the share sheet instead
         await Share.share({ title: pdfName, url: uri, dialogTitle: 'Share Invoice PDF' });
+        return { delivered: true, channel: 'share', bcc: [] };
       }
     } else {
       const blob = pdf.output('blob');
@@ -6187,28 +6235,62 @@ async function generatePDF(html, filename, emailOpts) {
       // On web, also open mailto: with pre-filled subject/body (can't attach via mailto, so
       // the PDF downloads first and the user can manually attach it from their downloads folder)
       if (emailOpts && emailOpts.to) {
-        const clientDisplay = emailOpts.clientName || 'there';
-        const invRef = emailOpts.invoiceNum ? ' #' + emailOpts.invoiceNum : '';
-        const sender = emailOpts.senderName || '';
-        const subject = encodeURIComponent('Invoice' + invRef + (sender ? ' from ' + sender : ''));
-        const body = encodeURIComponent('Hi ' + clientDisplay + ',\n\nPlease find Invoice' + invRef + ' attached for recent work completed.\n\nDon\'t hesitate to get in touch if you have any questions.\n\nThanks,\n' + (sender || 'me'));
-        setTimeout(() => { window.location.href = 'mailto:' + emailOpts.to + '?subject=' + subject + '&body=' + body; }, 600);
+        const url = mailtoUrl({ to: emailOpts.to, subject: _subject, body: _body, bcc: _bcc });
+        setTimeout(() => { window.location.href = url; }, 600);
+        return { delivered: true, channel: 'mailto', bcc: _bcc };
       }
+      return { delivered: true, channel: 'download', bcc: [] };
     }
-    return true; // delivered (PDF shared / emailed / downloaded)
   } catch(err) {
     console.error('generatePDF:', err);
     toast('PDF error – sharing HTML instead');
     try {
       const blob = new Blob([html], { type: 'text/html' });
       await shareOrDownload(blob, filename);
-      return true; // HTML fallback delivered
+      return { delivered: true, channel: 'html', bcc: [] }; // HTML fallback delivered
     } catch(e2) {
       console.error('generatePDF HTML fallback failed:', e2);
-      return false; // nothing delivered — caller must NOT archive/bump
+      return { delivered: false, channel: null, bcc: [] }; // caller must NOT archive/bump
     }
   }
 }
+
+// v109.0 — the composer/share sheet/mailto all resolve the moment they hand off,
+// so "delivered" has never meant "sent". This asks. It gates ONLY the side
+// effects (archive + rate bump + record), which is why it lives beside them and
+// not inside generatePDF — a resend has nothing to gate, so it never asks.
+//
+// Dismissing (✕ / backdrop / a missing modal answered No) counts as NO, because
+// the two outcomes are not symmetrical: answering No costs one re-send, while a
+// wrong Yes hides the days and raises the rate with nothing in the client's
+// inbox. undoLastInvoice() remains the recovery for a wrong Yes.
+let _sendConfirmResolve=null;
+function confirmInvoiceSent(invNum, channel){
+  const bg=document.getElementById('send-confirm-modal');
+  const q='Did you send Invoice #'+invNum+'?';
+  if(!bg){
+    // No modal in the DOM (older shell): fall back to the blocking primitive
+    // generateInvoice already uses. Never silently commit.
+    return Promise.resolve(!!confirm(q+'\n\nOnly tap OK if the email actually left your outbox. Cancel archives nothing.'));
+  }
+  const qEl=document.getElementById('send-confirm-q');
+  if(qEl) qEl.textContent=q;
+  const hEl=document.getElementById('send-confirm-hint');
+  if(hEl) hEl.textContent = channel==='share'
+    ? 'The share sheet can’t tell the app what happened. If you cancelled, tap “No”.'
+    : 'The email app can’t tell the app what happened. If you backed out of the email, tap “No”.';
+  return new Promise(resolve=>{
+    _sendConfirmResolve=resolve;
+    bg.classList.add('open');
+  });
+}
+function answerSendConfirm(sent){
+  const bg=document.getElementById('send-confirm-modal');
+  if(bg) bg.classList.remove('open');
+  const r=_sendConfirmResolve; _sendConfirmResolve=null;
+  if(r) r(!!sent);
+}
+window.answerSendConfirm=answerSendConfirm;
 
 async function generateInvoice(){
   const s=S();
@@ -6234,11 +6316,20 @@ async function generateInvoice(){
   // Previously generatePDF was not awaited: days were archived + rate bumped
   // synchronously while the PDF was still rendering, so a hard failure or cancel
   // left days hidden + rate raised with nothing sent.
-  let delivered=false;
-  try{ delivered = await generatePDF(html, filename, {to:ic.email||'',clientName:ic.contact||ic.company||'',invoiceNum:invNum,senderName:s.name||''}); }
-  catch(e){ delivered=false; }
-  if(!delivered){ toast('Invoice not sent \u2014 nothing was archived. Try again.'); return; }
-  // Delivered \u2192 commit: archive days, record summary, save full HTML, bump number + rate.
+  let res=null;
+  try{ res = await generatePDF(html, filename, {to:ic.email||'',clientName:ic.contact||ic.company||'',invoiceNum:invNum,senderName:s.name||''}); }
+  catch(e){ res=null; }
+  if(!res||!res.delivered){ toast('Invoice not sent \u2014 nothing was archived. Try again.'); return; }
+  // v109.0 \u2014 handed off is not sent. Every channel we have resolves on open,
+  // so ask before committing anything irreversible.
+  if(sendNeedsConfirm(res.channel)){
+    const sent=await confirmInvoiceSent(invNum,res.channel);
+    if(!sent){
+      toast('Nothing archived \u2014 invoice #'+invNum+' is still unsent');
+      return;
+    }
+  }
+  // Confirmed sent \u2192 commit: archive days, record summary, save full HTML, bump number + rate.
   const selectedIds=new Set(ui.map(d=>d.id||d.date));
   const ad=days();
   const it=ui.reduce((sum,d)=>{const{total}=dayTotals(d);return sum+total;},0);
@@ -6943,12 +7034,34 @@ function ensureMachinesLibSeeded(){
   DB.set('settings',s);
 }
 
+// v109.0 — a typo'd BCC address fails silently (no copy, no error), so say so
+// where it is typed rather than leaving him to discover it months later.
+function refreshBccWarning(){
+  const el=document.getElementById('s-bcc-email');
+  const w=document.getElementById('s-bcc-warn');
+  if(!el||!w) return;
+  const v=normaliseEmail(el.value);
+  w.style.display=(v&&!isEmailish(v))?'block':'none';
+}
+window.refreshBccWarning=refreshBccWarning;
+
+function copyBccFilter(){
+  const q=gmailFilterQuery();
+  const done=()=>toast('Filter copied — paste it into Gmail');
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(q).then(done,()=>toast(q)); return; }
+  }catch(_){}
+  toast(q);
+}
+window.copyBccFilter=copyBccFilter;
+
 function loadSettings(){
   ensureMachinesLibSeeded();
   const s=S();
   ['name','abn','address','phone','email','bsb','account','service','rate','sonrate','incpct','invnum','weeklyHrsGoal','annualEarningsGoal'].forEach(k=>{
     const el=document.getElementById('s-'+k);if(el) el.value=s[k]!==undefined?s[k]:'';
   });
+  const _bcc=document.getElementById('s-bcc-email'); if(_bcc){ _bcc.value=s.bccEmail||''; refreshBccWarning(); }
   const _whg=document.getElementById('s-weeklyHrsGoal'); if(_whg) _whg.value = s.weeklyHrsGoal>0 ? s.weeklyHrsGoal : '';
   const _aeg=document.getElementById('s-annualEarningsGoal'); if(_aeg) _aeg.value = s.annualEarningsGoal>0 ? s.annualEarningsGoal : '';
   onGoalInput('init');
@@ -7025,6 +7138,10 @@ function saveSettings(opts){
   const _incpctStr=document.getElementById('s-incpct').value;
   if(_incpctStr!==''){const _p=parseFloat(_incpctStr);if(!isNaN(_p))s.incpct=_p;}
   s.invnum=parseInt(document.getElementById('s-invnum').value)||s.invnum;
+  // v109.0 — written UNCONDITIONALLY, unlike the `||` fields above: clearing the
+  // box has to actually turn the BCC off, or there is no way to stop it.
+  const _bccEl=document.getElementById('s-bcc-email');
+  if(_bccEl){ s.bccEmail=normaliseEmail(_bccEl.value); refreshBccWarning(); }
   const _whg=document.getElementById('s-weeklyHrsGoal');
   if(_whg){const _v=_whg.value;s.weeklyHrsGoal=_v===''?0:(parseFloat(_v)||0);}
   const _aeg=document.getElementById('s-annualEarningsGoal');
@@ -8764,17 +8881,22 @@ function renderSavedInvoices(location){
       }
       return;
     }
+    // v109.0 — the row stacks: title on its own full-width line, buttons under
+    // it. Three buttons beside the title squeezed the filename to "Invoice #0…"
+    // on a 375px phone, which is the one thing the row exists to tell you.
     el.innerHTML=records.map(r=>`
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
-        <div style="flex:1;min-width:0;cursor:pointer" onclick="viewSavedInvoice(${r.id})">
+      <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="min-width:0;cursor:pointer" onclick="viewSavedInvoice(${r.id})">
           <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(r.filename)}</div>
           <div style="font-size:11px;color:var(--text2);margin-top:2px">${fmtDate(r.date)}${r.clientName?' · '+r.clientName:''}${r.rawData?' · <span style="color:var(--amber)">✎ restorable</span>':''}</div>
         </div>
-        <div style="display:flex;gap:6px;flex-shrink:0;margin-left:10px">
-          <button class="btn btn-secondary btn-sm" onclick="viewSavedInvoice(${r.id})">Open</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteSavedInvoice(${r.id})">✕</button>
+        <div style="display:flex;gap:6px;margin-top:8px">
+          <button class="btn btn-secondary btn-sm" style="flex:1" onclick="viewSavedInvoice(${r.id})">Open</button>
+          <button class="btn btn-secondary btn-sm" style="flex:1" onclick="resendInvoice(${r.id})" title="Re-sends the same PDF — doesn't count as a new invoice">↻ Resend</button>
+          <button class="btn btn-danger btn-sm" style="flex:0 0 auto" onclick="deleteSavedInvoice(${r.id})">✕</button>
         </div>
-      </div>`).join('');
+      </div>`).join('')
+      + '<div style="font-size:11px;color:var(--text2);padding:10px 0 0;line-height:1.5">↻ <strong>Resend</strong> re-sends the same PDF — it doesn’t count as a new invoice, and nothing is archived or re-priced.</div>';
   }).catch(()=>{
     el.innerHTML='<div style="color:var(--text2);font-size:13px">Could not load saved invoices</div>';
   });
@@ -8810,7 +8932,7 @@ function deleteFromViewer(){
 
 function exportFromViewer(){
   if(!_viewerCurrentId) return;
-  exportSavedInvoice(_viewerCurrentId, null);
+  resendInvoice(_viewerCurrentId);
 }
 
 function restoreInvoice(){
@@ -8832,20 +8954,45 @@ function restoreInvoice(){
   });
 }
 
-function exportSavedInvoice(id,btn){
+// v109.0 — Resend. Rebuilds the PDF from the invoice's OWN saved HTML and opens
+// the composer with the same client, the same BCC and the same attachment.
+//
+// It deliberately commits NOTHING: no rate bump, no archive, no new invoice
+// record, no number bump. Sending the same PDF twice is one invoice, and the
+// side effects of the first send have already happened. That is also why it
+// never asks "did you send it?" — there is nothing to gate.
+//
+// This supersedes exportSavedInvoice(), which did the same job with a weaker
+// recipient lookup. One affordance, one implementation (the v105.0 rule).
+function resendInvoice(id){
   InvoiceDB.list().then(records=>{
-    const r=records.find(x=>x.id===id);if(!r)return;
-    const s=S(),cl=clientsData();
-    const client=cl.find(c=>(c.company||c.contact||'')===r.clientName)||{};
-    const invMatch=r.filename.match(/Invoice #(\d+)/);
+    const r=records.find(x=>x.id===id);
+    if(!r){ toast('Invoice not found'); return; }
+    const s=S();
+    const t=resendTarget(r, clientsData());
+    const copies=bccList(s, t.to);
+    const who=t.to||(t.clientName?('— no email saved for '+t.clientName):'');
+    if(t.to){
+      if(!confirm('Re-send Invoice'+(t.invoiceNum?' #'+t.invoiceNum:'')+' to '+t.to+'?\n\n'+
+                  'Re-sends the same PDF — it does not count as a new invoice, and nothing is archived or re-priced.'+
+                  (copies.length?'\n\nA copy goes to '+copies[0]+'.':''))) return;
+    }else{
+      // No address on the record or in the client list — the share sheet is the
+      // honest fallback, so say that rather than silently opening it.
+      if(!confirm('No email address saved for this invoice.\n\nOpen the share sheet with the PDF instead?')) return;
+    }
     generatePDF(r.html, r.filename, {
-      to:client.email||'',
-      clientName:r.clientName||client.contact||'',
-      invoiceNum:invMatch?invMatch[1]:'',
+      to:t.to,
+      clientName:t.clientName,
+      invoiceNum:t.invoiceNum,
       senderName:s.name||''
-    }).then(()=>toast('Exported ✓'));
-  });
+    }).then(res=>{
+      if(!res||!res.delivered){ toast('Re-send failed — nothing changed'); return; }
+      toast(res.channel==='email'||res.channel==='mailto' ? 'Re-sent ✓ (not counted as a new invoice)' : 'PDF ready to share ✓');
+    }).catch(()=>toast('Re-send failed — nothing changed'));
+  }).catch(()=>toast('Could not read saved invoices'));
 }
+window.resendInvoice=resendInvoice;
 
 function deleteSavedInvoice(id){
   if(!confirm('Delete this saved invoice?')) return;
@@ -14503,6 +14650,109 @@ function widgetWeekKey(d){
          + '-' + String(mon.getDate()).padStart(2, '0');
 }
 //__V107_WIDGET_PURE_END__
+
+//__V109_SEND_PURE_START__  (extracted verbatim by test-invoice-send.js — keep pure: no DOM/DB/argless Date)
+
+/* v109.0 — who gets a copy of an invoice, and whether it was actually sent.
+ *
+ * Two facts about the send path, both of which cost money:
+ *
+ *  1. Steven keeps no copy of what he sent. `EmailComposer.open()` has taken a
+ *     `bcc[]` since v1.0 of the plugin; the only reason it was never used is
+ *     that nothing ever asked him for the address.
+ *
+ *  2. `open()` resolves when the COMPOSER OPENS, not when the mail is sent.
+ *     The pre-v109 code read that as delivery, so backing out of Gmail still
+ *     archived the days and bumped the rate — a phantom invoice with no PDF
+ *     anywhere. No plugin callback can tell us; it has to be ASKED.
+ */
+
+function normaliseEmail(v){ return String(v==null?'':v).trim(); }
+
+/* Deliberately permissive. This asks "is this address USABLE", not "is it
+   deliverable" — a legal-but-odd address rejected here silently drops the BCC,
+   which is the exact failure the feature exists to prevent. */
+function isEmailish(v){
+  var e=normaliseEmail(v);
+  if(!e||/\s/.test(e)) return false;
+  var at=e.indexOf('@');
+  if(at<1||e.indexOf('@',at+1)!==-1) return false;
+  var dom=e.slice(at+1);
+  return dom.length>=3&&dom.indexOf('.')>0&&!/\.$/.test(dom);
+}
+
+/* The ONE place a BCC list is decided. Resolved inside generatePDF rather than
+   at each call site, so a send path added later carries the copy for free
+   instead of silently not carrying it — the v107 `DB.set` hook rule.
+   Returns [] and never null, so callers can test `.length` unconditionally. */
+function bccList(settings, to){
+  var self=normaliseEmail(settings&&settings.bccEmail);
+  if(!isEmailish(self)) return [];
+  // BCC'ing the recipient duplicates their own copy and files nothing new.
+  if(normaliseEmail(to).toLowerCase()===self.toLowerCase()) return [];
+  return [self];
+}
+
+/* Subject and body were built twice — once for the native composer, once for
+   the web mailto — in two copies of the same string. Resend makes it three.
+   One source, so a reworded email can never go out looking like two invoices. */
+function invoiceSubject(invoiceNum, senderName){
+  var ref=invoiceNum?' #'+invoiceNum:'';
+  return 'Invoice'+ref+(senderName?' from '+senderName:'');
+}
+function invoiceBody(invoiceNum, clientName, senderName){
+  var ref=invoiceNum?' #'+invoiceNum:'';
+  return 'Hi '+(clientName||'there')+',\n\nPlease find Invoice'+ref+
+         ' attached for recent work completed.\n\nDon’t hesitate to get in touch if you have any questions.\n\nThanks,\n'+
+         (senderName||'me');
+}
+
+/* mailto cannot carry an attachment, so the web path downloads the PDF first
+   and pre-fills the rest. `bcc` is a standard mailto header field. */
+function mailtoUrl(o){
+  o=o||{};
+  var q=[];
+  if(o.subject) q.push('subject='+encodeURIComponent(o.subject));
+  if(o.body) q.push('body='+encodeURIComponent(o.body));
+  var bcc=(o.bcc||[]).filter(Boolean);
+  if(bcc.length) q.push('bcc='+encodeURIComponent(bcc.join(',')));
+  return 'mailto:'+normaliseEmail(o.to)+(q.length?'?'+q.join('&'):'');
+}
+
+/* Every channel we have hands the invoice to ANOTHER APP — the composer, the
+   share sheet, mailto — and resolves the instant it does. None of them report
+   a send, so all of them need the question asked. This returns true for every
+   real channel on purpose; it exists so a channel that genuinely CAN confirm
+   (a server-side send) has one obvious place to say so, instead of the answer
+   being hardcoded `true` at the call site. */
+function sendNeedsConfirm(channel){ return channel!=='api'; }
+
+/* Resend resolves its recipient from the invoice's OWN saved client record
+   first. The pre-v109 exporter matched `clientName` against the CURRENT client
+   list, so renaming or deleting a client lost the address of an invoice
+   already sent to them — the same name-as-pointer bug as the v101.8 ghost
+   site, in the invoice path. The name lookup stays as a fallback for records
+   saved before rawData existed. */
+function resendTarget(record, clients){
+  var rd=(record&&record.rawData)||null;
+  var saved=(rd&&rd.client)||null;
+  var name=(saved&&(saved.company||saved.contact))||(record&&record.clientName)||'';
+  var to=normaliseEmail(saved&&saved.email);
+  if(!isEmailish(to)){
+    var want=(record&&record.clientName)||'';
+    var m=(clients||[]).filter(function(c){return (c.company||c.contact||'')===want;})[0];
+    to=normaliseEmail(m&&m.email);
+  }
+  var num=(rd&&rd.invoiceNum!=null)?String(rd.invoiceNum):'';
+  if(!num){ var fm=String((record&&record.filename)||'').match(/Invoice\s*#(\d+)/); num=fm?fm[1]:''; }
+  return { to:isEmailish(to)?to:'', clientName:name, invoiceNum:num?String(num).padStart(4,'0'):'' };
+}
+
+/* The Gmail-side half of "keep a copy": BCC puts the mail in his inbox, this
+   files it. Pinned by a test so the help text and the reality stay together. */
+function gmailFilterQuery(){ return 'from:me AND has:attachment AND subject:"Invoice"'; }
+
+//__V109_SEND_PURE_END__
 
 // ── Tax prefs (persisted in the settings blob → synced) ─────────────────────
 function taxPrefs(){

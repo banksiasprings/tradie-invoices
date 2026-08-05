@@ -389,7 +389,12 @@ console.log('\n── PIN: test_goal_card_and_detail_agree ───────
 
 console.log('\n── version ────────────────────────────────────────────────────────');
 {
-  ok('APP_VERSION bumped to v108.2', /const APP_VERSION = 'v108\.2';/.test(html));
+  /* Was pinned to the literal 'v108.2' and went red on the next release. The
+     travel split needs the app at or past the version that shipped it, not
+     frozen at it — a pin that must be edited every ship is a pin nobody reads. */
+  const _seg = ((html.match(/const APP_VERSION = 'v([\d.]+)'/) || [])[1] || '0').split('.').map(Number);
+  ok('APP_VERSION is at or past v108.1 (the travel-time split)',
+     _seg[0] > 108 || (_seg[0] === 108 && (_seg[1] || 0) >= 1), _seg);
   ok('DEFAULTS carries the retention policy', /retention:\{labour:true,travel_time:false,extra:false,machine:false,travel:false,materials:false\}/.test(html));
 }
 

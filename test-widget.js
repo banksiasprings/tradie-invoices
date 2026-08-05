@@ -662,11 +662,27 @@ console.log('\n── v108.2: the pill obeys the ban ─────────
 
 console.log('\n── version ───────────────────────────────────────────────────────');
 {
-  ok('APP_VERSION bumped to v108.2', /const APP_VERSION = 'v108\.2';/.test(html));
-  ok('Capgo builtin tracks it (the v82 cache-trap rule)',
-     /"version": "1\.108\.2"/.test(fs.readFileSync(path.join(__dirname, 'capacitor.config.json'), 'utf8')));
-  ok('versionCode bumped — new layouts and resource folders need an APK',
-     /versionCode 20/.test(fs.readFileSync(path.join(__dirname, 'android/app/build.gradle'), 'utf8')));
+  /* These were pinned to the literal 'v108.2' and so went red on the very next
+     release (v109.0), which teaches whoever hits it to edit version assertions —
+     exactly the habit that lets a real one slide through. What this feature
+     actually requires is that the app is AT OR PAST the release that introduced
+     it, and that the three numbers AGREE. The second is the v82 cache trap, it
+     is version-agnostic, and it is the one worth asserting on every ship. */
+  const appVer = (html.match(/const APP_VERSION = 'v([\d.]+)'/) || [])[1] || '0';
+  const seg = appVer.split('.').map(Number);
+  const atLeast = (maj, min) => seg[0] > maj || (seg[0] === maj && (seg[1] || 0) >= min);
+  const otaVer = '1.' + seg[0] + '.' + (seg[1] || 0);
+  const capJson = fs.readFileSync(path.join(__dirname, 'capacitor.config.json'), 'utf8');
+  const gradle = fs.readFileSync(path.join(__dirname, 'android/app/build.gradle'), 'utf8');
+  const vCode = +((gradle.match(/versionCode (\d+)/) || [])[1] || 0);
+
+  ok('APP_VERSION is at or past v108.2 (the redesign)', atLeast(108, 2), appVer);
+  ok('PIN: the Capgo builtin AGREES with APP_VERSION (the v82 cache trap)',
+     new RegExp('"version": "' + otaVer.replace(/\./g, '\\.') + '"').test(capJson), otaVer);
+  ok('versionName agrees too',
+     new RegExp('versionName "' + otaVer.replace(/\./g, '\\.') + '"').test(gradle), otaVer);
+  ok('versionCode is at or past 20 — new layouts + resource folders need an APK',
+     vCode >= 20, vCode);
 }
 
 console.log('\n' + '─'.repeat(66));
